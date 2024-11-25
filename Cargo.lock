@@ -43,6 +43,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "html-validation"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1db2f65f15fd0ad8b2f07e8ef73c05fa5d7f231395c2f8083aaee794932464b1"
+dependencies = [
+ "lazy_static",
+]
+
+[[package]]
 name = "js-sys"
 version = "0.3.72"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -50,6 +59,12 @@ checksum = "6a88f1bda2bd75b0452a14784937d796722fdebfe50df998aeb3f0b7603019a9"
 dependencies = [
  "wasm-bindgen",
 ]
+
+[[package]]
+name = "lazy_static"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "libc"
@@ -76,6 +91,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1261fe7e33c73b354eab43b1273a57c8f967d0391e80353e51f764ac02cf6775"
 
 [[package]]
+name = "percy-dom"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b49ebfcb42b18d445077f7083be3a6a6b471a26762f44dcd9b9bf9cdc12f957"
+dependencies = [
+ "js-sys",
+ "virtual-node",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -99,6 +126,7 @@ version = "0.0.0"
 dependencies = [
  "build-target",
  "console_error_panic_hook",
+ "percy-dom",
  "roc_std",
  "wasm-bindgen",
  "web-sys",
@@ -136,6 +164,18 @@ name = "unicode-ident"
 version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "adb9e6ca4f869e1180728b7950e35922a7fc6397f7b641499e8f3ef06e50dc83"
+
+[[package]]
+name = "virtual-node"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e7e9bd48a8c0486f08364efd322ab712487034dc06a6d7fe5d03b3c58a76034"
+dependencies = [
+ "html-validation",
+ "js-sys",
+ "wasm-bindgen",
+ "web-sys",
+]
 
 [[package]]
 name = "wasm-bindgen"

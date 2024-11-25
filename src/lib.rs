@@ -17,6 +17,14 @@ fn document() -> Option<Document> {
 fn run() -> Result<(), JsValue> {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
 
+    let text = percy_dom::VirtualNode::text("my text node");
+
+    let app_node = document().unwrap().get_element_by_id("app").unwrap();
+
+    let mut pdom = percy_dom::PercyDom::new_replace_mount(text, app_node);
+
+    pdom.update(percy_dom::VirtualNode::text("new text"));
+
     call_roc();
 
     Ok(())
