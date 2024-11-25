@@ -5,12 +5,13 @@ use std::os::raw::c_void;
 use wasm_bindgen::prelude::*;
 use wee_alloc;
 
-// Use `wee_alloc` as the global allocator.
 #[global_allocator]
 static WEE_ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[wasm_bindgen(start)]
 fn run() -> Result<(), JsValue> {
+    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+
     let window = web_sys::window().expect("no global `window` exists");
     let document = window.document().expect("should have a document on window");
     let body = document.body().expect("document should have a body");
