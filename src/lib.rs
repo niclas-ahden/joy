@@ -1,27 +1,23 @@
-use roc_std::RocStr;
+use roc_std::{RocResult, RocStr};
 use std::alloc::GlobalAlloc;
 use std::alloc::Layout;
 use std::os::raw::c_void;
 use wasm_bindgen::prelude::*;
+use web_sys::Document;
 use wee_alloc;
 
 #[global_allocator]
 static WEE_ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
+fn document() -> Option<Document> {
+    web_sys::window().expect("should have a window").document()
+}
+
 #[wasm_bindgen(start)]
 fn run() -> Result<(), JsValue> {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
 
-    let window = web_sys::window().expect("no global `window` exists");
-    let document = window.document().expect("should have a document on window");
-    let body = document.body().expect("document should have a body");
-
-    let msg = call_roc();
-
-    let val = document.create_element("p")?;
-    val.set_text_content(Some(msg.as_str()));
-
-    body.append_child(&val)?;
+    call_roc();
 
     Ok(())
 }
@@ -75,20 +71,33 @@ pub unsafe extern "C" fn roc_memset(dst: *mut c_void, c: i32, n: usize) -> *mut 
     dst
 }
 
-pub fn call_roc() -> String {
+pub fn call_roc() {
     #[link(name = "app")]
     extern "C" {
         #[link_name = "roc__mainForHost_1_exposed"]
-        fn main_for_host(arg_not_used: i32) -> RocStr;
+        fn main_for_host(arg_not_used: i32) -> i32;
     }
 
-    let roc_str = unsafe { main_for_host(0) };
+    let exit_code = unsafe { main_for_host(0) };
 
-    roc_str.as_str().to_owned()
+    if exit_code != 0 {
+        eprintln!("roc exited with code {}", exit_code);
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn roc_fx_log(msg: &RocStr) {
     let msg: wasm_bindgen::JsValue = msg.as_str().into();
     web_sys::console::log_1(&msg);
+}
+
+#[no_mangle]
+pub extern "C" fn roc_fx_getInnerHtml(id: &RocStr) -> RocResult<RocStr, ()> {
+    match document().unwrap().get_element_by_id(id.as_str()) {
+        Some(elem) => {
+            let html = elem.inner_html();
+            RocResult::ok(html.as_str().into())
+        }
+        None => RocResult::err(()),
+    }
 }
