@@ -60,6 +60,7 @@ pub unsafe extern "C" fn roc_panic(msg: &RocStr, _tag_id: u32) {
     panic!("ROC CRASHED {}", msg.as_str().to_string())
 }
 
+/// Currently not used, roc doesn't include `dbg` in `roc build --no-link` but we would like it to
 #[no_mangle]
 pub unsafe extern "C" fn roc_dbg(loc: &RocStr, msg: &RocStr) {
     eprintln!("[{}] {}", loc, msg);
@@ -84,4 +85,10 @@ pub fn call_roc() -> String {
     let roc_str = unsafe { main_for_host(0) };
 
     roc_str.as_str().to_owned()
+}
+
+#[no_mangle]
+pub extern "C" fn roc_fx_log(msg: &RocStr) {
+    let msg: wasm_bindgen::JsValue = msg.as_str().into();
+    web_sys::console::log_1(&msg);
 }

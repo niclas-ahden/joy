@@ -15,7 +15,7 @@ console_error_panic_hook = "0.1.7"
 
 [dependencies.web-sys]
 version = "0.3.72"
-features = ['Document', 'Element', 'HtmlElement', 'Node', 'Window']
+features = ['Document', 'Element', 'HtmlElement', 'Node', 'Window', "console"]
 
 [build-dependencies]
 build-target = "0.4"

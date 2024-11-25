@@ -1,6 +1,8 @@
 platform ""
     requires {} { main! : {} => Str }
-    exposes []
+    exposes [
+        Console
+    ]
     packages {}
     imports []
     provides [mainForHost!]
