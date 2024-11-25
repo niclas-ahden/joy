@@ -12,7 +12,6 @@ use web_sys::Document;
 static WEE_ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 thread_local! {
-    // just use a random PercyDom for now, we'll replace it in init
     static PDOM: RefCell<Option<PercyDom>> = const { RefCell::new(None) };
 }
 

@@ -9,12 +9,14 @@
         <script type="module">
             import init, { app_init, app_update } from "/pkg/roc_dom.js";
 
-            // Initialize the WASM module
-            async function run() {
+            async function startup() {
+                // initialize the wasm module
                 await init();
 
+                // initialize the app
                 app_init();
 
+                // call app update each render
                 const renderLoop = () => {
                     app_update();
 
@@ -24,7 +26,7 @@
                 requestAnimationFrame(renderLoop);
             }
 
-            run().catch(console.error);
+            startup().catch(console.error);
         </script>
     </body>
 </html>
