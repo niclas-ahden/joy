@@ -1,13 +1,26 @@
 platform ""
     requires { Model } {
         init : {} -> Model,
+        render : Model -> Elem,
     }
-    exposes [Stdout]
+    exposes [Elem]
     packages {}
     imports []
-    provides [initForHost]
+    provides [initForHost, renderForHost]
 
-#import Effect
+import Elem exposing [Elem]
 
-initForHost : {} -> Model
-initForHost = \{} -> init {}
+initForHost : I32 -> Box Model
+initForHost = \_ -> Box.box (init {})
+
+Return : {
+    model : Box Model,
+    elem : Elem,
+}
+
+renderForHost : Box Model -> Return
+renderForHost = \boxedModel ->
+    {
+        model : boxedModel,
+        elem : render (Box.unbox boxedModel),
+    }

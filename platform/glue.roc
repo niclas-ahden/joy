@@ -10,5 +10,10 @@ Elem : [
     Div Elem,
 ]
 
-mainForHost : Elem
+Return : {
+    model : I64,
+    elem : Elem,
+}
+
+mainForHost : Return
 mainForHost = main {}

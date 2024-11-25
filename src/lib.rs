@@ -1,5 +1,5 @@
 use percy_dom::PercyDom;
-use roc_std::{RocResult, RocStr};
+use roc_std::{RocBox, RocResult, RocStr};
 use std::alloc::GlobalAlloc;
 use std::alloc::Layout;
 use std::cell::RefCell;
@@ -7,6 +7,9 @@ use std::collections::HashMap;
 use std::os::raw::c_void;
 use wasm_bindgen::prelude::*;
 use web_sys::Document;
+
+mod console;
+mod glue;
 
 #[global_allocator]
 static WEE_ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
@@ -36,7 +39,15 @@ fn set_pdom(new_pdom: PercyDom) {
 
 #[wasm_bindgen]
 pub fn app_update() {
-    console_log("INFO: UPDATE APP");
+    MODEL.with_borrow_mut(|maybe_model| {
+        if let Some(model) = maybe_model {
+            let roc_return = roc_render(model.to_owned());
+
+            console::log(format!("{}", roc_return.elem).as_str());
+
+            *maybe_model = Some(roc_return.model);
+        }
+    });
 
     let now = web_sys::js_sys::Date::now();
 
@@ -62,7 +73,7 @@ pub fn app_update() {
 pub fn app_init() {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
 
-    console_log("INFO: STARTING APP");
+    console::log("INFO: STARTING APP");
 
     MODEL.with_borrow_mut(|maybe_model| {
         *maybe_model = Some(roc_init());
@@ -152,26 +163,31 @@ pub unsafe extern "C" fn roc_memset(dst: *mut c_void, c: i32, n: usize) -> *mut 
     dst
 }
 
-type Model = *mut c_void;
+type Model = RocBox<()>;
 
 pub fn roc_init() -> Model {
     #[link(name = "app")]
     extern "C" {
         #[link_name = "roc__initForHost_1_exposed"]
-        fn init_for_host(arg_not_used: i32) -> *mut c_void;
+        fn init_for_host(arg_not_used: i32) -> Model;
     }
 
     unsafe { init_for_host(0) }
 }
 
-fn console_log(msg: &str) {
-    let msg: wasm_bindgen::JsValue = msg.into();
-    web_sys::console::log_1(&msg);
+pub fn roc_render(model: Model) -> glue::Return {
+    #[link(name = "app")]
+    extern "C" {
+        #[link_name = "roc__renderForHost_1_exposed"]
+        fn render_for_host(model: Model) -> glue::Return;
+    }
+
+    unsafe { render_for_host(model) }
 }
 
 #[no_mangle]
 pub extern "C" fn roc_fx_log(msg: &RocStr) {
-    console_log(msg.as_str());
+    console::log(msg.as_str());
 }
 
 #[no_mangle]
