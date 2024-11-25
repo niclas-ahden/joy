@@ -13,6 +13,7 @@ static WEE_ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 thread_local! {
     static PDOM: RefCell<Option<PercyDom>> = const { RefCell::new(None) };
+    static MODEL: RefCell<Option<Model>> = const { RefCell::new(None) };
 }
 
 fn document() -> Option<Document> {
@@ -62,6 +63,10 @@ pub fn app_init() {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
 
     console_log("INFO: STARTING APP");
+
+    MODEL.with_borrow_mut(|maybe_model| {
+        *maybe_model = Some(roc_init());
+    });
 
     let initial_dom = percy_dom::VirtualNode::Element(percy_dom::VElement {
         tag: "div".to_string(),
@@ -147,18 +152,16 @@ pub unsafe extern "C" fn roc_memset(dst: *mut c_void, c: i32, n: usize) -> *mut 
     dst
 }
 
-pub fn call_roc() {
+type Model = *mut c_void;
+
+pub fn roc_init() -> Model {
     #[link(name = "app")]
     extern "C" {
-        #[link_name = "roc__mainForHost_1_exposed"]
-        fn main_for_host(arg_not_used: i32) -> i32;
+        #[link_name = "roc__initForHost_1_exposed"]
+        fn init_for_host(arg_not_used: i32) -> *mut c_void;
     }
 
-    let exit_code = unsafe { main_for_host(0) };
-
-    if exit_code != 0 {
-        eprintln!("roc exited with code {}", exit_code);
-    }
+    unsafe { init_for_host(0) }
 }
 
 fn console_log(msg: &str) {

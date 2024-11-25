@@ -1,10 +1,6 @@
-app [main!] { web: platform "../platform/main.roc" }
+app [Model, init] { web: platform "../platform/main.roc" }
 
-import web.Console
+Model : I64
 
-main! : {} => Result {} []
-main! = \{} ->
-
-    Console.log! "Logging from Roc"
-
-    Ok {}
+init : {} -> Model
+init = \{} -> 42
