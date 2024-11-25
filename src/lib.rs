@@ -1,58 +1,88 @@
 use percy_dom::PercyDom;
-use percy_dom::VirtualNode;
 use roc_std::{RocResult, RocStr};
 use std::alloc::GlobalAlloc;
 use std::alloc::Layout;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::os::raw::c_void;
 use wasm_bindgen::prelude::*;
 use web_sys::Document;
-use wee_alloc;
 
 #[global_allocator]
 static WEE_ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+
+thread_local! {
+    // just use a random PercyDom for now, we'll replace it in init
+    static PDOM: RefCell<Option<PercyDom>> = const { RefCell::new(None) };
+}
 
 fn document() -> Option<Document> {
     web_sys::window().expect("should have a window").document()
 }
 
 fn with_pdom(f: impl FnOnce(&mut PercyDom)) {
-    thread_local! {
-        // just use a random PercyDom for now, we'll replace it in init
-        static APP: RefCell<PercyDom> = RefCell::new(PercyDom::new(VirtualNode::text("")));
-    }
+    PDOM.with_borrow_mut(|pdom| {
+        if let Some(dom) = pdom {
+            f(dom);
+        }
+    });
+}
 
-    APP.with_borrow_mut(|pdom| f(pdom));
+fn set_pdom(new_pdom: PercyDom) {
+    PDOM.with_borrow_mut(|pdom| {
+        *pdom = Some(new_pdom);
+    });
 }
 
 #[wasm_bindgen]
-pub fn update() {
+pub fn app_update() {
+    console_log("INFO: UPDATE APP");
+
     let now = web_sys::js_sys::Date::now();
 
     let now_str = format!("{} ms since epoch", now);
 
+    let child = percy_dom::VirtualNode::text(now_str.as_str());
+    let children = vec![child];
+
+    let vdom = percy_dom::VirtualNode::Element(percy_dom::VElement {
+        tag: "div".to_string(),
+        attrs: HashMap::default(),
+        events: percy_dom::event::Events::new(),
+        children,
+        special_attributes: percy_dom::SpecialAttributes::default(),
+    });
+
     with_pdom(|pdom| {
-        pdom.update(percy_dom::VirtualNode::text(now_str.as_str()));
+        pdom.update(vdom);
     });
 }
 
-#[wasm_bindgen(start)]
-fn run() -> Result<(), JsValue> {
+#[wasm_bindgen]
+pub fn app_init() {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
 
     console_log("INFO: STARTING APP");
 
-    let text = percy_dom::VirtualNode::text("Loading...");
+    let initial_dom = percy_dom::VirtualNode::Element(percy_dom::VElement {
+        tag: "div".to_string(),
+        attrs: HashMap::default(),
+        events: percy_dom::event::Events::new(),
+        children: vec![percy_dom::VirtualNode::text("Loading...")],
+        special_attributes: percy_dom::SpecialAttributes::default(),
+    });
 
     let app_node = document().unwrap().get_element_by_id("app").unwrap();
 
-    with_pdom(|pdom| {
-        *pdom = percy_dom::PercyDom::new_replace_mount(text, app_node);
-    });
-
-    Ok(())
+    set_pdom(percy_dom::PercyDom::new_replace_mount(
+        initial_dom,
+        app_node,
+    ));
 }
 
+/// # Safety
+///
+/// This function is unsafe.
 #[no_mangle]
 pub unsafe extern "C" fn roc_alloc(size: usize, _alignment: u32) -> *mut c_void {
     let layout = Layout::from_size_align(size, 8)
@@ -61,6 +91,9 @@ pub unsafe extern "C" fn roc_alloc(size: usize, _alignment: u32) -> *mut c_void 
     WEE_ALLOC.alloc(layout) as *mut c_void
 }
 
+/// # Safety
+///
+/// This function is unsafe.
 #[no_mangle]
 pub unsafe extern "C" fn roc_dealloc(c_ptr: *mut u8, _alignment: u32) {
     let layout =
@@ -69,6 +102,9 @@ pub unsafe extern "C" fn roc_dealloc(c_ptr: *mut u8, _alignment: u32) {
     WEE_ALLOC.dealloc(c_ptr, layout);
 }
 
+/// # Safety
+///
+/// This function is unsafe.
 #[no_mangle]
 pub unsafe extern "C" fn roc_realloc(
     c_ptr: *mut u8,
@@ -82,17 +118,27 @@ pub unsafe extern "C" fn roc_realloc(
     WEE_ALLOC.realloc(c_ptr, layout, new_size)
 }
 
+/// # Safety
+///
+/// This function is unsafe.
 #[no_mangle]
 pub unsafe extern "C" fn roc_panic(msg: &RocStr, _tag_id: u32) {
-    panic!("ROC CRASHED {}", msg.as_str().to_string())
+    panic!("ROC CRASHED {}", msg.as_str())
 }
 
 /// Currently not used, roc doesn't include `dbg` in `roc build --no-link` but we would like it to
+///
+/// # Safety
+///
+/// This function is unsafe.
 #[no_mangle]
 pub unsafe extern "C" fn roc_dbg(loc: &RocStr, msg: &RocStr) {
     eprintln!("[{}] {}", loc, msg);
 }
 
+/// # Safety
+///
+/// This function is unsafe.
 #[no_mangle]
 pub unsafe extern "C" fn roc_memset(dst: *mut c_void, c: i32, n: usize) -> *mut c_void {
     let slice = std::slice::from_raw_parts_mut(dst as *mut u8, n);
