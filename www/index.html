@@ -7,11 +7,19 @@
         <script type="module">
             import init from "/pkg/roc_dom.js";
 
-            async function run() {
-                await init();
+            async function startup() {
+                let app = await init();
+
+                const renderLoop = () => {
+                    app.update();
+
+                    requestAnimationFrame(renderLoop);
+                };
+
+                requestAnimationFrame(renderLoop);
             }
 
-            run();
+            startup();
         </script>
     </body>
 </html>

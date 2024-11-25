@@ -1,6 +1,9 @@
+use percy_dom::PercyDom;
+use percy_dom::VirtualNode;
 use roc_std::{RocResult, RocStr};
 use std::alloc::GlobalAlloc;
 use std::alloc::Layout;
+use std::cell::RefCell;
 use std::os::raw::c_void;
 use wasm_bindgen::prelude::*;
 use web_sys::Document;
@@ -13,19 +16,39 @@ fn document() -> Option<Document> {
     web_sys::window().expect("should have a window").document()
 }
 
+fn with_pdom(f: impl FnOnce(&mut PercyDom)) {
+    thread_local! {
+        // just use a random PercyDom for now, we'll replace it in init
+        static APP: RefCell<PercyDom> = RefCell::new(PercyDom::new(VirtualNode::text("")));
+    }
+
+    APP.with_borrow_mut(|pdom| f(pdom));
+}
+
+#[wasm_bindgen]
+pub fn update() {
+    let now = web_sys::js_sys::Date::now();
+
+    let now_str = format!("{} ms since epoch", now);
+
+    with_pdom(|pdom| {
+        pdom.update(percy_dom::VirtualNode::text(now_str.as_str()));
+    });
+}
+
 #[wasm_bindgen(start)]
 fn run() -> Result<(), JsValue> {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
 
-    let text = percy_dom::VirtualNode::text("my text node");
+    console_log("INFO: STARTING APP");
+
+    let text = percy_dom::VirtualNode::text("Loading...");
 
     let app_node = document().unwrap().get_element_by_id("app").unwrap();
 
-    let mut pdom = percy_dom::PercyDom::new_replace_mount(text, app_node);
-
-    pdom.update(percy_dom::VirtualNode::text("new text"));
-
-    call_roc();
+    with_pdom(|pdom| {
+        *pdom = percy_dom::PercyDom::new_replace_mount(text, app_node);
+    });
 
     Ok(())
 }
@@ -93,10 +116,14 @@ pub fn call_roc() {
     }
 }
 
+fn console_log(msg: &str) {
+    let msg: wasm_bindgen::JsValue = msg.into();
+    web_sys::console::log_1(&msg);
+}
+
 #[no_mangle]
 pub extern "C" fn roc_fx_log(msg: &RocStr) {
-    let msg: wasm_bindgen::JsValue = msg.as_str().into();
-    web_sys::console::log_1(&msg);
+    console_log(msg.as_str());
 }
 
 #[no_mangle]
