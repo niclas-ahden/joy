@@ -1,41 +1,21 @@
-module [Html, translateHtml]
-
-import Action exposing [Action]
-
-Event state : {
-    name: Str,
-    handler: state -> Action state,
-}
-
-Html state : [
-    Text Str,
-    Element {
-        tag : Str,
-        attrs : List (Str, Str),
-        events : List (Event state),
-    } (List (Html state)),
+module [
+    Html,
+    Event,
+    translate,
+    text,
+    div,
 ]
 
-translateEvent : Event child, (parent -> child), (parent, child -> parent) -> Event parent
-translateEvent = \{name, handler}, parentToChild, childToParent ->
-    {
-        name,
-        handler: \prevParent ->
-            Action.map
-                (handler (parentToChild prevParent))
-                \child -> childToParent prevParent child
-    }
+import InnerHtml
 
-translateHtml : Html child, (parent -> child), (parent, child -> parent) -> Html parent
-translateHtml = \elem, parentToChild, childToParent ->
-    when elem is
-        Text text -> Text text
-        Element {tag, attrs, events} children ->
+Html state : InnerHtml.HtmlForApp state
+Event state : InnerHtml.EventForApp state
 
-            Element
-                {
-                    tag,
-                    attrs,
-                    events: List.map events \e -> translateEvent e parentToChild childToParent,
-                }
-                (List.map children \c -> translateHtml c parentToChild childToParent)
+translate = InnerHtml.translateHtmlForApp
+
+text : Str -> Html state
+text = \str -> Text str
+
+div : List (Str, Str), List (Event state), List (Html state) -> Html state
+div = \attrs, events, children ->
+    Element {tag: "div", attrs, events} children
