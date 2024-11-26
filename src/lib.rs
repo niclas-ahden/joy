@@ -1,5 +1,5 @@
-use roc_std::RocRefcounted;
-use roc_std::{RocBox, RocStr};
+use model::Model;
+use roc_std::{RocList, RocRefcounted, RocStr};
 use std::alloc::GlobalAlloc;
 use std::alloc::Layout;
 use std::os::raw::c_void;
@@ -8,8 +8,8 @@ use web_sys::Document;
 
 mod console;
 mod glue;
+mod model;
 mod pdom;
-mod platform_state;
 
 #[global_allocator]
 static WEE_ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
@@ -43,14 +43,14 @@ pub fn app_init() {
 
     console::log("INFO: STARTING APP");
 
-    let initial_vnode = platform_state::with(|maybe_state| {
-        let platform_state = roc_init();
+    let initial_vnode = model::with(|maybe_model| {
+        let mut boxed_model = roc_init();
 
-        let platform_state = roc_render(platform_state.boxed_model);
+        let roc_html = roc_render(&mut boxed_model);
 
-        let initial_vnode = roc_html_to_percy(&platform_state.html_with_handler_ids);
+        let initial_vnode = roc_html_to_percy(&roc_html);
 
-        *maybe_state = Some(platform_state);
+        *maybe_model = Some(boxed_model);
 
         initial_vnode
     });
@@ -131,35 +131,46 @@ pub unsafe extern "C" fn roc_memset(dst: *mut c_void, c: i32, n: usize) -> *mut 
     dst
 }
 
-pub fn roc_init() -> glue::PlatformState {
+pub fn roc_init() -> Model {
     #[link(name = "app")]
     extern "C" {
-        // initForHost : I32 -> PlatformState Model
+        // initForHost : I32 -> Model
         #[link_name = "roc__initForHost_1_exposed"]
-        fn caller(arg_not_used: i32) -> glue::PlatformState;
+        fn caller(arg_not_used: i32) -> Model;
     }
+
+    console::log("CALLING ROC INIT");
 
     unsafe { caller(0) }
 }
 
-pub fn roc_update(state: &mut glue::PlatformState, event_id: u64) -> glue::Action {
+pub fn roc_update(state: &mut Model, raw_event: RocList<u8>) -> glue::Action {
     #[link(name = "app")]
     extern "C" {
-        // updateForHost : PlatformState Model, U64 -> Action.Action (Box Model)
+        // updateForHost : Box Model, List U8 -> Action.Action (Box Model)
         #[link_name = "roc__updateForHost_1_exposed"]
-        fn caller(state: &mut glue::PlatformState, event_id: u64) -> glue::Action;
+        fn caller(state: &mut Model, raw_event: RocList<u8>) -> glue::Action;
     }
 
-    unsafe { caller(state, event_id) }
+    console::log("CALLING ROC_UPDATE");
+
+    unsafe { caller(state, raw_event) }
 }
 
-pub fn roc_render(model: RocBox<()>) -> glue::PlatformState {
+pub fn roc_render(model: &mut Model) -> glue::Html {
     #[link(name = "app")]
     extern "C" {
-        // renderForHost : Box Model -> PlatformState Model
+        // renderForHost : Box Model -> Html.Html Model
         #[link_name = "roc__renderForHost_1_exposed"]
-        fn caller(model: RocBox<()>) -> glue::PlatformState;
+        fn caller(model: &mut Model) -> glue::Html;
     }
+
+    console::log("INCREMENT MODEL REF COUNT");
+
+    // increment refcount so roc doesn't deallocate
+    model.inc();
+
+    console::log("CALLING ROC RENDER");
 
     unsafe { caller(model) }
 }
@@ -169,11 +180,11 @@ pub extern "C" fn roc_fx_log(msg: &RocStr) {
     console::log(msg.as_str());
 }
 
-fn roc_html_to_percy(value: &glue::HtmlForHost) -> percy_dom::VirtualNode {
+fn roc_html_to_percy(value: &glue::Html) -> percy_dom::VirtualNode {
     match value.discriminant() {
-        glue::DiscriminantHtmlForHost::None => percy_dom::VirtualNode::text(""),
-        glue::DiscriminantHtmlForHost::Text => value.as_percy_text_node(),
-        glue::DiscriminantHtmlForHost::Element => unsafe {
+        glue::DiscriminantHtml::None => percy_dom::VirtualNode::text(""),
+        glue::DiscriminantHtml::Text => value.as_percy_text_node(),
+        glue::DiscriminantHtml::Element => unsafe {
             let children: Vec<percy_dom::VirtualNode> = value
                 .ptr_read_union()
                 .element
@@ -192,38 +203,34 @@ fn roc_html_to_percy(value: &glue::HtmlForHost) -> percy_dom::VirtualNode {
 
             let mut events = percy_dom::event::Events::new();
 
-            use std::cell::RefCell;
-            use std::rc::Rc;
+            let callback = |raw_event: RocList<u8>| {
+                let event_data = raw_event.clone(); // Clone the event data before moving into closure
+                std::rc::Rc::new(std::cell::RefCell::new(
+                    move |event: percy_dom::event::MouseEvent| {
+                        console::log(
+                            format!("Mouse event received! {}", event.to_string()).as_str(),
+                        );
 
-            let callback = |event_id: u64| {
-                Rc::new(RefCell::new(move |event: percy_dom::event::MouseEvent| {
-                    console::log(format!("Mouse event received! {}", event.to_string()).as_str());
-
-                    platform_state::with(|maybe_state| {
-                        if let Some(state) = maybe_state {
-                            // important -- increment refcount so roc doesn't deallocate
-                            state.inc();
-
-                            console::log("CALLING ROC_UPDATE");
-
-                            match roc_update(state, event_id).discriminant() {
-                                glue::DiscriminantAction::None => {}
-                                glue::DiscriminantAction::Update => {}
-                            }
-
-                            todo!()
-
-                            // FINISH THIS IMPLEMENTATION
-
-                            // let new_model = roc_render(action.model);
-                            // *maybe_state = Some(new_model);
-                        }
-                    })
-                }))
+                        // model::with(|maybe_state| {
+                        //     if let Some(state) = maybe_state {
+                        //         let mut action = roc_update(state, event_data.clone());
+                        //         match action.discriminant() {
+                        //             glue::DiscriminantAction::None => {}
+                        //             glue::DiscriminantAction::Update => {
+                        //                 model::with(|maybe_model| {
+                        //                     *maybe_model =
+                        //                         Some(action.get_model_for_update_variant());
+                        //                 })
+                        //             }
+                        //         }
+                        //     }
+                        // })
+                    },
+                ))
             };
 
             for event in value.ptr_read_union().element.data.events.into_iter() {
-                let event_callback = callback(*event);
+                let event_callback = callback(event.handler.clone());
                 events.insert_mouse_event("onclick".into(), event_callback);
             }
 

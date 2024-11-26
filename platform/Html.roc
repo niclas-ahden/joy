@@ -1,21 +1,39 @@
 module [
     Html,
-    Event,
     translate,
     text,
     div,
 ]
 
-import InnerHtml
+Html state : [
+    None,
+    Text Str,
+    Element
+        {
+            tag : Str,
+            attrs : List (Str, Str),
+            events : List { name : Str, handler : List U8 },
+        }
+        (List (Html state)),
+]
 
-Html state : InnerHtml.HtmlForApp state
-Event state : InnerHtml.EventForApp state
+translate : Html child, (parent -> child), (parent, child -> parent) -> Html parent
+translate = \elem, parentToChild, childToParent ->
+    when elem is
+        None ->
+            None
 
-translate = InnerHtml.translateHtmlForApp
+        Text str ->
+            Text str
+
+        Element { tag, attrs, events } children ->
+            Element
+                { tag, attrs, events }
+                (List.map children \c -> translate c parentToChild childToParent)
 
 text : Str -> Html state
 text = \str -> Text str
 
-div : List (Str, Str), List (Event state), List (Html state) -> Html state
+div : List (Str, Str), List { name : Str, handler : List U8 }, List (Html state) -> Html state
 div = \attrs, events, children ->
     Element { tag: "div", attrs, events } children

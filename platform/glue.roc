@@ -9,16 +9,16 @@ platform ""
 # for limitations in the current RustGlue.roc implementation
 # the generated `*.rs` glue code is still helpful to copy and past and then fixup manually
 
-HtmlForHost : [
+Html : [
     None,
     Text Str,
     Element
         {
             tag : Str,
-            attrs : List { key : Str, val : Str },
-            events : List U64,
+            attrs : List U64,
+            events : List { name : Str, handler : List U8 },
         }
-        (List HtmlForHost),
+        (List Html),
 ]
 
 #Action : [
@@ -32,5 +32,5 @@ HtmlForHost : [
 #    htmlHandlerIds : HtmlForHost,
 #}
 
-mainForHost : HtmlForHost
+mainForHost : Html
 mainForHost = main {}

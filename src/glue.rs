@@ -1,211 +1,6 @@
 use roc_std::{roc_refcounted_noop_impl, RocBox, RocList, RocRefcounted, RocStr};
 use std::collections::HashMap;
 
-use crate::console;
-
-#[repr(C)]
-pub struct Return {
-    pub elem: Elem,
-    pub model: RocBox<()>,
-}
-
-impl RocRefcounted for Return {
-    fn inc(&mut self) {
-        self.elem.inc();
-        self.model.inc();
-    }
-    fn dec(&mut self) {
-        self.elem.dec();
-        self.model.dec();
-    }
-    fn is_refcounted() -> bool {
-        true
-    }
-}
-
-#[repr(transparent)]
-pub struct ElemDiv {
-    pub data: Elem,
-}
-
-impl RocRefcounted for ElemDiv {
-    fn inc(&mut self) {
-        self.data.inc();
-    }
-    fn dec(&mut self) {
-        self.data.dec();
-    }
-    fn is_refcounted() -> bool {
-        true
-    }
-}
-
-#[derive(Clone, Default, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[repr(transparent)]
-pub struct ElemText {
-    pub str: RocStr,
-}
-
-impl RocRefcounted for ElemText {
-    fn inc(&mut self) {
-        self.str.inc();
-    }
-    fn dec(&mut self) {
-        self.str.dec();
-    }
-    fn is_refcounted() -> bool {
-        true
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[repr(u8)]
-pub enum DiscriminantElem {
-    Div = 0,
-    Text = 1,
-}
-
-roc_refcounted_noop_impl!(DiscriminantElem);
-
-#[repr(transparent)]
-pub struct Elem(*mut UnionElem);
-
-impl Elem {
-    pub fn discriminant(&self) -> DiscriminantElem {
-        let discriminants = {
-            use DiscriminantElem::*;
-
-            [Div, Text]
-        };
-
-        if self.0.is_null() {
-            unreachable!("this pointer cannot be NULL")
-        } else {
-            match std::mem::size_of::<usize>() {
-                4 => discriminants[self.0 as usize & 0b011],
-                8 => discriminants[self.0 as usize & 0b111],
-                _ => unreachable!(),
-            }
-        }
-    }
-
-    fn unmasked_pointer(&self) -> *mut UnionElem {
-        debug_assert!(!self.0.is_null());
-
-        let mask = match std::mem::size_of::<usize>() {
-            4 => !0b011usize,
-            8 => !0b111usize,
-            _ => unreachable!(),
-        };
-
-        ((self.0 as usize) & mask) as *mut UnionElem
-    }
-
-    unsafe fn ptr_read_union(&self) -> core::mem::ManuallyDrop<UnionElem> {
-        let ptr = self.unmasked_pointer();
-
-        core::mem::ManuallyDrop::new(unsafe { std::ptr::read(ptr) })
-    }
-}
-
-#[repr(C)]
-union UnionElem {
-    div: core::mem::ManuallyDrop<ElemDiv>,
-    text: core::mem::ManuallyDrop<ElemText>,
-}
-
-impl RocRefcounted for Elem {
-    fn inc(&mut self) {
-        unsafe {
-            match self.discriminant() {
-                DiscriminantElem::Div => {
-                    let mut union = self.ptr_read_union();
-                    (*union.div).inc();
-                }
-                DiscriminantElem::Text => {
-                    let mut union = self.ptr_read_union();
-                    (*union.text).inc();
-                }
-            }
-        }
-    }
-    fn dec(&mut self) {
-        unsafe {
-            match self.discriminant() {
-                DiscriminantElem::Div => {
-                    let mut union = self.ptr_read_union();
-                    (*union.div).dec();
-                }
-                DiscriminantElem::Text => {
-                    let mut union = self.ptr_read_union();
-                    (*union.text).dec();
-                }
-            }
-        }
-    }
-    fn is_refcounted() -> bool {
-        true
-    }
-}
-
-impl std::fmt::Display for Elem {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        unsafe {
-            match self.discriminant() {
-                DiscriminantElem::Div => {
-                    write!(f, "Div ")?;
-
-                    // write content of Div
-                    let union = self.ptr_read_union();
-                    write!(f, "{}", (*union.div).data)
-                }
-                DiscriminantElem::Text => {
-                    let union = self.ptr_read_union();
-                    write!(f, "{}", (*union.text).str.as_str())
-                }
-            }
-        }
-    }
-}
-
-impl From<&Elem> for percy_dom::VirtualNode {
-    fn from(value: &Elem) -> percy_dom::VirtualNode {
-        unsafe {
-            match value.discriminant() {
-                DiscriminantElem::Div => {
-                    let children = vec![percy_dom::VirtualNode::from(
-                        &(*value.ptr_read_union().div).data,
-                    )];
-
-                    let mut events = percy_dom::event::Events::new();
-
-                    use std::cell::RefCell;
-                    use std::rc::Rc;
-
-                    let callback = Rc::new(RefCell::new(|event: percy_dom::event::MouseEvent| {
-                        console::log(
-                            format!("Mouse event received! {}", event.to_string()).as_str(),
-                        );
-                    }));
-
-                    events.insert_mouse_event("onclick".into(), callback);
-
-                    percy_dom::VirtualNode::Element(percy_dom::VElement {
-                        tag: "div".to_string(),
-                        attrs: HashMap::default(),
-                        events,
-                        children,
-                        special_attributes: percy_dom::SpecialAttributes::default(),
-                    })
-                }
-                DiscriminantElem::Text => percy_dom::VirtualNode::Text(percy_dom::VText {
-                    text: (*value.ptr_read_union().text).str.as_str().to_string(),
-                }),
-            }
-        }
-    }
-}
-
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[repr(u8)]
 pub enum DiscriminantAction {
@@ -218,7 +13,7 @@ roc_refcounted_noop_impl!(DiscriminantAction);
 #[repr(C, align(8))]
 pub union UnionAction {
     none: (),
-    update: core::mem::ManuallyDrop<RocList<u8>>,
+    update: core::mem::ManuallyDrop<RocBox<()>>,
 }
 
 #[repr(C)]
@@ -234,6 +29,15 @@ impl Action {
             let bytes = core::mem::transmute::<&Self, &[u8; core::mem::size_of::<Self>()]>(self);
 
             core::mem::transmute::<u8, DiscriminantAction>(*bytes.as_ptr().add(24))
+        }
+    }
+
+    pub fn get_model_for_update_variant(&mut self) -> RocBox<()> {
+        match self.discriminant() {
+            DiscriminantAction::None => panic!("no model for this Action type"),
+            DiscriminantAction::Update => unsafe {
+                core::mem::ManuallyDrop::take(&mut self.payload.update)
+            },
         }
     }
 }
@@ -316,9 +120,30 @@ impl RocRefcounted for ElementAttrs {
 
 #[derive(Clone, Default, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[repr(C)]
+pub struct EventData {
+    pub handler: RocList<u8>,
+    pub name: RocStr,
+}
+
+impl RocRefcounted for EventData {
+    fn inc(&mut self) {
+        self.name.inc();
+        self.handler.inc();
+    }
+    fn dec(&mut self) {
+        self.name.dec();
+        self.handler.dec();
+    }
+    fn is_refcounted() -> bool {
+        true
+    }
+}
+
+#[derive(Clone, Default, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[repr(C)]
 pub struct ElementData {
     pub attrs: RocList<ElementAttrs>,
-    pub events: RocList<u64>,
+    pub events: RocList<EventData>,
     pub tag: RocStr,
 }
 
@@ -340,12 +165,12 @@ impl RocRefcounted for ElementData {
 
 #[derive(Clone)]
 #[repr(C)]
-pub struct HtmlForHostElement {
+pub struct HtmlElement {
     pub data: ElementData,
-    pub children: RocList<HtmlForHost>,
+    pub children: RocList<Html>,
 }
 
-impl RocRefcounted for HtmlForHostElement {
+impl RocRefcounted for HtmlElement {
     fn inc(&mut self) {
         self.data.inc();
         self.children.inc();
@@ -361,11 +186,11 @@ impl RocRefcounted for HtmlForHostElement {
 
 #[derive(Clone, Default, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[repr(transparent)]
-pub struct HtmlForHostText {
+pub struct HtmlText {
     pub str: RocStr,
 }
 
-impl RocRefcounted for HtmlForHostText {
+impl RocRefcounted for HtmlText {
     fn inc(&mut self) {
         self.str.inc();
     }
@@ -379,21 +204,21 @@ impl RocRefcounted for HtmlForHostText {
 
 #[derive(Clone, Copy)]
 #[repr(u8)]
-pub enum DiscriminantHtmlForHost {
+pub enum DiscriminantHtml {
     Element = 0,
     None = 1,
     Text = 2,
 }
 
-roc_refcounted_noop_impl!(DiscriminantHtmlForHost);
+roc_refcounted_noop_impl!(DiscriminantHtml);
 
 #[repr(transparent)]
-pub struct HtmlForHost(*mut UnionHtmlForHost);
+pub struct Html(*mut UnionHtml);
 
-impl HtmlForHost {
-    pub fn discriminant(&self) -> DiscriminantHtmlForHost {
+impl Html {
+    pub fn discriminant(&self) -> DiscriminantHtml {
         let discriminants = {
-            use DiscriminantHtmlForHost::*;
+            use DiscriminantHtml::*;
 
             [Element, None, Text]
         };
@@ -409,7 +234,7 @@ impl HtmlForHost {
         }
     }
 
-    fn unmasked_pointer(&self) -> *mut UnionHtmlForHost {
+    fn unmasked_pointer(&self) -> *mut UnionHtml {
         debug_assert!(!self.0.is_null());
 
         let mask = match std::mem::size_of::<usize>() {
@@ -418,10 +243,10 @@ impl HtmlForHost {
             _ => unreachable!(),
         };
 
-        ((self.0 as usize) & mask) as *mut UnionHtmlForHost
+        ((self.0 as usize) & mask) as *mut UnionHtml
     }
 
-    pub fn ptr_read_union(&self) -> core::mem::ManuallyDrop<UnionHtmlForHost> {
+    pub fn ptr_read_union(&self) -> core::mem::ManuallyDrop<UnionHtml> {
         let ptr = self.unmasked_pointer();
 
         core::mem::ManuallyDrop::new(unsafe { std::ptr::read(ptr) })
@@ -433,59 +258,36 @@ impl HtmlForHost {
 }
 
 #[repr(C)]
-pub union UnionHtmlForHost {
-    pub element: core::mem::ManuallyDrop<HtmlForHostElement>,
+pub union UnionHtml {
+    pub element: core::mem::ManuallyDrop<HtmlElement>,
     pub none: (),
-    pub text: core::mem::ManuallyDrop<HtmlForHostText>,
+    pub text: core::mem::ManuallyDrop<HtmlText>,
 }
 
-impl RocRefcounted for HtmlForHost {
+impl RocRefcounted for Html {
     fn inc(&mut self) {
         match self.discriminant() {
-            DiscriminantHtmlForHost::Element => unsafe {
+            DiscriminantHtml::Element => unsafe {
                 self.ptr_read_union().element.children.inc();
                 self.ptr_read_union().element.data.inc();
             },
-            DiscriminantHtmlForHost::Text => unsafe {
+            DiscriminantHtml::Text => unsafe {
                 self.ptr_read_union().text.str.inc();
             },
-            DiscriminantHtmlForHost::None => {}
+            DiscriminantHtml::None => {}
         }
     }
     fn dec(&mut self) {
         match self.discriminant() {
-            DiscriminantHtmlForHost::Element => unsafe {
+            DiscriminantHtml::Element => unsafe {
                 self.ptr_read_union().element.children.dec();
                 self.ptr_read_union().element.data.dec();
             },
-            DiscriminantHtmlForHost::Text => unsafe {
+            DiscriminantHtml::Text => unsafe {
                 self.ptr_read_union().text.str.dec();
             },
-            DiscriminantHtmlForHost::None => {}
+            DiscriminantHtml::None => {}
         }
-    }
-    fn is_refcounted() -> bool {
-        true
-    }
-}
-
-#[repr(C)]
-pub struct PlatformState {
-    pub boxed_model: RocBox<()>,
-    pub handlers: RocList<()>,
-    pub html_with_handler_ids: HtmlForHost,
-}
-
-impl RocRefcounted for PlatformState {
-    fn inc(&mut self) {
-        self.boxed_model.inc();
-        self.handlers.inc();
-        self.html_with_handler_ids.inc();
-    }
-    fn dec(&mut self) {
-        self.boxed_model.dec();
-        self.handlers.dec();
-        self.html_with_handler_ids.dec();
     }
     fn is_refcounted() -> bool {
         true

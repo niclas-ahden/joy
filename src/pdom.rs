@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use percy_dom::PercyDom;
 use std::cell::RefCell;
 
