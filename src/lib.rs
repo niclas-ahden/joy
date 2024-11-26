@@ -3,7 +3,6 @@ use roc_std::{RocBox, RocResult, RocStr};
 use std::alloc::GlobalAlloc;
 use std::alloc::Layout;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::os::raw::c_void;
 use wasm_bindgen::prelude::*;
 use web_sys::Document;
@@ -39,33 +38,20 @@ fn set_pdom(new_pdom: PercyDom) {
 
 #[wasm_bindgen]
 pub fn app_update() {
-    MODEL.with_borrow_mut(|maybe_model| {
+    let new_vnode: percy_dom::VirtualNode = MODEL.with_borrow_mut(|maybe_model| {
         if let Some(model) = maybe_model {
             let roc_return = roc_render(model.to_owned());
 
-            console::log(format!("{}", roc_return.elem).as_str());
-
             *maybe_model = Some(roc_return.model);
+
+            (&roc_return.elem).into()
+        } else {
+            percy_dom::VirtualNode::text("Loading...")
         }
     });
 
-    let now = web_sys::js_sys::Date::now();
-
-    let now_str = format!("{} ms since epoch", now);
-
-    let child = percy_dom::VirtualNode::text(now_str.as_str());
-    let children = vec![child];
-
-    let vdom = percy_dom::VirtualNode::Element(percy_dom::VElement {
-        tag: "div".to_string(),
-        attrs: HashMap::default(),
-        events: percy_dom::event::Events::new(),
-        children,
-        special_attributes: percy_dom::SpecialAttributes::default(),
-    });
-
     with_pdom(|pdom| {
-        pdom.update(vdom);
+        pdom.update(new_vnode);
     });
 }
 
@@ -75,22 +61,18 @@ pub fn app_init() {
 
     console::log("INFO: STARTING APP");
 
-    MODEL.with_borrow_mut(|maybe_model| {
-        *maybe_model = Some(roc_init());
-    });
+    let initial_vnode = MODEL.with_borrow_mut(|maybe_model| {
+        let roc_return = roc_render(roc_init());
 
-    let initial_dom = percy_dom::VirtualNode::Element(percy_dom::VElement {
-        tag: "div".to_string(),
-        attrs: HashMap::default(),
-        events: percy_dom::event::Events::new(),
-        children: vec![percy_dom::VirtualNode::text("Loading...")],
-        special_attributes: percy_dom::SpecialAttributes::default(),
+        *maybe_model = Some(roc_return.model);
+
+        (&roc_return.elem).into()
     });
 
     let app_node = document().unwrap().get_element_by_id("app").unwrap();
 
     set_pdom(percy_dom::PercyDom::new_replace_mount(
-        initial_dom,
+        initial_vnode,
         app_node,
     ));
 }

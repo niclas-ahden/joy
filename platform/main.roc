@@ -3,7 +3,7 @@ platform ""
         init : {} -> Model,
         render : Model -> Elem,
     }
-    exposes [Elem]
+    exposes [Elem, Action]
     packages {}
     imports []
     provides [initForHost, renderForHost]

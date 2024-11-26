@@ -9,4 +9,4 @@ init = \{} -> 42
 
 render : Model -> Elem
 render = \_ ->
-    Div (Text "Hello World")
+    Div (Text "Hello from Roc")

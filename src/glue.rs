@@ -1,4 +1,5 @@
 use roc_std::{roc_refcounted_noop_impl, RocBox, RocRefcounted};
+use std::collections::HashMap;
 
 #[repr(C)]
 pub struct Return {
@@ -160,6 +161,31 @@ impl std::fmt::Display for Elem {
                     let union = self.ptr_read_union();
                     write!(f, "{}", (*union.text).str.as_str())
                 }
+            }
+        }
+    }
+}
+
+impl From<&Elem> for percy_dom::VirtualNode {
+    fn from(value: &Elem) -> percy_dom::VirtualNode {
+        unsafe {
+            match value.discriminant() {
+                DiscriminantElem::Div => {
+                    let children = vec![percy_dom::VirtualNode::from(
+                        &(*value.ptr_read_union().div).data,
+                    )];
+
+                    percy_dom::VirtualNode::Element(percy_dom::VElement {
+                        tag: "div".to_string(),
+                        attrs: HashMap::default(),
+                        events: percy_dom::event::Events::new(),
+                        children,
+                        special_attributes: percy_dom::SpecialAttributes::default(),
+                    })
+                }
+                DiscriminantElem::Text => percy_dom::VirtualNode::Text(percy_dom::VText {
+                    text: (*value.ptr_read_union().text).str.as_str().to_string(),
+                }),
             }
         }
     }
