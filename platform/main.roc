@@ -1,26 +1,44 @@
 platform ""
     requires { Model } {
         init : {} -> Model,
-        render : Model -> Elem,
+        render : Model -> Html.Html Model,
     }
-    exposes [Elem, Action]
+    exposes [Html, Action]
     packages {}
     imports []
-    provides [initForHost, renderForHost]
+    provides [initForHost, updateForHost, renderForHost]
 
-import Elem exposing [Elem]
+import Html
+import InnerHtml
+import Action
 
-initForHost : I32 -> Box Model
-initForHost = \_ -> Box.box (init {})
-
-Return : {
-    model : Box Model,
-    elem : Elem,
+PlatformState model : {
+    boxedModel : Box model,
+    handlers : List (InnerHtml.EventForApp model),
+    htmlHandlerIds : InnerHtml.HtmlForHost,
 }
 
-renderForHost : Box Model -> Return
+initForHost : I32 -> PlatformState Model
+initForHost = \_ -> {
+    boxedModel: Box.box (init {}),
+    handlers: [],
+    htmlHandlerIds: None,
+}
+
+updateForHost : PlatformState Model, U64 -> Action.Action (Box Model)
+updateForHost = \{ boxedModel, handlers }, eventId ->
+
+    model = Box.unbox boxedModel
+
+    when List.get handlers eventId is
+        Err OutOfBounds -> crash "unreachable, got a bad event id from host"
+        Ok { handler } -> handler model |> Action.map Box.box
+
+renderForHost : Box Model -> PlatformState Model
 renderForHost = \boxedModel ->
-    {
-        model : boxedModel,
-        elem : render (Box.unbox boxedModel),
-    }
+
+    htmlHandlerFns = render (Box.unbox boxedModel)
+
+    (htmlHandlerIds, handlers) = InnerHtml.prepareForHost htmlHandlerFns 0 []
+
+    { boxedModel, handlers, htmlHandlerIds }

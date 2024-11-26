@@ -1,19 +1,25 @@
 platform ""
-    requires {} {  main : _}
+    requires {} { main : _ }
     exposes []
     packages {}
     imports []
     provides [mainForHost]
 
-Elem : [
+HtmlForHost : [
     Text Str,
-    Div Elem,
+    Element
+        {
+            tag : Str,
+            attrs : List { key : Str, val : Str },
+            events : List U64,
+        }
+        (List HtmlForHost),
 ]
 
-Return : {
-    model : I64,
-    elem : Elem,
-}
+Action : [
+    None,
+    Update (List U8),
+]
 
-mainForHost : Return
+mainForHost : Action
 mainForHost = main {}

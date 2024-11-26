@@ -18,4 +18,4 @@ text = \str -> Text str
 
 div : List (Str, Str), List (Event state), List (Html state) -> Html state
 div = \attrs, events, children ->
-    Element {tag: "div", attrs, events} children
+    Element { tag: "div", attrs, events } children
