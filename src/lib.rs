@@ -1,3 +1,4 @@
+use roc_std::RocRefcounted;
 use roc_std::{RocBox, RocStr};
 use std::alloc::GlobalAlloc;
 use std::alloc::Layout;
@@ -7,8 +8,8 @@ use web_sys::Document;
 
 mod console;
 mod glue;
-mod model;
 mod pdom;
+mod platform_state;
 
 #[global_allocator]
 static WEE_ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
@@ -19,11 +20,11 @@ fn document() -> Option<Document> {
 
 // #[wasm_bindgen]
 // pub fn app_update() {
-//     let new_vnode: percy_dom::VirtualNode = MODEL.with_borrow_mut(|maybe_model| {
-//         if let Some(model) = maybe_model {
+//     let new_vnode: percy_dom::VirtualNode = MODEL.with_borrow_mut(|maybe_state| {
+//         if let Some(model) = maybe_state {
 //             let roc_return = roc_render(model.to_owned());
 
-//             *maybe_model = Some(roc_return.model);
+//             *maybe_state = Some(roc_return.model);
 
 //             (&roc_return.elem).into()
 //         } else {
@@ -42,14 +43,14 @@ pub fn app_init() {
 
     console::log("INFO: STARTING APP");
 
-    let initial_vnode = model::with(|maybe_model| {
+    let initial_vnode = platform_state::with(|maybe_state| {
         let platform_state = roc_init();
 
         let platform_state = roc_render(platform_state.boxed_model);
 
-        let initial_vnode = (&platform_state.html_with_handler_ids).into();
+        let initial_vnode = roc_html_to_percy(&platform_state.html_with_handler_ids);
 
-        *maybe_model = Some(platform_state);
+        *maybe_state = Some(platform_state);
 
         initial_vnode
     });
@@ -141,12 +142,12 @@ pub fn roc_init() -> glue::PlatformState {
     unsafe { caller(0) }
 }
 
-pub fn roc_update(state: glue::PlatformState, event_id: u64) -> glue::Action {
+pub fn roc_update(state: &mut glue::PlatformState, event_id: u64) -> glue::Action {
     #[link(name = "app")]
     extern "C" {
         // updateForHost : PlatformState Model, U64 -> Action.Action (Box Model)
         #[link_name = "roc__updateForHost_1_exposed"]
-        fn caller(state: glue::PlatformState, event_id: u64) -> glue::Action;
+        fn caller(state: &mut glue::PlatformState, event_id: u64) -> glue::Action;
     }
 
     unsafe { caller(state, event_id) }
@@ -166,4 +167,73 @@ pub fn roc_render(model: RocBox<()>) -> glue::PlatformState {
 #[no_mangle]
 pub extern "C" fn roc_fx_log(msg: &RocStr) {
     console::log(msg.as_str());
+}
+
+fn roc_html_to_percy(value: &glue::HtmlForHost) -> percy_dom::VirtualNode {
+    match value.discriminant() {
+        glue::DiscriminantHtmlForHost::None => percy_dom::VirtualNode::text(""),
+        glue::DiscriminantHtmlForHost::Text => value.as_percy_text_node(),
+        glue::DiscriminantHtmlForHost::Element => unsafe {
+            let children: Vec<percy_dom::VirtualNode> = value
+                .ptr_read_union()
+                .element
+                .children
+                .into_iter()
+                .map(roc_html_to_percy)
+                .collect();
+
+            let tag = value.ptr_read_union().element.data.tag.as_str().to_owned();
+
+            let attrs = glue::roc_to_percy_attrs(&value.ptr_read_union().element.data.attrs);
+
+            console::log(
+                format!("EVENTS: {:?}", value.ptr_read_union().element.data.events).as_str(),
+            );
+
+            let mut events = percy_dom::event::Events::new();
+
+            use std::cell::RefCell;
+            use std::rc::Rc;
+
+            let callback = |event_id: u64| {
+                Rc::new(RefCell::new(move |event: percy_dom::event::MouseEvent| {
+                    console::log(format!("Mouse event received! {}", event.to_string()).as_str());
+
+                    platform_state::with(|maybe_state| {
+                        if let Some(state) = maybe_state {
+                            // important -- increment refcount so roc doesn't deallocate
+                            state.inc();
+
+                            console::log("CALLING ROC_UPDATE");
+
+                            match roc_update(state, event_id).discriminant() {
+                                glue::DiscriminantAction::None => {}
+                                glue::DiscriminantAction::Update => {}
+                            }
+
+                            todo!()
+
+                            // FINISH THIS IMPLEMENTATION
+
+                            // let new_model = roc_render(action.model);
+                            // *maybe_state = Some(new_model);
+                        }
+                    })
+                }))
+            };
+
+            for event in value.ptr_read_union().element.data.events.into_iter() {
+                let event_callback = callback(*event);
+                events.insert_mouse_event("onclick".into(), event_callback);
+            }
+
+            percy_dom::VirtualNode::Element(percy_dom::VElement {
+                tag,
+                attrs,
+                events,
+                children,
+                special_attributes: percy_dom::SpecialAttributes::default(),
+            })
+        },
+    }
 }

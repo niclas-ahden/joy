@@ -289,7 +289,7 @@ pub struct ElementAttrs {
     pub val: RocStr,
 }
 
-fn roc_to_percy_attrs(
+pub fn roc_to_percy_attrs(
     values: &RocList<ElementAttrs>,
 ) -> HashMap<String, percy_dom::AttributeValue> {
     HashMap::from_iter(values.into_iter().map(|attr| {
@@ -421,18 +421,22 @@ impl HtmlForHost {
         ((self.0 as usize) & mask) as *mut UnionHtmlForHost
     }
 
-    unsafe fn ptr_read_union(&self) -> core::mem::ManuallyDrop<UnionHtmlForHost> {
+    pub fn ptr_read_union(&self) -> core::mem::ManuallyDrop<UnionHtmlForHost> {
         let ptr = self.unmasked_pointer();
 
         core::mem::ManuallyDrop::new(unsafe { std::ptr::read(ptr) })
     }
+
+    pub fn as_percy_text_node(&self) -> percy_dom::VirtualNode {
+        unsafe { percy_dom::VirtualNode::text(self.ptr_read_union().text.str.as_str()) }
+    }
 }
 
 #[repr(C)]
-union UnionHtmlForHost {
-    element: core::mem::ManuallyDrop<HtmlForHostElement>,
-    none: (),
-    text: core::mem::ManuallyDrop<HtmlForHostText>,
+pub union UnionHtmlForHost {
+    pub element: core::mem::ManuallyDrop<HtmlForHostElement>,
+    pub none: (),
+    pub text: core::mem::ManuallyDrop<HtmlForHostText>,
 }
 
 impl RocRefcounted for HtmlForHost {
@@ -462,39 +466,6 @@ impl RocRefcounted for HtmlForHost {
     }
     fn is_refcounted() -> bool {
         true
-    }
-}
-
-impl From<&HtmlForHost> for percy_dom::VirtualNode {
-    fn from(value: &HtmlForHost) -> percy_dom::VirtualNode {
-        match value.discriminant() {
-            DiscriminantHtmlForHost::Text => unsafe {
-                percy_dom::VirtualNode::text(value.ptr_read_union().text.str.as_str())
-            },
-            DiscriminantHtmlForHost::Element => unsafe {
-                let children = value
-                    .ptr_read_union()
-                    .element
-                    .children
-                    .into_iter()
-                    .map(percy_dom::VirtualNode::from)
-                    .collect();
-
-                let tag = value.ptr_read_union().element.data.tag.as_str().to_owned();
-
-                let attrs = roc_to_percy_attrs(&value.ptr_read_union().element.data.attrs);
-
-                percy_dom::VirtualNode::Element(percy_dom::VElement {
-                    tag,
-                    attrs,
-                    // TODO events
-                    events: percy_dom::event::Events::new(),
-                    children,
-                    special_attributes: percy_dom::SpecialAttributes::default(),
-                })
-            },
-            DiscriminantHtmlForHost::None => percy_dom::VirtualNode::text(""),
-        }
     }
 }
 
