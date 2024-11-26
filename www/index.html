@@ -7,7 +7,7 @@
     <body>
         <div id="app"></div>
         <script type="module">
-            import init, { app_init, app_update } from "/pkg/roc_dom.js";
+            import init, { app_init } from "/pkg/roc_dom.js";
 
             async function startup() {
                 // initialize the wasm module
@@ -17,13 +17,13 @@
                 app_init();
 
                 // call app update each render
-                const renderLoop = () => {
-                    app_update();
+                // const renderLoop = () => {
+                //     app_update();
 
-                    requestAnimationFrame(renderLoop);
-                };
+                //     requestAnimationFrame(renderLoop);
+                // };
 
-                requestAnimationFrame(renderLoop);
+                // requestAnimationFrame(renderLoop);
             }
 
             startup().catch(console.error);

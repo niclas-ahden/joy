@@ -5,7 +5,12 @@ platform ""
     imports []
     provides [mainForHost]
 
+# the types used in here are placeholders, and usually swapped out as a workaround
+# for limitations in the current RustGlue.roc implementation
+# the generated `*.rs` glue code is still helpful to copy and past and then fixup manually
+
 HtmlForHost : [
+    None,
     Text Str,
     Element
         {
@@ -16,10 +21,16 @@ HtmlForHost : [
         (List HtmlForHost),
 ]
 
-Action : [
-    None,
-    Update (List U8),
-]
+#Action : [
+#    None,
+#    Update (List U8),
+#]
 
-mainForHost : Action
+#PlatformState : {
+#    boxedModel : List U64,
+#    handlers : List U64,
+#    htmlHandlerIds : HtmlForHost,
+#}
+
+mainForHost : HtmlForHost
 mainForHost = main {}

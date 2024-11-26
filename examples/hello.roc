@@ -1,12 +1,14 @@
 app [Model, init, render] { web: platform "../platform/main.roc" }
 
-import web.Elem exposing [Elem]
+import web.Html exposing [Html, div, text]
 
-Model : I64
+Model : Str
 
 init : {} -> Model
-init = \{} -> 42
+init = \{} -> "Roc"
 
-render : Model -> Elem
-render = \_ ->
-    Div (Text "Hello from Roc")
+render : Model -> Html Model
+render = \model ->
+    div [] [] [
+        text "Hello from $(model)"
+    ]

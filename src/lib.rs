@@ -1,59 +1,40 @@
-use percy_dom::PercyDom;
-use roc_std::{RocBox, RocResult, RocStr};
+use roc_std::{RocBox, RocStr};
 use std::alloc::GlobalAlloc;
 use std::alloc::Layout;
-use std::cell::RefCell;
 use std::os::raw::c_void;
 use wasm_bindgen::prelude::*;
 use web_sys::Document;
 
 mod console;
 mod glue;
+mod model;
+mod pdom;
 
 #[global_allocator]
 static WEE_ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
-
-thread_local! {
-    static PDOM: RefCell<Option<PercyDom>> = const { RefCell::new(None) };
-    static MODEL: RefCell<Option<Model>> = const { RefCell::new(None) };
-}
 
 fn document() -> Option<Document> {
     web_sys::window().expect("should have a window").document()
 }
 
-fn with_pdom(f: impl FnOnce(&mut PercyDom)) {
-    PDOM.with_borrow_mut(|pdom| {
-        if let Some(dom) = pdom {
-            f(dom);
-        }
-    });
-}
+// #[wasm_bindgen]
+// pub fn app_update() {
+//     let new_vnode: percy_dom::VirtualNode = MODEL.with_borrow_mut(|maybe_model| {
+//         if let Some(model) = maybe_model {
+//             let roc_return = roc_render(model.to_owned());
 
-fn set_pdom(new_pdom: PercyDom) {
-    PDOM.with_borrow_mut(|pdom| {
-        *pdom = Some(new_pdom);
-    });
-}
+//             *maybe_model = Some(roc_return.model);
 
-#[wasm_bindgen]
-pub fn app_update() {
-    let new_vnode: percy_dom::VirtualNode = MODEL.with_borrow_mut(|maybe_model| {
-        if let Some(model) = maybe_model {
-            let roc_return = roc_render(model.to_owned());
+//             (&roc_return.elem).into()
+//         } else {
+//             percy_dom::VirtualNode::text("Loading...")
+//         }
+//     });
 
-            *maybe_model = Some(roc_return.model);
-
-            (&roc_return.elem).into()
-        } else {
-            percy_dom::VirtualNode::text("Loading...")
-        }
-    });
-
-    with_pdom(|pdom| {
-        pdom.update(new_vnode);
-    });
-}
+//     with_pdom(|pdom| {
+//         pdom.update(new_vnode);
+//     });
+// }
 
 #[wasm_bindgen]
 pub fn app_init() {
@@ -61,17 +42,21 @@ pub fn app_init() {
 
     console::log("INFO: STARTING APP");
 
-    let initial_vnode = MODEL.with_borrow_mut(|maybe_model| {
-        let roc_return = roc_render(roc_init());
+    let initial_vnode = model::with(|maybe_model| {
+        let platform_state = roc_init();
 
-        *maybe_model = Some(roc_return.model);
+        let platform_state = roc_render(platform_state.boxed_model);
 
-        (&roc_return.elem).into()
+        let initial_vnode = (&platform_state.html_with_handler_ids).into();
+
+        *maybe_model = Some(platform_state);
+
+        initial_vnode
     });
 
     let app_node = document().unwrap().get_element_by_id("app").unwrap();
 
-    set_pdom(percy_dom::PercyDom::new_replace_mount(
+    pdom::set(percy_dom::PercyDom::new_replace_mount(
         initial_vnode,
         app_node,
     ));
@@ -145,40 +130,40 @@ pub unsafe extern "C" fn roc_memset(dst: *mut c_void, c: i32, n: usize) -> *mut 
     dst
 }
 
-type Model = RocBox<()>;
-
-pub fn roc_init() -> Model {
+pub fn roc_init() -> glue::PlatformState {
     #[link(name = "app")]
     extern "C" {
+        // initForHost : I32 -> PlatformState Model
         #[link_name = "roc__initForHost_1_exposed"]
-        fn init_for_host(arg_not_used: i32) -> Model;
+        fn caller(arg_not_used: i32) -> glue::PlatformState;
     }
 
-    unsafe { init_for_host(0) }
+    unsafe { caller(0) }
 }
 
-pub fn roc_render(model: Model) -> glue::Return {
+pub fn roc_update(state: glue::PlatformState, event_id: u64) -> glue::Action {
     #[link(name = "app")]
     extern "C" {
-        #[link_name = "roc__renderForHost_1_exposed"]
-        fn render_for_host(model: Model) -> glue::Return;
+        // updateForHost : PlatformState Model, U64 -> Action.Action (Box Model)
+        #[link_name = "roc__updateForHost_1_exposed"]
+        fn caller(state: glue::PlatformState, event_id: u64) -> glue::Action;
     }
 
-    unsafe { render_for_host(model) }
+    unsafe { caller(state, event_id) }
+}
+
+pub fn roc_render(model: RocBox<()>) -> glue::PlatformState {
+    #[link(name = "app")]
+    extern "C" {
+        // renderForHost : Box Model -> PlatformState Model
+        #[link_name = "roc__renderForHost_1_exposed"]
+        fn caller(model: RocBox<()>) -> glue::PlatformState;
+    }
+
+    unsafe { caller(model) }
 }
 
 #[no_mangle]
 pub extern "C" fn roc_fx_log(msg: &RocStr) {
     console::log(msg.as_str());
-}
-
-#[no_mangle]
-pub extern "C" fn roc_fx_getInnerHtml(id: &RocStr) -> RocResult<RocStr, ()> {
-    match document().unwrap().get_element_by_id(id.as_str()) {
-        Some(elem) => {
-            let html = elem.inner_html();
-            RocResult::ok(html.as_str().into())
-        }
-        None => RocResult::err(()),
-    }
 }
