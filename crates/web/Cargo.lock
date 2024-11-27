@@ -33,14 +33,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
-name = "cli"
-version = "0.0.1"
-dependencies = [
- "roc",
- "roc_std",
-]
-
-[[package]]
 name = "console_error_panic_hook"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -49,10 +41,6 @@ dependencies = [
  "cfg-if 1.0.0",
  "wasm-bindgen",
 ]
-
-[[package]]
-name = "helpers"
-version = "0.0.1"
 
 [[package]]
 name = "html-validation"
@@ -80,9 +68,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "libc"
-version = "0.2.166"
+version = "0.2.164"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2ccc108bbc0b1331bd061864e7cd823c0cab660bbe6970e66e2c0614decde36"
+checksum = "433bfe06b8c75da9b2e3fbea6e5329ff87748f0b144ef75306e674c3f6f7c13f"
 
 [[package]]
 name = "log"
@@ -136,15 +124,28 @@ dependencies = [
 name = "roc"
 version = "0.1.0"
 dependencies = [
- "helpers",
+ "build-target",
  "roc_std",
+ "wee_alloc",
+]
+
+[[package]]
+name = "roc-dom"
+version = "0.0.0"
+dependencies = [
+ "build-target",
+ "console_error_panic_hook",
+ "percy-dom",
+ "roc",
+ "wasm-bindgen",
+ "web-sys",
  "wee_alloc",
 ]
 
 [[package]]
 name = "roc_std"
 version = "0.0.1"
-source = "git+https://github.com/roc-lang/roc.git#0295bb58da3de1dec84f63b5a1847ff32a3fd290"
+source = "git+https://github.com/roc-lang/roc.git#22423ca98bef41e2f55ae54e11c632bd0610c241"
 dependencies = [
  "arrayvec",
  "static_assertions",
@@ -239,20 +240,6 @@ name = "wasm-bindgen-shared"
 version = "0.2.95"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65fc09f10666a9f147042251e0dda9c18f166ff7de300607007e96bdebc1068d"
-
-[[package]]
-name = "web"
-version = "0.0.1"
-dependencies = [
- "build-target",
- "console_error_panic_hook",
- "percy-dom",
- "roc",
- "roc_std",
- "wasm-bindgen",
- "web-sys",
- "wee_alloc",
-]
 
 [[package]]
 name = "web-sys"

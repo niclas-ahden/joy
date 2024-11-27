@@ -1,23 +1,24 @@
 platform ""
-    requires {} { main! : {} => Result {} [Exit I32 Str]_ }
-    exposes [Stdout]
+    requires { Model } {
+        init : {} -> Model,
+        update : Model, List U8 -> Action.Action Model,
+        render : Model -> Html.Html Model,
+    }
+    exposes [Html, Action]
     packages {}
     imports []
-    provides [mainForHost!]
+    provides [initForHost, updateForHost, renderForHost]
 
-import Effect
+import Html
+import Html
+import Action
 
-mainForHost! : I32 => I32
-mainForHost! = \_ ->
-    when main! {} is
-        Ok {} -> 0
-        Err (Exit code str) ->
-            if Str.isEmpty str then
-                code
-            else
-                Effect.log! str
-                code
+initForHost : I32 -> Box Model
+initForHost = \_ -> Box.box (init {})
 
-        Err other ->
-            Effect.log! "Program exited early with error: $(Inspect.toStr other)"
-            1
+updateForHost : Box Model, List U8 -> Action.Action (Box Model)
+updateForHost = \boxedModel, payload ->
+    Action.map (update (Box.unbox boxedModel) payload) Box.box
+
+renderForHost : Box Model -> Html.Html Model
+renderForHost = \boxedModel -> render (Box.unbox boxedModel)

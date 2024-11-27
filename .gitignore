@@ -1,5 +1,11 @@
 
 target/
 
+generated-docs/
+
 *.a
 *.o
+*.ll
+
+
+asdf/

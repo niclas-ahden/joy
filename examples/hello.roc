@@ -1,10 +1,18 @@
-app [main!] { web: platform "../platform/main.roc" }
+app [Model, init, update, render] { web: platform "../platform/main.roc" }
 
-import web.Console
+import web.Html exposing [Html, div, text]
+import web.Action exposing [Action]
 
-main! : {} => Result {} []
-main! = \{} ->
+Model : Str
 
-    Console.log! "Logging from Roc"
+init : {} -> Model
+init = \{} -> "Roc"
 
-    Ok {}
+update : Model, List U8 -> Action Model
+update = \_, _ -> Action.none
+
+render : Model -> Html Model
+render = \model ->
+    div [] [
+        text "Hello from $(model)"
+    ]

@@ -1,19 +1,23 @@
+<!doctype html>
 <html>
     <head>
         <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
+        <title>Roc DOM Demo</title>
     </head>
     <body>
-        <div id="thing">
-            <p>Test Inner Html</p>
-        </div>
+        <div id="app"></div>
         <script type="module">
-            import init from "/pkg/roc_dom.js";
+            import init, { run } from "/pkg/web.js";
 
-            async function run() {
+            async function startup() {
+                // initialize the wasm module
                 await init();
+
+                // run the app
+                run();
             }
 
-            run();
+            startup().catch(console.error);
         </script>
     </body>
 </html>
