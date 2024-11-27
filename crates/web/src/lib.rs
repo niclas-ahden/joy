@@ -37,29 +37,12 @@ pub fn app_init() {
     console::log("INFO: STARTING APP");
 
     let initial_vnode = model::with(|maybe_model| {
-        let mut boxed_model = roc::roc_init();
+        let boxed_model = roc::roc_init();
 
-        boxed_model.inc();
+        // TODO -- check if clone also inc()'s the refcount for us?
+        *maybe_model = Some(boxed_model.clone());
 
-        // Str.toUtf8 "UserClickedText"
-        let event_bytes = [
-            85, 115, 101, 114, 67, 108, 105, 99, 107, 101, 100, 84, 101, 120, 116,
-        ];
-
-        let mut action = roc::roc_update(boxed_model.clone(), &mut event_bytes.into());
-
-        assert_eq!(action.discriminant(), roc::glue::DiscriminantAction::Update);
-
-        dbg!(&action);
-
-        let roc_html = roc::roc_render(action.unwrap_model());
-
-        // EXPECT CLICKED
-        dbg!(&roc_html);
-
-        *maybe_model = Some(boxed_model);
-
-        roc_html_to_percy(&roc_html)
+        roc_html_to_percy(&roc::roc_render(boxed_model))
     });
 
     let app_node = document().unwrap().get_element_by_id("app").unwrap();
@@ -108,24 +91,37 @@ fn roc_html_to_percy(value: &roc::glue::Html) -> percy_dom::VirtualNode {
                         );
 
                         model::with(|maybe_model| {
-                            if let Some(state) = maybe_model {
+                            if let Some(boxed_model) = maybe_model {
+                                let mut data = event_data.clone();
+                                let mut action = roc::roc_update(boxed_model.clone(), &mut data);
 
-                                // let mut action = roc_update(state, event_data.clone());
+                                console::log(format!("AFTER UPDATE {:?}", action).as_str());
 
-                                // console::log("AFTER UPDATE");
+                                match action.discriminant() {
+                                    roc::glue::DiscriminantAction::None => {
+                                        // no action to take
+                                    }
+                                    roc::glue::DiscriminantAction::Update => {
+                                        // we have a new model
+                                        let new_model = action.unwrap_model();
 
-                                // match action.discriminant() {
-                                //     glue::DiscriminantAction::None => {
-                                //         // no action to take
-                                //     }
-                                //     glue::DiscriminantAction::Update => {
-                                //         // we have a new model
-                                //         // model::with(|maybe_model| {
-                                //         //     *maybe_model =
-                                //         //         Some(action.get_model_for_update_variant());
-                                //         // })
-                                //     }
-                                // }
+                                        pdom::with(|pdom| {
+                                            let new_html = roc::roc_render(new_model.clone());
+                                            let new_vnode = roc_html_to_percy(&new_html);
+
+                                            console::log(
+                                                format!(
+                                                    "UPDATING DOM {:?} {:?}",
+                                                    &new_html, &new_vnode,
+                                                )
+                                                .as_str(),
+                                            );
+                                            pdom.update(new_vnode);
+                                        });
+
+                                        *maybe_model = Some(new_model);
+                                    }
+                                }
                             } else {
                                 // no model available... what does this mean?
                                 panic!("NO MODEL AVAILABLE")
