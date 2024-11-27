@@ -1,29 +1,33 @@
-use roc_std::RocRefcounted;
+use roc_std::RocList;
 
 fn main() {
-    let mut boxed_model = roc::roc_init();
+    let first_model = roc::roc_init();
 
-    // stop roc from deallocating the model
-    boxed_model.inc();
+    let first_render = roc::roc_render(first_model.clone());
 
-    let roc_html = roc::roc_render(boxed_model.clone());
+    dbg!(first_render);
 
-    // EXPECT NOT CLICKED
-    dbg!(roc_html);
-
-    // Str.toUtf8 "UserClickedText"
-    let event_bytes = [
-        85, 115, 101, 114, 67, 108, 105, 99, 107, 101, 100, 84, 101, 120, 116,
-    ];
-
-    let mut action = roc::roc_update(boxed_model, &mut event_bytes.into());
+    let mut action = roc::roc_update(
+        first_model,
+        // Str.toUtf8 "UserClickedText"
+        &mut RocList::from([
+            85, 115, 101, 114, 67, 108, 105, 99, 107, 101, 100, 84, 101, 120, 116,
+        ]),
+    );
 
     dbg!(&action);
 
-    assert_eq!(action.discriminant(), roc::glue::DiscriminantAction::Update);
+    match action.discriminant() {
+        roc::glue::DiscriminantAction::None => {
+            // no action to take
+        }
+        roc::glue::DiscriminantAction::Update => {
+            // we have a new model
+            let new_model = action.unwrap_model();
 
-    let roc_html = roc::roc_render(action.unwrap_model());
+            let second_html = roc::roc_render(new_model);
 
-    // EXPECT CLICKED
-    dbg!(roc_html);
+            dbg!(second_html);
+        }
+    }
 }

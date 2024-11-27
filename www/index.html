@@ -7,23 +7,14 @@
     <body>
         <div id="app"></div>
         <script type="module">
-            import init, { app_init } from "/pkg/web.js";
+            import init, { run } from "/pkg/web.js";
 
             async function startup() {
                 // initialize the wasm module
                 await init();
 
-                // initialize the app
-                app_init();
-
-                // call app update each render
-                // const renderLoop = () => {
-                //     app_update();
-
-                //     requestAnimationFrame(renderLoop);
-                // };
-
-                // requestAnimationFrame(renderLoop);
+                // run the app
+                run();
             }
 
             startup().catch(console.error);

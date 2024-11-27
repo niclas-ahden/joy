@@ -3,6 +3,9 @@ module [
     translate,
     text,
     div,
+    button,
+    ul,
+    li,
 ]
 
 Html state : [
@@ -34,6 +37,18 @@ translate = \elem, parentToChild, childToParent ->
 text : Str -> Html state
 text = \str -> Text str
 
-div : List { key: Str, value: Str }, List { name : Str, handler : List U8 }, List (Html state) -> Html state
-div = \attrs, events, children ->
-    Element { tag: "div", attrs, events } children
+div : List { key: Str, value: Str }, List (Html state) -> Html state
+div = \attrs, children ->
+    Element { tag: "div", attrs, events : [] } children
+
+button : List { key: Str, value: Str }, List { name : Str, handler : List U8 }, List (Html state) -> Html state
+button = \attrs, events, children ->
+    Element { tag: "button", attrs, events } children
+
+ul : List { key: Str, value: Str }, List (Html state) -> Html state
+ul = \attrs, children ->
+    Element { tag: "ul", attrs, events: [] } children
+
+li : List { key: Str, value: Str }, List (Html state) -> Html state
+li = \attrs, children ->
+    Element { tag: "li", attrs, events: [] } children
