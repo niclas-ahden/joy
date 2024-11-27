@@ -1,14 +1,17 @@
 [package]
-authors = ["Luke Boswell"]
-edition = "2021"
-name = "roc-dom"
-version = "0.0.0"
+name = "web"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
 roc = { path = "../roc" }
+roc_std = { git = "https://github.com/roc-lang/roc.git" }
 wasm-bindgen = "0.2.95"
 wee_alloc = "0.4.5"
 console_error_panic_hook = "0.1.7"

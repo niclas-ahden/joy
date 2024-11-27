@@ -9,5 +9,11 @@ rm -f libapp.a
 roc check $1
 roc build --target wasm32 --no-link --emit-llvm-ir --output app.o $1
 zig build-lib -target wasm32-freestanding-musl -lc app.o
-# wasm-pack build --target web --out-dir www/pkg/
-# simple-http-server --ip 127.0.0.1 --index --open -- www/
+
+cd crates/web/
+
+wasm-pack build --target web --out-dir ../../www/pkg/
+
+cd ../../
+
+simple-http-server --ip 127.0.0.1 --index --open -- www/

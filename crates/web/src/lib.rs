@@ -1,18 +1,11 @@
-use model::Model;
 use roc_std::{RocList, RocRefcounted, RocStr};
-use std::alloc::GlobalAlloc;
-use std::alloc::Layout;
-use std::os::raw::c_void;
+use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 use web_sys::Document;
 
 mod console;
-mod glue;
 mod model;
 mod pdom;
-
-#[global_allocator]
-static WEE_ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 fn document() -> Option<Document> {
     web_sys::window().expect("should have a window").document()
@@ -44,19 +37,29 @@ pub fn app_init() {
     console::log("INFO: STARTING APP");
 
     let initial_vnode = model::with(|maybe_model| {
-        let mut boxed_model = roc_init();
+        let mut boxed_model = roc::roc_init();
 
-        let action = roc_update(&mut boxed_model, &mut RocList::empty());
+        boxed_model.inc();
 
-        assert_eq!(action.discriminant(), glue::DiscriminantAction::None);
+        // Str.toUtf8 "UserClickedText"
+        let event_bytes = [
+            85, 115, 101, 114, 67, 108, 105, 99, 107, 101, 100, 84, 101, 120, 116,
+        ];
 
-        let roc_html = roc_render(&mut boxed_model);
+        let mut action = roc::roc_update(boxed_model.clone(), &mut event_bytes.into());
 
-        let initial_vnode = roc_html_to_percy(&roc_html);
+        assert_eq!(action.discriminant(), roc::glue::DiscriminantAction::Update);
+
+        dbg!(&action);
+
+        let roc_html = roc::roc_render(action.unwrap_model());
+
+        // EXPECT CLICKED
+        dbg!(&roc_html);
 
         *maybe_model = Some(boxed_model);
 
-        initial_vnode
+        roc_html_to_percy(&roc_html)
     });
 
     let app_node = document().unwrap().get_element_by_id("app").unwrap();
@@ -67,141 +70,17 @@ pub fn app_init() {
     ));
 }
 
-/// # Safety
-///
-/// This function is unsafe.
-#[no_mangle]
-pub unsafe extern "C" fn roc_alloc(size: usize, _alignment: u32) -> *mut c_void {
-    let layout = Layout::from_size_align(size, 8)
-        .unwrap_or_else(|_| std::panic::panic_any("invalid layout"));
-
-    WEE_ALLOC.alloc(layout) as *mut c_void
-}
-
-/// # Safety
-///
-/// This function is unsafe.
-#[no_mangle]
-pub unsafe extern "C" fn roc_dealloc(c_ptr: *mut u8, _alignment: u32) {
-    let layout =
-        Layout::from_size_align(0, 8).unwrap_or_else(|_| std::panic::panic_any("invalid layout"));
-
-    WEE_ALLOC.dealloc(c_ptr, layout);
-}
-
-/// # Safety
-///
-/// This function is unsafe.
-#[no_mangle]
-pub unsafe extern "C" fn roc_realloc(
-    c_ptr: *mut u8,
-    new_size: usize,
-    old_size: usize,
-    _alignment: u32,
-) -> *mut u8 {
-    let layout = Layout::from_size_align(old_size, 8)
-        .unwrap_or_else(|_| std::panic::panic_any("invalid layout"));
-
-    WEE_ALLOC.realloc(c_ptr, layout, new_size)
-}
-
-/// # Safety
-///
-/// This function is unsafe.
-#[no_mangle]
-pub unsafe extern "C" fn roc_panic(msg: &RocStr, _tag_id: u32) {
-    panic!("ROC CRASHED {}", msg.as_str())
-}
-
-/// Currently not used, roc doesn't include `dbg` in `roc build --no-link` but we would like it to
-///
-/// # Safety
-///
-/// This function is unsafe.
-#[no_mangle]
-pub unsafe extern "C" fn roc_dbg(loc: &RocStr, msg: &RocStr) {
-    eprintln!("[{}] {}", loc, msg);
-}
-
-/// # Safety
-///
-/// This function is unsafe.
-#[no_mangle]
-pub unsafe extern "C" fn roc_memset(dst: *mut c_void, c: i32, n: usize) -> *mut c_void {
-    let slice = std::slice::from_raw_parts_mut(dst as *mut u8, n);
-    for byte in slice {
-        *byte = c as u8;
-    }
-    dst
-}
-
-pub fn roc_init() -> Model {
-    #[link(name = "app")]
-    extern "C" {
-        // initForHost : I32 -> Model
-        #[link_name = "roc__initForHost_1_exposed"]
-        fn caller(arg_not_used: i32) -> Model;
-    }
-
-    console::log("CALLING ROC INIT");
-
-    unsafe { caller(0) }
-}
-
-pub fn roc_update(state: &mut Model, raw_event: &mut RocList<u8>) -> glue::RawAction {
-    #[link(name = "app")]
-    extern "C" {
-        // updateForHost : Box Model, List U8 -> Action.Action (Box Model)
-        #[link_name = "roc__updateForHost_1_exposed"]
-        fn caller(state: &mut Model, raw_event: &mut RocList<u8>) -> glue::RawAction;
-
-        #[link_name = "roc__updateForHost_1_exposed_size"]
-        fn size() -> usize;
-    }
-
-    let action = unsafe {
-        console::log(format!("CHECKING SIZE OF ROC_UPDATE {}", size()).as_str());
-
-        assert_eq!(std::mem::size_of::<glue::RawAction>(), size());
-
-        console::log("CALLING ROC_UPDATE");
-
-        caller(state, raw_event)
-    };
-
-    console::log("AFTER ROC_UPDATE");
-
-    action
-}
-
-pub fn roc_render(model: &mut Model) -> glue::Html {
-    #[link(name = "app")]
-    extern "C" {
-        // renderForHost : Box Model -> Html.Html Model
-        #[link_name = "roc__renderForHost_1_exposed"]
-        fn caller(model: &mut Model) -> glue::Html;
-    }
-
-    console::log("INCREMENT MODEL REF COUNT");
-
-    // increment refcount so roc doesn't deallocate
-    model.inc();
-
-    console::log("CALLING ROC RENDER");
-
-    unsafe { caller(model) }
-}
-
+/// not used
 #[no_mangle]
 pub extern "C" fn roc_fx_log(msg: &RocStr) {
     console::log(msg.as_str());
 }
 
-fn roc_html_to_percy(value: &glue::Html) -> percy_dom::VirtualNode {
+fn roc_html_to_percy(value: &roc::glue::Html) -> percy_dom::VirtualNode {
     match value.discriminant() {
-        glue::DiscriminantHtml::None => percy_dom::VirtualNode::text(""),
-        glue::DiscriminantHtml::Text => value.as_percy_text_node(),
-        glue::DiscriminantHtml::Element => unsafe {
+        roc::glue::DiscriminantHtml::None => percy_dom::VirtualNode::text(""),
+        roc::glue::DiscriminantHtml::Text => roc_to_percy_text_node(value),
+        roc::glue::DiscriminantHtml::Element => unsafe {
             let children: Vec<percy_dom::VirtualNode> = value
                 .ptr_read_union()
                 .element
@@ -212,7 +91,7 @@ fn roc_html_to_percy(value: &glue::Html) -> percy_dom::VirtualNode {
 
             let tag = value.ptr_read_union().element.data.tag.as_str().to_owned();
 
-            let attrs = glue::roc_to_percy_attrs(&value.ptr_read_union().element.data.attrs);
+            let attrs = roc_to_percy_attrs(&value.ptr_read_union().element.data.attrs);
 
             console::log(
                 format!("EVENTS: {:?}", value.ptr_read_union().element.data.events).as_str(),
@@ -270,4 +149,19 @@ fn roc_html_to_percy(value: &glue::Html) -> percy_dom::VirtualNode {
             })
         },
     }
+}
+
+fn roc_to_percy_text_node(value: &roc::glue::Html) -> percy_dom::VirtualNode {
+    unsafe { percy_dom::VirtualNode::text(value.ptr_read_union().text.str.as_str()) }
+}
+
+pub fn roc_to_percy_attrs(
+    values: &RocList<roc::glue::ElementAttrs>,
+) -> HashMap<String, percy_dom::AttributeValue> {
+    HashMap::from_iter(values.into_iter().map(|attr| {
+        (
+            attr.key.as_str().to_string(),
+            percy_dom::AttributeValue::String(attr.val.as_str().to_string()),
+        )
+    }))
 }
