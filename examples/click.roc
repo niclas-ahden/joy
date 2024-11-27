@@ -1,4 +1,9 @@
-app [Model, init, update, render] {
+app [
+    Model,
+    init,
+    update,
+    render,
+] {
     web: platform "../platform/main.roc",
 }
 

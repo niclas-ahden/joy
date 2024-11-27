@@ -11,7 +11,7 @@ Html state : [
     Element
         {
             tag : Str,
-            attrs : List (Str, Str),
+            attrs : List { key: Str, value: Str },
             events : List { name : Str, handler : List U8 },
         }
         (List (Html state)),
@@ -34,6 +34,6 @@ translate = \elem, parentToChild, childToParent ->
 text : Str -> Html state
 text = \str -> Text str
 
-div : List (Str, Str), List { name : Str, handler : List U8 }, List (Html state) -> Html state
+div : List { key: Str, value: Str },, List { name : Str, handler : List U8 }, List (Html state) -> Html state
 div = \attrs, events, children ->
     Element { tag: "div", attrs, events } children

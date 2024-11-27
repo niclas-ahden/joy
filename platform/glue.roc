@@ -15,7 +15,7 @@ Html : [
     Element
         {
             tag : Str,
-            attrs : List U64,
+            attrs : List { key: Str, value: Str },
             events : List { name : Str, handler : List U8 },
         }
         (List Html),
@@ -23,14 +23,8 @@ Html : [
 
 #Action : [
 #    None,
-#    Update (List U8),
+#    Update Str,
 #]
-
-#PlatformState : {
-#    boxedModel : List U64,
-#    handlers : List U64,
-#    htmlHandlerIds : HtmlForHost,
-#}
 
 mainForHost : Html
 mainForHost = main {}

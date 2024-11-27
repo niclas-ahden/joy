@@ -1,5 +1,6 @@
 use roc_std::{roc_refcounted_noop_impl, RocBox, RocList, RocRefcounted, RocStr};
-use std::collections::HashMap;
+
+pub type Model = RocBox<()>;
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[repr(u8)]
@@ -8,77 +9,60 @@ pub enum DiscriminantAction {
     Update = 1,
 }
 
+impl core::fmt::Debug for DiscriminantAction {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::None => f.write_str("Action::None"),
+            Self::Update => f.write_str("Action::Update"),
+        }
+    }
+}
+
 roc_refcounted_noop_impl!(DiscriminantAction);
 
-#[repr(C, align(8))]
-pub union UnionAction {
-    none: (),
-    update: core::mem::ManuallyDrop<RocBox<()>>,
-}
-
 #[repr(C)]
-pub struct Action {
-    payload: UnionAction,
-    discriminant: DiscriminantAction,
+pub struct RawAction {
+    payload: [i32; 1],
+    discriminant: u8,
 }
 
-impl Action {
+const _SIZE_CHECK_ACTION: () = assert!(core::mem::size_of::<RawAction>() == 8);
+const _ALIGN_CHECK_ACTION: () = assert!(core::mem::align_of::<RawAction>() == 4);
+
+impl RawAction {
     /// Returns which variant this tag union holds. Note that this never includes a payload!
     pub fn discriminant(&self) -> DiscriminantAction {
-        unsafe {
-            let bytes = core::mem::transmute::<&Self, &[u8; core::mem::size_of::<Self>()]>(self);
-
-            core::mem::transmute::<u8, DiscriminantAction>(*bytes.as_ptr().add(24))
-        }
-    }
-
-    pub fn get_model_for_update_variant(&mut self) -> RocBox<()> {
-        match self.discriminant() {
-            DiscriminantAction::None => panic!("no model for this Action type"),
-            DiscriminantAction::Update => unsafe {
-                core::mem::ManuallyDrop::take(&mut self.payload.update)
-            },
+        if self.discriminant == 0 {
+            DiscriminantAction::None
+        } else if self.discriminant == 1 {
+            DiscriminantAction::Update
+        } else {
+            panic!("Unknown discriminant: {}", self.discriminant);
         }
     }
 }
 
-impl core::fmt::Debug for Action {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        use DiscriminantAction::*;
-        match self.discriminant {
-            None => f.write_str("Action::None"),
-            Update => f.write_str("Action::Update"),
-        }
-    }
-}
-
-impl Drop for Action {
+impl Drop for RawAction {
     fn drop(&mut self) {
         // Drop the payloads
         match self.discriminant() {
             DiscriminantAction::None => {}
-            DiscriminantAction::Update => unsafe {
-                core::mem::ManuallyDrop::drop(&mut self.payload.update)
-            },
+            DiscriminantAction::Update => self.payload.dec(),
         }
     }
 }
 
-impl RocRefcounted for Action {
+impl RocRefcounted for RawAction {
     fn inc(&mut self) {
         match self.discriminant() {
             DiscriminantAction::None => {}
-            DiscriminantAction::Update => unsafe {
-                (*self.payload.update).inc();
-            },
+            DiscriminantAction::Update => self.payload.inc(),
         }
     }
     fn dec(&mut self) {
         match self.discriminant() {
             DiscriminantAction::None => {}
-            DiscriminantAction::Update => unsafe {
-                (*self.payload.update).dec();
-            },
+            DiscriminantAction::Update => self.payload.dec(),
         }
     }
     fn is_refcounted() -> bool {
@@ -91,17 +75,6 @@ impl RocRefcounted for Action {
 pub struct ElementAttrs {
     pub key: RocStr,
     pub val: RocStr,
-}
-
-pub fn roc_to_percy_attrs(
-    values: &RocList<ElementAttrs>,
-) -> HashMap<String, percy_dom::AttributeValue> {
-    HashMap::from_iter(values.into_iter().map(|attr| {
-        (
-            attr.key.as_str().to_string(),
-            percy_dom::AttributeValue::String(attr.val.as_str().to_string()),
-        )
-    }))
 }
 
 impl RocRefcounted for ElementAttrs {
@@ -215,6 +188,9 @@ roc_refcounted_noop_impl!(DiscriminantHtml);
 #[repr(transparent)]
 pub struct Html(*mut UnionHtml);
 
+const _SIZE_CHECK_HTML: () = assert!(core::mem::size_of::<Html>() == 4);
+const _ALIGN_CHECK_HTML: () = assert!(core::mem::align_of::<Html>() == 4);
+
 impl Html {
     pub fn discriminant(&self) -> DiscriminantHtml {
         let discriminants = {
@@ -251,9 +227,65 @@ impl Html {
 
         core::mem::ManuallyDrop::new(unsafe { std::ptr::read(ptr) })
     }
+}
 
-    pub fn as_percy_text_node(&self) -> percy_dom::VirtualNode {
-        unsafe { percy_dom::VirtualNode::text(self.ptr_read_union().text.str.as_str()) }
+impl std::fmt::Display for Html {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        unsafe {
+            let ptr = self.unmasked_pointer();
+            match self.discriminant() {
+                DiscriminantHtml::Element => {
+                    let element = &(*ptr).element;
+                    let tag = element.data.tag.as_str();
+
+                    write!(f, "<{}>", tag)?;
+
+                    for (i, child) in element.children.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, " ")?;
+                        }
+                        write!(f, "{}", child)?;
+                    }
+
+                    write!(f, "</{}>", tag)
+                }
+                DiscriminantHtml::None => write!(f, "Html::None"),
+                DiscriminantHtml::Text => {
+                    // we're confident the string is properly null-terminated and valid UTF-8 up to the null byte
+                    // as we get this from roc, so we can safely unwrap here... right...
+                    let text = &(*ptr).text;
+                    let s = text.str.as_str().split('\0').next().unwrap_or_default();
+                    write!(f, "{}", s)
+                }
+            }
+        }
+    }
+}
+
+impl core::fmt::Debug for Html {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self.discriminant() {
+            DiscriminantHtml::Element => {
+                let payload_union = self.ptr_read_union();
+
+                unsafe {
+                    f.debug_tuple("Html::Element")
+                        .field(&payload_union.element.data)
+                        .field(&payload_union.element.children)
+                        .finish()
+                }
+            }
+            DiscriminantHtml::None => f.debug_tuple("Html::None").finish(),
+            DiscriminantHtml::Text => {
+                let payload_union = self.ptr_read_union();
+
+                unsafe {
+                    f.debug_tuple("Html::Text")
+                        .field(&payload_union.text.str)
+                        .finish()
+                }
+            }
+        }
     }
 }
 
@@ -266,27 +298,37 @@ pub union UnionHtml {
 
 impl RocRefcounted for Html {
     fn inc(&mut self) {
-        match self.discriminant() {
-            DiscriminantHtml::Element => unsafe {
-                self.ptr_read_union().element.children.inc();
-                self.ptr_read_union().element.data.inc();
-            },
-            DiscriminantHtml::Text => unsafe {
-                self.ptr_read_union().text.str.inc();
-            },
-            DiscriminantHtml::None => {}
+        unsafe {
+            let ptr = self.unmasked_pointer();
+            match self.discriminant() {
+                DiscriminantHtml::Element => {
+                    let element = &mut (*ptr).element;
+                    element.children.inc();
+                    element.data.inc();
+                }
+                DiscriminantHtml::Text => {
+                    let text = &mut (*ptr).text;
+                    text.str.inc();
+                }
+                DiscriminantHtml::None => {}
+            }
         }
     }
     fn dec(&mut self) {
-        match self.discriminant() {
-            DiscriminantHtml::Element => unsafe {
-                self.ptr_read_union().element.children.dec();
-                self.ptr_read_union().element.data.dec();
-            },
-            DiscriminantHtml::Text => unsafe {
-                self.ptr_read_union().text.str.dec();
-            },
-            DiscriminantHtml::None => {}
+        unsafe {
+            let ptr = self.unmasked_pointer();
+            match self.discriminant() {
+                DiscriminantHtml::Element => {
+                    let element = &mut (*ptr).element;
+                    element.children.dec();
+                    element.data.dec();
+                }
+                DiscriminantHtml::Text => {
+                    let text = &mut (*ptr).text;
+                    text.str.dec();
+                }
+                DiscriminantHtml::None => {}
+            }
         }
     }
     fn is_refcounted() -> bool {

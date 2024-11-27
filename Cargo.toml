@@ -1,22 +1,18 @@
-[package]
+[workspace]
+members = [ "crates/cli",
+    "crates/helpers",
+    # "crates/cli",
+    # "crates/web",
+    "crates/roc",
+]
+
+resolver = "2"
+
+[workspace.package]
 authors = ["Luke Boswell"]
 edition = "2021"
-name = "roc-dom"
-version = "0.0.0"
+license = "UPL-1.0"
+repository = "https://github.com/lukewilliamboswell/roc-experiment-js-dom"
+version = "0.0.1"
 
-[lib]
-crate-type = ["cdylib"]
-
-[dependencies]
-wasm-bindgen = "0.2.95"
-roc_std = { git = "https://github.com/roc-lang/roc.git" }
-wee_alloc = "0.4.5"
-console_error_panic_hook = "0.1.7"
-percy-dom = { version = "0.10.0", default-features = false }
-
-[dependencies.web-sys]
-version = "0.3.72"
-features = ['Document', 'Element', 'HtmlElement', 'Node', 'Window', "console"]
-
-[build-dependencies]
-build-target = "0.4"
+[workspace.dependencies]

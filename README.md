@@ -16,3 +16,9 @@ $ simple-http-server --ip 127.0.0.1 --index --open -- www/
 ## Demo
 
 ![demo](/demo.gif)
+
+## CLI
+
+```
+$ cargo wasi run -p cli
+```

@@ -17,11 +17,8 @@ initForHost : I32 -> Box Model
 initForHost = \_ -> Box.box (init {})
 
 updateForHost : Box Model, List U8 -> Action.Action (Box Model)
-updateForHost = \boxedModel, paylod ->
-
-    model = Box.unbox boxedModel
-
-    update model paylod |> Action.map Box.box
+updateForHost = \boxedModel, payload ->
+    Action.map (update (Box.unbox boxedModel) payload) Box.box
 
 renderForHost : Box Model -> Html.Html Model
 renderForHost = \boxedModel -> render (Box.unbox boxedModel)

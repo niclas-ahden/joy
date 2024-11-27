@@ -1,0 +1,12 @@
+[package]
+name = "roc"
+version = "0.1.0"
+edition = "2021"
+authors = ["Luke Boswell"]
+
+[dependencies]
+roc_std = { git = "https://github.com/roc-lang/roc.git" }
+wee_alloc = "0.4.5"
+
+[build-dependencies]
+helpers = { path = "../helpers" }

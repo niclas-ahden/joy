@@ -46,6 +46,10 @@ pub fn app_init() {
     let initial_vnode = model::with(|maybe_model| {
         let mut boxed_model = roc_init();
 
+        let action = roc_update(&mut boxed_model, &mut RocList::empty());
+
+        assert_eq!(action.discriminant(), glue::DiscriminantAction::None);
+
         let roc_html = roc_render(&mut boxed_model);
 
         let initial_vnode = roc_html_to_percy(&roc_html);
@@ -144,17 +148,30 @@ pub fn roc_init() -> Model {
     unsafe { caller(0) }
 }
 
-pub fn roc_update(state: &mut Model, raw_event: RocList<u8>) -> glue::Action {
+pub fn roc_update(state: &mut Model, raw_event: &mut RocList<u8>) -> glue::RawAction {
     #[link(name = "app")]
     extern "C" {
         // updateForHost : Box Model, List U8 -> Action.Action (Box Model)
         #[link_name = "roc__updateForHost_1_exposed"]
-        fn caller(state: &mut Model, raw_event: RocList<u8>) -> glue::Action;
+        fn caller(state: &mut Model, raw_event: &mut RocList<u8>) -> glue::RawAction;
+
+        #[link_name = "roc__updateForHost_1_exposed_size"]
+        fn size() -> usize;
     }
 
-    console::log("CALLING ROC_UPDATE");
+    let action = unsafe {
+        console::log(format!("CHECKING SIZE OF ROC_UPDATE {}", size()).as_str());
 
-    unsafe { caller(state, raw_event) }
+        assert_eq!(std::mem::size_of::<glue::RawAction>(), size());
+
+        console::log("CALLING ROC_UPDATE");
+
+        caller(state, raw_event)
+    };
+
+    console::log("AFTER ROC_UPDATE");
+
+    action
 }
 
 pub fn roc_render(model: &mut Model) -> glue::Html {
@@ -211,20 +228,30 @@ fn roc_html_to_percy(value: &glue::Html) -> percy_dom::VirtualNode {
                             format!("Mouse event received! {}", event.to_string()).as_str(),
                         );
 
-                        // model::with(|maybe_state| {
-                        //     if let Some(state) = maybe_state {
-                        //         let mut action = roc_update(state, event_data.clone());
-                        //         match action.discriminant() {
-                        //             glue::DiscriminantAction::None => {}
-                        //             glue::DiscriminantAction::Update => {
-                        //                 model::with(|maybe_model| {
-                        //                     *maybe_model =
-                        //                         Some(action.get_model_for_update_variant());
-                        //                 })
-                        //             }
-                        //         }
-                        //     }
-                        // })
+                        model::with(|maybe_model| {
+                            if let Some(state) = maybe_model {
+
+                                // let mut action = roc_update(state, event_data.clone());
+
+                                // console::log("AFTER UPDATE");
+
+                                // match action.discriminant() {
+                                //     glue::DiscriminantAction::None => {
+                                //         // no action to take
+                                //     }
+                                //     glue::DiscriminantAction::Update => {
+                                //         // we have a new model
+                                //         // model::with(|maybe_model| {
+                                //         //     *maybe_model =
+                                //         //         Some(action.get_model_for_update_variant());
+                                //         // })
+                                //     }
+                                // }
+                            } else {
+                                // no model available... what does this mean?
+                                panic!("NO MODEL AVAILABLE")
+                            }
+                        })
                     },
                 ))
             };
