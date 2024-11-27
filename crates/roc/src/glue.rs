@@ -1,7 +1,5 @@
 use roc_std::{roc_refcounted_noop_impl, RocBox, RocList, RocRefcounted, RocStr};
 
-pub type Model = RocBox<()>;
-
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[repr(u8)]
 pub enum DiscriminantAction {
@@ -40,6 +38,14 @@ impl RawAction {
             panic!("Unknown discriminant: {}", self.discriminant);
         }
     }
+
+    pub fn unwrap_model(&mut self) -> RocBox<()> {
+        if self.discriminant() == DiscriminantAction::Update {
+            unsafe { std::mem::transmute::<[i32; 1], RocBox<()>>(self.payload) }
+        } else {
+            panic!("Expected Update, got {:?}", self.discriminant());
+        }
+    }
 }
 
 impl Drop for RawAction {
@@ -67,6 +73,18 @@ impl RocRefcounted for RawAction {
     }
     fn is_refcounted() -> bool {
         true
+    }
+}
+
+impl std::fmt::Debug for RawAction {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self.discriminant() {
+            DiscriminantAction::None => f.debug_struct("Action::None").finish(),
+            DiscriminantAction::Update => f
+                .debug_struct("Action::Update")
+                .field("payload", &self.payload)
+                .finish(),
+        }
     }
 }
 
@@ -251,11 +269,15 @@ impl std::fmt::Display for Html {
                 }
                 DiscriminantHtml::None => write!(f, "Html::None"),
                 DiscriminantHtml::Text => {
-                    // we're confident the string is properly null-terminated and valid UTF-8 up to the null byte
-                    // as we get this from roc, so we can safely unwrap here... right...
                     let text = &(*ptr).text;
-                    let s = text.str.as_str().split('\0').next().unwrap_or_default();
-                    write!(f, "{}", s)
+                    let bytes = text.str.as_str().as_bytes();
+                    // Convert to ASCII string, stopping at first null byte
+                    let ascii_str: String = bytes
+                        .iter()
+                        .take_while(|&&b| b != 0)
+                        .map(|&b| b as char)
+                        .collect();
+                    write!(f, "{}", ascii_str)
                 }
             }
         }
@@ -280,9 +302,14 @@ impl core::fmt::Debug for Html {
                 let payload_union = self.ptr_read_union();
 
                 unsafe {
-                    f.debug_tuple("Html::Text")
-                        .field(&payload_union.text.str)
-                        .finish()
+                    let text = &payload_union.text;
+                    let bytes = text.str.as_str().as_bytes();
+                    let safe_str: String = bytes
+                        .iter()
+                        .take_while(|&&b| b != 0)
+                        .map(|&b| b as char)
+                        .collect();
+                    f.debug_tuple("Html::Text").field(&safe_str).finish()
                 }
             }
         }

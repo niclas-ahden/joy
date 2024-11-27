@@ -1,8 +1,8 @@
-use roc_std::{RocList, RocRefcounted, RocStr};
+use roc_std::{RocBox, RocList, RocStr};
 use std::alloc::{GlobalAlloc, Layout};
 use std::os::raw::c_void;
 
-mod glue;
+pub mod glue;
 
 #[global_allocator]
 static WEE_ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
@@ -75,44 +75,53 @@ pub unsafe extern "C" fn roc_memset(dst: *mut c_void, c: i32, n: usize) -> *mut 
     dst
 }
 
-pub fn roc_init() -> glue::Model {
+pub fn roc_init() -> RocBox<()> {
     #[link(name = "app")]
     extern "C" {
         // initForHost : I32 -> Model
         #[link_name = "roc__initForHost_1_exposed"]
-        fn caller(arg_not_used: i32) -> glue::Model;
+        fn caller(arg_not_used: i32) -> RocBox<()>;
+
+        #[link_name = "roc__initForHost_1_exposed_size"]
+        fn size() -> i64;
     }
 
-    unsafe { caller(0) }
+    unsafe {
+        debug_assert_eq!(std::mem::size_of::<RocBox<()>>(), size() as usize);
+        caller(0)
+    }
 }
 
-pub fn roc_update(state: &mut glue::Model, raw_event: &mut RocList<u8>) -> glue::RawAction {
+pub fn roc_update(state: RocBox<()>, raw_event: &mut RocList<u8>) -> glue::RawAction {
     #[link(name = "app")]
     extern "C" {
         // updateForHost : Box Model, List U8 -> Action.Action (Box Model)
         #[link_name = "roc__updateForHost_1_exposed"]
-        fn caller(state: &mut glue::Model, raw_event: &mut RocList<u8>) -> glue::RawAction;
+        fn caller(state: RocBox<()>, raw_event: &mut RocList<u8>) -> glue::RawAction;
 
         #[link_name = "roc__updateForHost_1_exposed_size"]
-        fn size() -> usize;
+        fn size() -> i64;
     }
 
     unsafe {
-        assert_eq!(std::mem::size_of::<glue::RawAction>(), size());
+        debug_assert_eq!(std::mem::size_of::<glue::RawAction>(), size() as usize);
         caller(state, raw_event)
     }
 }
 
-pub fn roc_render(model: &mut glue::Model) -> glue::Html {
+pub fn roc_render(model: RocBox<()>) -> glue::Html {
     #[link(name = "app")]
     extern "C" {
         // renderForHost : Box Model -> Html.Html Model
         #[link_name = "roc__renderForHost_1_exposed"]
-        fn caller(model: &mut glue::Model) -> glue::Html;
+        fn caller(model: RocBox<()>) -> glue::Html;
+
+        #[link_name = "roc__renderForHost_1_exposed_size"]
+        fn size() -> i64;
     }
 
-    // increment refcount so roc doesn't deallocate
-    model.inc();
-
-    unsafe { caller(model) }
+    unsafe {
+        debug_assert_eq!(std::mem::size_of::<glue::Html>(), size() as usize);
+        caller(model)
+    }
 }
