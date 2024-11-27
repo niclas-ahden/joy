@@ -13,6 +13,6 @@ update = \_, _ -> Action.none
 
 render : Model -> Html Model
 render = \model ->
-    div [] [] [
+    div [] [
         text "Hello from $(model)"
     ]
