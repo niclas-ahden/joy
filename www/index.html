@@ -2,19 +2,42 @@
 <html>
     <head>
         <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
-        <title>Roc DOM Demo</title>
+        <title>Joy demo</title>
     </head>
     <body>
         <div id="app"></div>
         <script type="module">
-            import init, { run } from "/pkg/web.js";
+            import init, { run, port } from "/pkg/web.js";
 
             async function startup() {
-                // initialize the wasm module
+                // Initialize the wasm module
                 await init();
 
-                // run the app
+                // Run the app
                 run();
+
+                // Uncomment this line for the ports example:
+                // setInterval(port, 1000, "Tick");
+
+                // Another example of ports:
+                // You can trigger an event by calling the `port` function with a string that
+                // your Roc app knows how to decode into a valid Event:
+                //
+                //     port("YourBeautifulEvent")
+                //
+                // Here's an example of attaching an InteractionObserver to an element and
+                // triggering an event every time the element enters the viewport:
+                //
+                //     const callback = (entries, observer) =>
+                //       entries.forEach((entry) => {
+                //         if (entry.isIntersecting) {
+                //           port("ScrollSentinelVisible")
+                //         }
+                //       })
+                //
+                //     const observer = new IntersectionObserver(callback)
+                //     const target = document.querySelector("#infiniteScrollSentinel")
+                //     observer.observe(target)
             }
 
             startup().catch(console.error);

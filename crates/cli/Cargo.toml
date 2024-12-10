@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 version.workspace = true
+description.workspace = true
 
 [dependencies]
 roc = { path = "../roc" }

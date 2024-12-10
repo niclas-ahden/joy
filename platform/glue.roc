@@ -15,16 +15,16 @@ Html : [
     Element
         {
             tag : Str,
-            attrs : List { key: Str, value: Str },
-            events : List { name : Str, handler : List U8 },
+            attrs : List { key : Str, value : Str },
+            events : List { name : Str, handler : Str },
         }
         (List Html),
 ]
 
-#Action : [
+# Action : [
 #    None,
 #    Update Str,
-#]
+# ]
 
 mainForHost : Html
 mainForHost = main {}

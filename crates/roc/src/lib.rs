@@ -1,4 +1,4 @@
-use roc_std::{RocBox, RocList, RocStr};
+use roc_std::{RocBox, RocStr};
 use std::alloc::{GlobalAlloc, Layout};
 use std::os::raw::c_void;
 
@@ -92,12 +92,12 @@ pub fn roc_init() -> RocBox<()> {
     }
 }
 
-pub fn roc_update(state: RocBox<()>, raw_event: &mut RocList<u8>) -> glue::RawAction {
+pub fn roc_update(state: RocBox<()>, raw_event: &RocStr, raw_string: &RocStr) -> glue::RawAction {
     #[link(name = "app")]
     extern "C" {
-        // updateForHost : Box Model, List U8 -> Action.Action (Box Model)
+        // updateForHost : Box Model, Str, Str -> Action.Action (Box Model)
         #[link_name = "roc__updateForHost_1_exposed"]
-        fn caller(state: RocBox<()>, raw_event: &mut RocList<u8>) -> glue::RawAction;
+        fn caller(state: RocBox<()>, raw_event: &RocStr, raw_string: &RocStr) -> glue::RawAction;
 
         #[link_name = "roc__updateForHost_1_exposed_size"]
         fn size() -> i64;
@@ -105,7 +105,7 @@ pub fn roc_update(state: RocBox<()>, raw_event: &mut RocList<u8>) -> glue::RawAc
 
     unsafe {
         debug_assert_eq!(std::mem::size_of::<glue::RawAction>(), size() as usize);
-        caller(state, raw_event)
+        caller(state, raw_event, raw_string)
     }
 }
 

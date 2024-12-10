@@ -112,7 +112,7 @@ impl RocRefcounted for ElementAttrs {
 #[derive(Clone, Default, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[repr(C)]
 pub struct EventData {
-    pub handler: RocList<u8>,
+    pub handler: RocStr,
     pub name: RocStr,
 }
 

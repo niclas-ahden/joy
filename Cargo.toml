@@ -4,10 +4,9 @@ members = ["crates/cli", "crates/helpers", "crates/web", "crates/roc"]
 resolver = "2"
 
 [workspace.package]
-authors = ["Luke Boswell"]
+authors = ["The Joy Contributors"]
+description = "A framework for building full-stack web apps in Roc"
 edition = "2021"
-license = "UPL-1.0"
-repository = "https://github.com/lukewilliamboswell/roc-experiment-js-dom"
+license = "Apache-2.0"
+repository = "https://github.com/niclas-ahden/joy"
 version = "0.0.1"
-
-[workspace.dependencies]

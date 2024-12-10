@@ -5,21 +5,33 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 version.workspace = true
+description.workspace = true
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
+console_error_panic_hook = "0.1.7"
+percy-dom = { version = "0.10.0", default-features = false }
+reqwest = { version = "0.12.9" }
 roc = { path = "../roc" }
 roc_std = { git = "https://github.com/roc-lang/roc.git" }
 wasm-bindgen = "0.2.95"
+wasm-bindgen-futures = "0.4.45"
 wee_alloc = "0.4.5"
-console_error_panic_hook = "0.1.7"
-percy-dom = { version = "0.10.0", default-features = false }
 
 [dependencies.web-sys]
 version = "0.3.72"
-features = ['Document', 'Element', 'HtmlElement', 'Node', 'Window', "console"]
+features = [
+  "Document",
+  "Element",
+  "HtmlElement",
+  "HtmlSelectElement",
+  "Node",
+  "Window",
+  "console",
+  "IntersectionObserver"
+]
 
 [build-dependencies]
 build-target = "0.4"

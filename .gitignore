@@ -1,11 +1,8 @@
-
 target/
-
 generated-docs/
-
+asdf/
 *.a
 *.o
 *.ll
-
-
-asdf/
+.direnv
+.envrc
