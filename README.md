@@ -76,20 +76,19 @@ You can try out one of the examples and start modifying it to get going.
 Use the included Nix flake or install these dependencies:
 
 Required:
-* `roc`
+* [`roc`](https://www.roc-lang.org/install) (tested with commit `50ec8ef1d1aa9abb2fda6948fb13abb431940ddf`)
 * `zig`
 * `rustc`
-* `rustfmt`
 * `cargo`
 * `lld`
 * [`wasm-pack`](https://rustwasm.github.io/wasm-pack/installer/)
 
 Recommended:
+* `rustfmt`
 * `rust-analyzer`
 * `simple-http-server`
 * `inotify-tools` (on Linux)
 * `watchexec`
-* [`bytecodealliance/cargo-wasi`](https://github.com/bytecodealliance/cargo-wasi)
 
 ### Watch
 
