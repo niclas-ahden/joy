@@ -20,7 +20,7 @@ Joy is fun to play with, but it's in early development, not production-ready, is
 and will change a lot. Even the underpinning technologies are not production-ready ([Roc](https://www.roc-lang.org),
 [`percy-dom`](https://github.com/chinedufn/percy)). Here be dragons!
 
-You can currently build a small Elm-like front-end application in it (see the [examples](/niclas-ahden/joy/tree/main/examples)). You can build a separate back-end using [`roc-lang/basic-webserver`](https://github.com/roc-lang/basic-webserver) for a full-stack experience. Hopefully, Joy will offer a seamless bridge between your front- and back-end in the future, but for now just start two separate projects and enjoy Roc!
+You can currently build a small Elm-like front-end application in it (see the [examples](https://github.com/niclas-ahden/joy/tree/main/examples)). You can build a separate back-end using [`roc-lang/basic-webserver`](https://github.com/roc-lang/basic-webserver) for a full-stack experience. Hopefully, Joy will offer a seamless bridge between your front- and back-end in the future, but for now just start two separate projects and enjoy Roc!
 
 ## Example
 
@@ -67,7 +67,7 @@ decodeEvent = \raw ->
         _ -> crash "Unsupported event type \"$(raw)\""
 ```
 
-[See more examples](/niclas-ahden/joy/tree/main/examples)
+[See more examples](https://github.com/niclas-ahden/joy/tree/main/examples)
 
 ## Try it out
 
