@@ -4,7 +4,7 @@ A framework for building full-stack web apps in Roc!
 
 Joy is a jolt of happiness for those who want a fast, productive, fun, and statically-typed environment for full-stack development.
 
-It's fork of Luke Boswell's awesome [Roc Experiment JS DOM](https://github.com/lukewilliamboswell/roc-experiment-js-dom) which opened up the avenue for me to use Roc on the front-end. Thank you Luke!
+It's a fork of Luke Boswell's awesome [Roc Experiment JS DOM](https://github.com/lukewilliamboswell/roc-experiment-js-dom) which opened up the avenue for me to use Roc on the front-end. Thank you Luke!
 
 ## Goals
 
