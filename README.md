@@ -77,7 +77,7 @@ Use the included Nix flake or install these dependencies:
 
 Required:
 * [`roc`](https://www.roc-lang.org/install) (tested with commit `50ec8ef1d1aa9abb2fda6948fb13abb431940ddf`)
-* `zig`
+* `zig 13`
 * `rustc`
 * `cargo`
 * `lld`

@@ -6,3 +6,5 @@ asdf/
 *.ll
 .direnv
 .envrc
+# for CI test script
+watch_output.log
