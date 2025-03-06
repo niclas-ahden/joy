@@ -78,11 +78,11 @@ pub unsafe extern "C" fn roc_memset(dst: *mut c_void, c: i32, n: usize) -> *mut 
 pub fn roc_init() -> RocBox<()> {
     #[link(name = "app")]
     extern "C" {
-        // initForHost : I32 -> Model
-        #[link_name = "roc__initForHost_1_exposed"]
+        // init_for_host : I32 -> Model
+        #[link_name = "roc__init_for_host_1_exposed"]
         fn caller(arg_not_used: i32) -> RocBox<()>;
 
-        #[link_name = "roc__initForHost_1_exposed_size"]
+        #[link_name = "roc__init_for_host_1_exposed_size"]
         fn size() -> i64;
     }
 
@@ -95,11 +95,11 @@ pub fn roc_init() -> RocBox<()> {
 pub fn roc_update(state: RocBox<()>, raw_event: &RocStr, raw_string: &RocStr) -> glue::RawAction {
     #[link(name = "app")]
     extern "C" {
-        // updateForHost : Box Model, Str, Str -> Action.Action (Box Model)
-        #[link_name = "roc__updateForHost_1_exposed"]
+        // update_for_host : Box Model, Str, Str -> Action.Action (Box Model)
+        #[link_name = "roc__update_for_host_1_exposed"]
         fn caller(state: RocBox<()>, raw_event: &RocStr, raw_string: &RocStr) -> glue::RawAction;
 
-        #[link_name = "roc__updateForHost_1_exposed_size"]
+        #[link_name = "roc__update_for_host_1_exposed_size"]
         fn size() -> i64;
     }
 
@@ -112,11 +112,11 @@ pub fn roc_update(state: RocBox<()>, raw_event: &RocStr, raw_string: &RocStr) ->
 pub fn roc_render(model: RocBox<()>) -> glue::Html {
     #[link(name = "app")]
     extern "C" {
-        // renderForHost : Box Model -> Html.Html Model
-        #[link_name = "roc__renderForHost_1_exposed"]
+        // render_for_host : Box Model -> Html.Html Model
+        #[link_name = "roc__render_for_host_1_exposed"]
         fn caller(model: RocBox<()>) -> glue::Html;
 
-        #[link_name = "roc__renderForHost_1_exposed_size"]
+        #[link_name = "roc__render_for_host_1_exposed_size"]
         fn size() -> i64;
     }
 

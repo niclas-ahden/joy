@@ -1,9 +1,7 @@
-hosted Effect
-    exposes [
-        log!,
-        get!,
-    ]
-    imports []
+hosted [
+    log!,
+    get!,
+]
 
 log! : Str => {}
 get! : Str, Str => {}

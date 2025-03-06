@@ -5,4 +5,4 @@ module [
 import Effect
 
 get! : Str, Str => {}
-get! = \url, raw -> Effect.get! url raw
+get! = |url, raw| Effect.get!(url, raw)

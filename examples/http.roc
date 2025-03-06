@@ -3,12 +3,12 @@ app [Model, init!, update!, render] {
     json: "https://github.com/lukewilliamboswell/roc-json/releases/download/0.11.0/z45Wzc-J39TLNweQUoLw3IGZtkQiEN3lTBv3BXErRjQ.tar.br",
 }
 
-import web.Html exposing [Html, div, pre, button, text, styleAttr]
+import web.Html exposing [Html, div, pre, button, text, style_attr]
 import web.Action exposing [Action]
 import web.Console
 import web.Http
 import json.Json
-import Decode exposing [fromBytesPartial]
+import Decode exposing [from_bytes_partial]
 
 Model : {
     quote : [
@@ -27,7 +27,7 @@ Event : [
 ]
 
 init! : {} => Model
-init! = \{} ->
+init! = |{}|
     # `init!` is effectful, so we can run effects and trigger Events when the app starts. We could
     # for example get a quote right away, without the user having to request one:
     #
@@ -37,72 +37,83 @@ init! = \{} ->
     { quote: NotRequestedYet }
 
 update! : Model, Str, Str => Action Model
-update! = \model, raw, payload ->
-    when decodeEvent raw payload is
+update! = |model, raw, payload|
+    when decode_event(raw, payload) is
         UserRequestedQuote ->
-            Console.log! "Requesting a quote..."
+            Console.log!("Requesting a quote...")
 
             # Make an HTTP request and then trigger the `ClientReceivedQuote` event. The event will
             # have a string `payload` which contains either the body of a successful response or a
             # stringified error.
-            Http.get!
-                "https://ron-swanson-quotes.herokuapp.com/v2/quotes"
-                (encodeEvent ClientReceivedQuote)
+            Http.get!(
+                "https://ron-swanson-quotes.herokuapp.com/v2/quotes",
+                encode_event(ClientReceivedQuote),
+            )
 
-            model |> &quote Loading |> Action.update
+            model |> &quote(Loading) |> Action.update
 
-        ClientReceivedQuote json ->
+        ClientReceivedQuote(json) ->
             decoded : DecodeResult Quote
-            decoded = fromBytesPartial (Str.toUtf8 json) Json.utf8
+            decoded = from_bytes_partial(Str.to_utf8(json), Json.utf8)
 
             when decoded.result is
-                Ok quote ->
-                    Console.log! "Successfully parsed JSON"
+                Ok(quote) ->
+                    Console.log!("Successfully parsed JSON")
 
                     model
-                    |> &quote (Loaded quote)
+                    |> &quote(Loaded(quote))
                     |> Action.update
 
-                Err e ->
-                    error = "ERROR: Failed to decode JSON. Cause: $(Inspect.toStr e)"
-                    Console.log! error
-                    model |> &quote (Error error) |> Action.update
+                Err(e) ->
+                    error = "ERROR: Failed to decode JSON. Cause: ${Inspect.to_str(e)}"
+                    Console.log!(error)
+                    model |> &quote(Error(error)) |> Action.update
 
 render : Model -> Html Model
-render = \model ->
+render = |model|
     when model.quote is
         NotRequestedYet ->
-            div [] [
-                text "Would you like a Ron Swanson quote?",
-                requestQuoteButtonView,
-            ]
-
-        Loading -> div [] [text "Getting a quote..."]
-        Loaded quote ->
-            div [] [
-                text "Ron once said:",
-                pre [] [Str.joinWith quote "\n" |> text],
-                requestQuoteButtonView,
-            ]
-
-        Error error ->
-            div
-                []
+            div(
+                [],
                 [
-                    text "Couldn't get quote, cause: $(error)",
-                    requestQuoteButtonView,
-                ]
+                    text("Would you like a Ron Swanson quote?"),
+                    request_quote_button_view,
+                ],
+            )
 
-requestQuoteButtonView : Html Model
-requestQuoteButtonView =
-    button
+        Loading -> div([], [text("Getting a quote...")])
+        Loaded(quote) ->
+            div(
+                [],
+                [
+                    text("Ron once said:"),
+                    pre([], [Str.join_with(quote, "\n") |> text]),
+                    request_quote_button_view,
+                ],
+            )
+
+        Error(error) ->
+            div(
+                [],
+                [
+                    text("Couldn't get quote, cause: ${error}"),
+                    request_quote_button_view,
+                ],
+            )
+
+request_quote_button_view : Html Model
+request_quote_button_view =
+    button(
         [
-            styleAttr [
-                ("display", "block"),
-            ],
-        ]
-        [{ name: "onclick", handler: encodeEvent UserRequestedQuote }]
-        [text "Treat Yo Self"]
+            style_attr(
+                [
+                    ("display", "block"),
+                ],
+            ),
+        ],
+        [{ name: "onclick", handler: encode_event(UserRequestedQuote) }],
+        [text("Treat Yo Self")],
+    )
 
 ## `encodeEvent` does not take an `Event` because `Event`s may have payloads that don't make sense
 ## to pass in when encoding. In this example we're making HTTP requests and the
@@ -120,12 +131,12 @@ requestQuoteButtonView =
 ## not. It's just a tag that happens to look similar to the `Event` `ClientReceivedQuote Str`.
 ## Therefore, Roc cannot guarantee that we have written a decoder for every tag that we have an
 ## encoder for.
-encodeEvent : _ -> Str
-encodeEvent = \event -> Inspect.toStr event
+encode_event : _ -> Str
+encode_event = |event| Inspect.to_str(event)
 
-decodeEvent : Str, Str -> Event
-decodeEvent = \raw, payload ->
+decode_event : Str, Str -> Event
+decode_event = |raw, payload|
     when raw is
         "UserRequestedQuote" -> UserRequestedQuote
-        "ClientReceivedQuote" -> ClientReceivedQuote payload
-        _ -> crash "Unsupported event type \"$(raw)\", payload \"$(payload)\""
+        "ClientReceivedQuote" -> ClientReceivedQuote(payload)
+        _ -> crash("Unsupported event type \"${raw}\", payload \"${payload}\"")
