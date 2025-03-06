@@ -1,6 +1,6 @@
 app [Model, init!, update!, render] { web: platform "../platform/main.roc" }
 
-import web.Html exposing [Html, div, button, ul, li, text, styleAttr]
+import web.Html exposing [Html, div, button, ul, li, text, style_attr]
 import web.Action exposing [Action]
 
 Model : {
@@ -10,7 +10,7 @@ Model : {
 }
 
 init! : {} => Model
-init! = \{} -> {
+init! = |{}| {
     left: -10,
     middle: 0,
     right: 10,
@@ -22,104 +22,125 @@ Event : [
 ]
 
 update! : Model, Str, Str => Action Model
-update! = \model, raw, _payload ->
-    when decodeEvent raw is
-        UserClickedDecrement Left -> model |> &left (Num.subWrap model.left 1) |> Action.update
-        UserClickedDecrement Middle -> model |> &middle (Num.subWrap model.middle 1) |> Action.update
-        UserClickedDecrement Right -> model |> &right (Num.subWrap model.right 1) |> Action.update
-        UserClickedIncrement Left -> model |> &left (Num.addWrap model.left 1) |> Action.update
-        UserClickedIncrement Middle -> model |> &middle (Num.addWrap model.middle 1) |> Action.update
-        UserClickedIncrement Right -> model |> &right (Num.addWrap model.right 1) |> Action.update
+update! = |model, raw, _payload|
+    when decode_event(raw) is
+        UserClickedDecrement(Left) -> model |> &left(Num.sub_wrap(model.left, 1)) |> Action.update
+        UserClickedDecrement(Middle) -> model |> &middle(Num.sub_wrap(model.middle, 1)) |> Action.update
+        UserClickedDecrement(Right) -> model |> &right(Num.sub_wrap(model.right, 1)) |> Action.update
+        UserClickedIncrement(Left) -> model |> &left(Num.add_wrap(model.left, 1)) |> Action.update
+        UserClickedIncrement(Middle) -> model |> &middle(Num.add_wrap(model.middle, 1)) |> Action.update
+        UserClickedIncrement(Right) -> model |> &right(Num.add_wrap(model.right, 1)) |> Action.update
 
 render : Model -> Html Model
-render = \model ->
-    div
+render = |model|
+    div(
         [
-            styleAttr [
-                ("display", "flex"),
-                ("justify-content", "space-around"),
-                ("padding", "20px"),
-            ],
-        ]
+            style_attr(
+                [
+                    ("display", "flex"),
+                    ("justify-content", "space-around"),
+                    ("padding", "20px"),
+                ],
+            ),
+        ],
         [
-            counter Left model.left,
-            counter Middle model.middle,
-            counter Right model.right,
-        ]
+            counter(Left, model.left),
+            counter(Middle, model.middle),
+            counter(Right, model.right),
+        ],
+    )
 
 counter : [Left, Middle, Right], I64 -> _
-counter = \variant, value ->
-    ul
+counter = |variant, value|
+    ul(
         [
-            styleAttr [
-                ("list-style", "none"),
-                ("padding", "0"),
-                ("text-align", "center"),
-            ],
-        ]
-        [
-            li [] [
-                button
-                    [
-                        styleAttr [
-                            ("background-color", "red"),
-                            ("color", "white"),
-                            ("padding", "10px 20px"),
-                            ("border", "none"),
-                            ("border-radius", "5px"),
-                            ("cursor", "pointer"),
-                            ("margin", "5px"),
-                            ("font-size", "16px"),
-                        ],
-                    ]
-                    [
-                        { name: "onclick", handler: encodeEvent (UserClickedDecrement variant) },
-                    ]
-                    [text "-"],
-            ],
-            li
+            style_attr(
                 [
-                    styleAttr [
-                        ("font-size", "24px"),
-                        ("margin", "15px 0"),
-                        ("font-weight", "bold"),
-                    ],
-                ]
-                [
-                    text (Inspect.toStr value),
+                    ("list-style", "none"),
+                    ("padding", "0"),
+                    ("text-align", "center"),
                 ],
-            li [] [
-                button
-                    [
-                        styleAttr [
-                            ("background-color", "blue"),
-                            ("color", "white"),
-                            ("padding", "10px 20px"),
-                            ("border", "none"),
-                            ("border-radius", "5px"),
-                            ("cursor", "pointer"),
-                            ("margin", "5px"),
-                            ("font-size", "16px"),
+            ),
+        ],
+        [
+            li(
+                [],
+                [
+                    button(
+                        [
+                            style_attr(
+                                [
+                                    ("background-color", "red"),
+                                    ("color", "white"),
+                                    ("padding", "10px 20px"),
+                                    ("border", "none"),
+                                    ("border-radius", "5px"),
+                                    ("cursor", "pointer"),
+                                    ("margin", "5px"),
+                                    ("font-size", "16px"),
+                                ],
+                            ),
                         ],
-                    ]
-                    [
-                        { name: "onclick", handler: encodeEvent (UserClickedIncrement variant) },
-                    ]
-                    [text "+"],
-            ],
-        ]
+                        [
+                            { name: "onclick", handler: encode_event(UserClickedDecrement(variant)) },
+                        ],
+                        [text("-")],
+                    ),
+                ],
+            ),
+            li(
+                [
+                    style_attr(
+                        [
+                            ("font-size", "24px"),
+                            ("margin", "15px 0"),
+                            ("font-weight", "bold"),
+                        ],
+                    ),
+                ],
+                [
+                    text(Inspect.to_str(value)),
+                ],
+            ),
+            li(
+                [],
+                [
+                    button(
+                        [
+                            style_attr(
+                                [
+                                    ("background-color", "blue"),
+                                    ("color", "white"),
+                                    ("padding", "10px 20px"),
+                                    ("border", "none"),
+                                    ("border-radius", "5px"),
+                                    ("cursor", "pointer"),
+                                    ("margin", "5px"),
+                                    ("font-size", "16px"),
+                                ],
+                            ),
+                        ],
+                        [
+                            { name: "onclick", handler: encode_event(UserClickedIncrement(variant)) },
+                        ],
+                        [text("+")],
+                    ),
+                ],
+            ),
+        ],
+    )
 
-encodeEvent : Event -> Str
-encodeEvent = \event -> Inspect.toStr event
+encode_event : Event -> Str
+encode_event = |event| Inspect.to_str(event)
 
-decodeEvent : Str -> Event
-decodeEvent = \raw ->
+decode_event : Str -> Event
+decode_event = |raw|
     when raw is
-        "(UserClickedIncrement Left)" -> UserClickedIncrement Left
-        "(UserClickedIncrement Right)" -> UserClickedIncrement Right
-        "(UserClickedIncrement Middle)" -> UserClickedIncrement Middle
-        "(UserClickedDecrement Left)" -> UserClickedDecrement Left
-        "(UserClickedDecrement Right)" -> UserClickedDecrement Right
-        "(UserClickedDecrement Middle)" -> UserClickedDecrement Middle
-        _ -> crash "Unsupported event type \"$(raw)\""
+        "(UserClickedIncrement Left)" -> UserClickedIncrement(Left)
+        "(UserClickedIncrement Right)" -> UserClickedIncrement(Right)
+        "(UserClickedIncrement Middle)" -> UserClickedIncrement(Middle)
+        "(UserClickedDecrement Left)" -> UserClickedDecrement(Left)
+        "(UserClickedDecrement Right)" -> UserClickedDecrement(Right)
+        "(UserClickedDecrement Middle)" -> UserClickedDecrement(Middle)
+        _ -> crash("Unsupported event type \"${raw}\"")
 

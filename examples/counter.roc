@@ -6,7 +6,7 @@ import web.Action exposing [Action]
 Model : I64
 
 init! : {} => Model
-init! = \{} -> 0
+init! = |{}| 0
 
 Event : [
     UserClickedDecrement,
@@ -14,26 +14,29 @@ Event : [
 ]
 
 update! : Model, Str, Str => Action Model
-update! = \model, raw, _payload ->
-    when decodeEvent raw is
-        UserClickedDecrement -> Num.subWrap model 1 |> Action.update
-        UserClickedIncrement -> Num.addWrap model 1 |> Action.update
+update! = |model, raw, _payload|
+    when decode_event(raw) is
+        UserClickedDecrement -> Num.sub_wrap(model, 1) |> Action.update
+        UserClickedIncrement -> Num.add_wrap(model, 1) |> Action.update
 
 render : Model -> Html Model
-render = \model ->
-    div [] [
-        button [] [{ name: "onclick", handler: encodeEvent UserClickedIncrement }] [text "+"],
-        text (Inspect.toStr model),
-        button [] [{ name: "onclick", handler: encodeEvent UserClickedDecrement }] [text "-"],
-    ]
+render = |model|
+    div(
+        [],
+        [
+            button([], [{ name: "onclick", handler: encode_event(UserClickedIncrement) }], [text("+")]),
+            text(Inspect.to_str(model)),
+            button([], [{ name: "onclick", handler: encode_event(UserClickedDecrement) }], [text("-")]),
+        ],
+    )
 
-encodeEvent : Event -> Str
-encodeEvent = \event -> Inspect.toStr event
+encode_event : Event -> Str
+encode_event = |event| Inspect.to_str(event)
 
-decodeEvent : Str -> Event
-decodeEvent = \raw ->
+decode_event : Str -> Event
+decode_event = |raw|
     when raw is
         "UserClickedIncrement" -> UserClickedIncrement
         "UserClickedDecrement" -> UserClickedDecrement
-        _ -> crash "Unsupported event type \"$(raw)\""
+        _ -> crash("Unsupported event type \"${raw}\"")
 

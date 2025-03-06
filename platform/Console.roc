@@ -5,4 +5,4 @@ module [
 import Effect
 
 log! : Str => {}
-log! = \msg -> Effect.log! msg
+log! = |msg| Effect.log!(msg)

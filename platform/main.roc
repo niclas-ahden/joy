@@ -7,17 +7,17 @@ platform ""
     exposes [Html, Action]
     packages {}
     imports []
-    provides [initForHost!, updateForHost!, renderForHost]
+    provides [init_for_host!, update_for_host!, render_for_host]
 
 import Html
 import Action
 
-initForHost! : I32 => Box Model
-initForHost! = \_ -> Box.box (init! {})
+init_for_host! : I32 => Box Model
+init_for_host! = |_| Box.box(init!({}))
 
-updateForHost! : Box Model, Str, Str => Action.Action (Box Model)
-updateForHost! = \boxedModel, rawEvent, eventPayload ->
-    Action.map (update! (Box.unbox boxedModel) rawEvent eventPayload) Box.box
+update_for_host! : Box Model, Str, Str => Action.Action (Box Model)
+update_for_host! = |boxed_model, raw_event, event_payload|
+    Action.map(update!(Box.unbox(boxed_model), raw_event, event_payload), Box.box)
 
-renderForHost : Box Model -> Html.Html Model
-renderForHost = \boxedModel -> render (Box.unbox boxedModel)
+render_for_host : Box Model -> Html.Html Model
+render_for_host = |boxed_model| render(Box.unbox(boxed_model))

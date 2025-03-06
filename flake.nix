@@ -5,7 +5,7 @@
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     roc.url = "github:roc-lang/roc";
-    # roc.url = "github:roc-lang/roc/9fcd5a3fe88a1911ccd56ecf6e5df88c4f16c098";
+    # roc.url = "github:roc-lang/roc/50ec8ef1d1aa9abb2fda6948fb13abb431940ddf";
   };
 
   outputs = { nixpkgs, flake-utils, roc, ... }:

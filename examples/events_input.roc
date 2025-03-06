@@ -11,26 +11,30 @@ Event : [
 ]
 
 init! : {} => Model
-init! = \{} -> ""
+init! = |{}| ""
 
 update! : Model, Str, Str => Action Model
-update! = \_model, raw, payload ->
-    when decodeEvent raw payload is
-        UserTypedSomething message ->
-            Console.log! "User typed: $(message)"
+update! = |_model, raw, payload|
+    when decode_event(raw, payload) is
+        UserTypedSomething(message) ->
+            Console.log!("User typed: ${message}")
 
             message |> Action.update
 
 render : Model -> Html Model
-render = \model ->
-    div [] [
-        h1 [] [text "Dear diary"],
-        textarea
-            [rows "10", cols "30"]
-            [{ name: "oninput", handler: encodeEvent UserTypedSomething }]
-            [],
-        p [] [text model],
-    ]
+render = |model|
+    div(
+        [],
+        [
+            h1([], [text("Dear diary")]),
+            textarea(
+                [rows("10"), cols("30")],
+                [{ name: "oninput", handler: encode_event(UserTypedSomething) }],
+                [],
+            ),
+            p([], [text(model)]),
+        ],
+    )
 
 ## `encodeEvent` does not take an `Event` because `Event`s may have payloads that don't make sense
 ## to pass in when encoding. In this example we want the event `UserTypedSomething` to trigger
@@ -41,12 +45,12 @@ render = \model ->
 ## not. It's just a tag that happens to look similar to the `Event` `UserTypedSomething Str`.
 ## Therefore, Roc cannot guarantee that we have written a decoder for every tag that we have an
 ## encoder for.
-encodeEvent : _ -> Str
-encodeEvent = \event -> Inspect.toStr event
+encode_event : _ -> Str
+encode_event = |event| Inspect.to_str(event)
 
-decodeEvent : Str, Str -> Event
-decodeEvent = \raw, payload ->
+decode_event : Str, Str -> Event
+decode_event = |raw, payload|
     when raw is
-        "UserTypedSomething" -> UserTypedSomething payload
-        _ -> crash "Unsupported event type \"$(raw)\", payload \"$(payload)\""
+        "UserTypedSomething" -> UserTypedSomething(payload)
+        _ -> crash("Unsupported event type \"${raw}\", payload \"${payload}\"")
 

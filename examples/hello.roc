@@ -6,11 +6,11 @@ import web.Action exposing [Action]
 Model : Str
 
 init! : {} => Model
-init! = \{} -> "Roc"
+init! = |{}| "Roc"
 
 update! : Model, Str, Str => Action Model
-update! = \_, _, _ -> Action.none
+update! = |_, _, _| Action.none
 
 render : Model -> Html Model
-render = \model ->
-    div [] [text "Hello, $(model)!"]
+render = |model|
+    div([], [text("Hello, ${model}!")])
