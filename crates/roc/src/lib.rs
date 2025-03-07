@@ -75,12 +75,12 @@ pub unsafe extern "C" fn roc_memset(dst: *mut c_void, c: i32, n: usize) -> *mut 
     dst
 }
 
-pub fn roc_init() -> RocBox<()> {
+pub fn roc_init(flags: &RocStr) -> RocBox<()> {
     #[link(name = "app")]
     extern "C" {
-        // init_for_host : I32 -> Model
+        // init_for_host : Str -> Model
         #[link_name = "roc__init_for_host_1_exposed"]
-        fn caller(arg_not_used: i32) -> RocBox<()>;
+        fn caller(flags: &RocStr) -> RocBox<()>;
 
         #[link_name = "roc__init_for_host_1_exposed_size"]
         fn size() -> i64;
@@ -88,7 +88,7 @@ pub fn roc_init() -> RocBox<()> {
 
     unsafe {
         debug_assert_eq!(std::mem::size_of::<RocBox<()>>(), size() as usize);
-        caller(0)
+        caller(flags)
     }
 }
 

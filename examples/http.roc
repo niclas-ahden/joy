@@ -28,8 +28,8 @@ Event : [
     ClientReceivedQuote Str,
 ]
 
-init! : {} => Model
-init! = |{}|
+init! : Str => Model
+init! = |_flags|
     # `init!` is effectful, so we can run effects and trigger Events when the app starts. We could
     # for example get a quote right away, without the user having to request one:
     #

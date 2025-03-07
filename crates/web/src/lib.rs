@@ -8,13 +8,13 @@ mod model;
 mod pdom;
 
 #[wasm_bindgen]
-pub fn run() {
+pub fn run(flags: String) {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
     // console::log(&format!("Starting app..."));
 
     let initial_vnode = model::with(|maybe_model| {
         // call into roc to get the initial model
-        let boxed_model = roc::roc_init();
+        let boxed_model = roc::roc_init(&flags.as_str().into());
 
         // save the model for later
         *maybe_model = Some(boxed_model.clone());

@@ -11,8 +11,8 @@ Model : I32
 
 Event : [Tick]
 
-init! : {} => Model
-init! = |{}| 0
+init! : Str => Model
+init! = |_flags| 0
 
 update! : Model, Str, Str => Action Model
 update! = |model, raw, _|

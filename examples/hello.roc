@@ -8,8 +8,8 @@ import pf.Action exposing [Action]
 
 Model : Str
 
-init! : {} => Model
-init! = |{}| "Roc"
+init! : Str => Model
+init! = |_flags| "Roc"
 
 update! : Model, Str, Str => Action Model
 update! = |_, _, _| Action.none

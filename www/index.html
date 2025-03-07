@@ -10,12 +10,29 @@
             import init, { run, port } from "/pkg/web.js";
 
             async function startup() {
-                // Initialize the wasm module
+                // Initialize the WASM module
                 await init();
 
-                // Run the app
-                run();
+                //// Flags
+                // `run` starts the Joy app and it takes a single string argument, which we call
+                // "flags". The flags string is passed to your `init!` function and you can use it
+                // however you want to construct your initial `Model`.
+                //
+                // Most of our examples discard the flags argument, so we're just passing in an
+                // empty string here. However, `examples/flags.roc` does use the argument, so for
+                // that example you should pass in a valid JSON string (not an object) like so:
+                //
+                // run(`{
+                //   "name": "Brödil",
+                //   "karma": 99
+                // }`);
+                //
+                // Note that passing in a JSON string is just a convenient and nice way of handling
+                // flags. However, it's just a string, so it can have any value you'd like and you
+                // are free to use it in `init!` in any way that fits your application.
+                run("");
 
+                //// Ports
                 // Uncomment this line for the ports example:
                 // setInterval(port, 1000, "Tick");
 

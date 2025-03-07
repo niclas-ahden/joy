@@ -13,8 +13,8 @@ Model : {
     right : I64,
 }
 
-init! : {} => Model
-init! = |{}| {
+init! : _ => Model
+init! = |_flags| {
     left: -10,
     middle: 0,
     right: 10,
