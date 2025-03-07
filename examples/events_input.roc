@@ -1,8 +1,12 @@
-app [Model, init!, update!, render] { web: platform "../platform/main.roc" }
+app [Model, init!, update!, render] {
+    pf: platform "../platform/main.roc",
+    html: "https://github.com/niclas-ahden/joy-html/releases/download/v0.1.0/g0btWTwHYXQ6ZTCsMRHnCxYuu73bZ5lharzD_p1s5lE.tar.br",
+}
 
-import web.Html exposing [Html, div, textarea, p, h1, text, rows, cols]
-import web.Action exposing [Action]
-import web.Console
+import html.Html exposing [Html, div, textarea, p, h1, text]
+import html.Attribute exposing [rows, cols]
+import pf.Action exposing [Action]
+import pf.Console
 
 Model : Str
 

@@ -1,14 +1,16 @@
 app [Model, init!, update!, render] {
-    web: platform "../platform/main.roc",
-    json: "https://github.com/lukewilliamboswell/roc-json/releases/download/0.11.0/z45Wzc-J39TLNweQUoLw3IGZtkQiEN3lTBv3BXErRjQ.tar.br",
+    pf: platform "../platform/main.roc",
+    html: "https://github.com/niclas-ahden/joy-html/releases/download/v0.1.0/g0btWTwHYXQ6ZTCsMRHnCxYuu73bZ5lharzD_p1s5lE.tar.br",
+    json: "https://github.com/lukewilliamboswell/roc-json/releases/download/0.12.0/1trwx8sltQ-e9Y2rOB4LWUWLS_sFVyETK8Twl0i9qpw.tar.gz",
 }
 
-import web.Html exposing [Html, div, pre, button, text, style_attr]
-import web.Action exposing [Action]
-import web.Console
-import web.Http
-import json.Json
 import Decode exposing [from_bytes_partial]
+import html.Attribute exposing [style]
+import html.Html exposing [Html, div, pre, button, text]
+import json.Json
+import pf.Action exposing [Action]
+import pf.Console
+import pf.Http
 
 Model : {
     quote : [
@@ -104,13 +106,7 @@ render = |model|
 request_quote_button_view : Html Model
 request_quote_button_view =
     button(
-        [
-            style_attr(
-                [
-                    ("display", "block"),
-                ],
-            ),
-        ],
+        [style([("display", "block")])],
         [{ name: "onclick", handler: encode_event(UserRequestedQuote) }],
         [text("Treat Yo Self")],
     )
