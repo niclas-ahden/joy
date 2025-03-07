@@ -2,7 +2,7 @@ module [
     log!,
 ]
 
-import Effect
+import Host
 
 log! : Str => {}
-log! = |msg| Effect.log!(msg)
+log! = |msg| Host.log!(msg)
