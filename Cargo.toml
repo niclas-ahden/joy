@@ -10,3 +10,22 @@ edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/niclas-ahden/joy"
 version = "0.0.1"
+
+[workspace.dependencies]
+# NOTE: You can pin the version/commit of Roc by specifying a rev (commit) like so:
+#
+#     roc_std = {
+#       git = "https://github.com/roc-lang/roc.git",
+#       rev = "9fcd5a3fe88a1911ccd56ecf6e5df88c4f16c098",
+#     }
+#
+# Likewise you can pin to a branch or tag like so:
+#
+#       branch = "foo",
+#    or
+#       tag = "v0.1.0",
+#
+# See: https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html
+#
+# Remember to also pin the Roc compiler to the same version in `./flake.nix` (or however else you install the compiler).
+roc_std = { git = "https://github.com/roc-lang/roc.git" }

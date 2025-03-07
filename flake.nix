@@ -4,8 +4,12 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    # NOTE: You can pin the version/commit of Roc by appending /<commit> to the URL like so:
+    #
+    #     roc.url = "github:roc-lang/roc/9fcd5a3fe88a1911ccd56ecf6e5df88c4f16c098";
+    #
+    # Remember to also pin `roc_std` to the same commit in `./Cargo.toml`.
     roc.url = "github:roc-lang/roc";
-    # roc.url = "github:roc-lang/roc/50ec8ef1d1aa9abb2fda6948fb13abb431940ddf";
   };
 
   outputs = { nixpkgs, flake-utils, roc, ... }:
