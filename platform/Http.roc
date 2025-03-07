@@ -2,7 +2,7 @@ module [
     get!,
 ]
 
-import Effect
+import Host
 
 get! : Str, Str => {}
-get! = |url, raw| Effect.get!(url, raw)
+get! = |url, raw| Host.get!(url, raw)
