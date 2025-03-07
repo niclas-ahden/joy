@@ -14,8 +14,8 @@ Event : [
     UserTypedSomething Str,
 ]
 
-init! : {} => Model
-init! = |{}| ""
+init! : Str => Model
+init! = |_flags| ""
 
 update! : Model, Str, Str => Action Model
 update! = |_model, raw, payload|

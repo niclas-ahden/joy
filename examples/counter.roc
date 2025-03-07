@@ -8,8 +8,8 @@ import pf.Action exposing [Action]
 
 Model : I64
 
-init! : {} => Model
-init! = |{}| 0
+init! : Str => Model
+init! = |_flags| 0
 
 Event : [
     UserClickedDecrement,
