@@ -8,7 +8,7 @@ version.workspace = true
 description.workspace = true
 
 [dependencies]
-roc_std = { git = "https://github.com/roc-lang/roc.git" }
+roc_std = { workspace = true}
 wee_alloc = "0.4.5"
 
 [build-dependencies]

@@ -9,4 +9,4 @@ description.workspace = true
 
 [dependencies]
 roc = { path = "../roc" }
-roc_std = { git = "https://github.com/roc-lang/roc.git" }
+roc_std = { workspace = true}

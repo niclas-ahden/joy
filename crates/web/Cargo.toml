@@ -15,10 +15,13 @@ console_error_panic_hook = "0.1.7"
 percy-dom = { version = "0.10.0", default-features = false }
 reqwest = { version = "0.12.9" }
 roc = { path = "../roc" }
-roc_std = { git = "https://github.com/roc-lang/roc.git" }
+roc_std = { workspace = true}
 wasm-bindgen = "0.2.95"
 wasm-bindgen-futures = "0.4.45"
 wee_alloc = "0.4.5"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(wasm_bindgen_unstable_test_coverage)'] }
 
 [dependencies.web-sys]
 version = "0.3.72"
