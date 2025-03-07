@@ -1,7 +1,10 @@
-app [Model, init!, update!, render] { web: platform "../platform/main.roc" }
+app [Model, init!, update!, render] {
+    pf: platform "../platform/main.roc",
+    html: "https://github.com/niclas-ahden/joy-html/releases/download/v0.1.0/g0btWTwHYXQ6ZTCsMRHnCxYuu73bZ5lharzD_p1s5lE.tar.br",
+}
 
-import web.Html exposing [Html, div, text]
-import web.Action exposing [Action]
+import html.Html exposing [Html, div, text]
+import pf.Action exposing [Action]
 
 Model : Str
 

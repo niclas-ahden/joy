@@ -1,7 +1,11 @@
-app [Model, init!, update!, render] { web: platform "../platform/main.roc" }
+app [Model, init!, update!, render] {
+    pf: platform "../platform/main.roc",
+    html: "https://github.com/niclas-ahden/joy-html/releases/download/v0.1.0/g0btWTwHYXQ6ZTCsMRHnCxYuu73bZ5lharzD_p1s5lE.tar.br",
+}
 
-import web.Html exposing [Html, div, button, ul, li, text, style_attr]
-import web.Action exposing [Action]
+import pf.Action exposing [Action]
+import html.Html exposing [Html, div, button, ul, li, text]
+import html.Attribute exposing [style]
 
 Model : {
     left : I64,
@@ -35,7 +39,7 @@ render : Model -> Html Model
 render = |model|
     div(
         [
-            style_attr(
+            style(
                 [
                     ("display", "flex"),
                     ("justify-content", "space-around"),
@@ -54,7 +58,7 @@ counter : [Left, Middle, Right], I64 -> _
 counter = |variant, value|
     ul(
         [
-            style_attr(
+            style(
                 [
                     ("list-style", "none"),
                     ("padding", "0"),
@@ -68,7 +72,7 @@ counter = |variant, value|
                 [
                     button(
                         [
-                            style_attr(
+                            style(
                                 [
                                     ("background-color", "red"),
                                     ("color", "white"),
@@ -81,16 +85,14 @@ counter = |variant, value|
                                 ],
                             ),
                         ],
-                        [
-                            { name: "onclick", handler: encode_event(UserClickedDecrement(variant)) },
-                        ],
+                        [{ name: "onclick", handler: encode_event(UserClickedDecrement(variant)) }],
                         [text("-")],
                     ),
                 ],
             ),
             li(
                 [
-                    style_attr(
+                    style(
                         [
                             ("font-size", "24px"),
                             ("margin", "15px 0"),
@@ -98,16 +100,14 @@ counter = |variant, value|
                         ],
                     ),
                 ],
-                [
-                    text(Inspect.to_str(value)),
-                ],
+                [text(Inspect.to_str(value))],
             ),
             li(
                 [],
                 [
                     button(
                         [
-                            style_attr(
+                            style(
                                 [
                                     ("background-color", "blue"),
                                     ("color", "white"),
@@ -120,9 +120,7 @@ counter = |variant, value|
                                 ],
                             ),
                         ],
-                        [
-                            { name: "onclick", handler: encode_event(UserClickedIncrement(variant)) },
-                        ],
+                        [{ name: "onclick", handler: encode_event(UserClickedIncrement(variant)) }],
                         [text("+")],
                     ),
                 ],
