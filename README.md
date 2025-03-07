@@ -16,26 +16,29 @@ Joy should provide:
 
 ## Status
 
-Joy is fun to play with, but it's in early development, not production-ready, is missing most of its intended features,
-and will change a lot. Even the underpinning technologies are not production-ready ([Roc](https://www.roc-lang.org),
-[`percy-dom`](https://github.com/chinedufn/percy)). Here be dragons!
+Joy is fun to play with, but it's in early development, not production-ready, is missing most of its intended features, and will change a lot. Even the underpinning technologies are not production-ready ([Roc](https://www.roc-lang.org), [`percy-dom`](https://github.com/chinedufn/percy)). Here be dragons!
 
-You can currently build a small Elm-like front-end application in it (see the [examples](https://github.com/niclas-ahden/joy/tree/main/examples)). You can build a separate back-end using [`roc-lang/basic-webserver`](https://github.com/roc-lang/basic-webserver) for a full-stack experience. Hopefully, Joy will offer a seamless bridge between your front- and back-end in the future, but for now just start two separate projects and enjoy Roc!
+You can already build full-stack or single-page applications in it but the functionality is severely limited. Have a look at the [examples](https://github.com/niclas-ahden/joy/tree/main/examples) to get a grasp on what's currently supported.
+
+Have fun and expect breaking changes!
 
 ## Example
 
 A client-side counter:
 
 ```roc
-app [Model, init!, update!, render] { web: platform "../platform/main.roc" }
+app [Model, init!, update!, render] {
+    pf: platform "../platform/main.roc",
+    html: "https://github.com/niclas-ahden/joy-html/releases/download/v0.1.0/g0btWTwHYXQ6ZTCsMRHnCxYuu73bZ5lharzD_p1s5lE.tar.br",
+}
 
-import web.Html exposing [Html, div, button, text]
-import web.Action exposing [Action]
+import html.Html exposing [Html, div, button, text]
+import pf.Action exposing [Action]
 
 Model : I64
 
-init! : {} => Model
-init! = |{}| 0
+init! : Str => Model
+init! = |_flags| 0
 
 Event : [
     UserClickedDecrement,
@@ -74,35 +77,43 @@ decode_event = |raw|
 
 ## Try it out
 
-You can try out one of the examples and start modifying it to get going.
+Clone the repo and use the included Nix flake to set up your development environment:
 
-Use the included Nix flake or install these dependencies:
+```sh
+$ nix develop # Oh, lord, have mercy! This is great!
+```
 
-Required:
-* [`roc`](https://www.roc-lang.org/install)
+If you don't want to use Nix then please install:
+
+* [`roc`](https://www.roc-lang.org/install) (see [Roc compiler and roc_std versions](#roc-compiler-and-roc_std-versions) below)
 * `zig 13`
 * `rustc`
 * `cargo`
 * `lld`
 * [`wasm-pack`](https://rustwasm.github.io/wasm-pack/installer/)
-
-Recommended:
-* `rustfmt`
-* `rust-analyzer`
 * `simple-http-server`
 * `inotify-tools` (on Linux)
 * `watchexec`
 
-### Watch
+### Run an example
 
-Install `watchexec`, `inotify-tools` (on Linux), and `simple-http-server`, then:
+Pick an [example](https://github.com/niclas-ahden/joy/tree/main/examples) and run it like so:
 
 ```sh
 $ ./watch.sh examples/hello.roc
 ```
-The application should now be available at: [`http://localhost:3000`](http://localhost:3000). Your Roc application and the platform will be recompiled on change, but there's no hot-reloading in the browser. Refresh the page to see changes.
+
+The application should now be available at: [`http://localhost:3000`](http://localhost:3000)
+
+Start modifying the example to get a feel for it. Refresh the browser to see your changes (the app is recompiled on change but there's no browser hot-reloading yet).
 
 ### Deploying an app
+
+#### Full-stack apps
+
+TBD
+
+#### SPA / Client-side apps
 
 Delete existing assets then build for release:
 
@@ -111,7 +122,7 @@ $ rm -rf ./www/pkg
 $ ./build.sh --release examples/hello.roc
 ```
 
-You'll end up with a complete front-end app in the `www` directory. You can deploy that anywhere as you see fit. There's no way to bundle it with a back-end yet.
+You'll end up with a complete front-end app in the `www` directory. You can deploy that anywhere as you see fit.
 
 ## Contributing
 
@@ -120,6 +131,8 @@ Contributions are very welcome, including feature requests, design discussion, e
 ## Development setup
 
 Do everything under "Try it out" and you're golden.
+
+The `./watch.sh` script will recompile your Roc application and the client-side platform on change.
 
 ### CLI
 
@@ -130,6 +143,27 @@ Install [`bytecodealliance/cargo-wasi`](https://github.com/bytecodealliance/carg
 ```sh
 $ ./run-cli.sh examples/hello.roc
 ```
+
+### Roc compiler and `roc_std` versions
+
+The Joy client-side platform is written in Rust and depends on the crate `roc_std` from the Roc project. You must ensure that your Roc compiler version is the same as the `roc_std` version that Joy uses.
+
+#### Using Nix flake (recommended)
+
+This is taken care of for you if you use the Nix flake. We ensure that the Roc compiler version in `flake.lock` and the `roc_std` version in `Cargo.lock` are the same.
+
+If you want to change which versions are used you can specify the version or commit in `flake.nix` and `Cargo.toml`.
+
+You can also just update to the latest commit of both like so:
+
+```sh
+$ nix flake update roc
+$ cargo update roc_std
+```
+
+#### Not using Nix flake
+
+If you're not using the Nix flake you'll need to ensure that the versions line up yourself. It's probably easiest to install the version of Roc that you'd like and then specify that version of `roc_std` in `Cargo.toml`.
 
 ## Sponsors
 
