@@ -29,6 +29,7 @@
               [
                 rocFull
                 zig
+                wabt # provides wasm2wat for debugging
                 rustc
                 rustfmt
                 rust-analyzer
