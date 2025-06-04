@@ -28,12 +28,13 @@ version = "0.3.72"
 features = [
   "Document",
   "Element",
+  "HtmlDialogElement",
   "HtmlElement",
   "HtmlSelectElement",
+  "IntersectionObserver",
   "Node",
   "Window",
   "console",
-  "IntersectionObserver"
 ]
 
 [build-dependencies]

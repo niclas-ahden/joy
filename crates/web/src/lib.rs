@@ -196,11 +196,52 @@ pub fn roc_to_percy_attrs(
     )
 }
 
+// Console
+
 #[no_mangle]
 pub extern "C" fn roc_fx_log(msg: &RocStr) {
     let msg: wasm_bindgen::JsValue = msg.as_str().into();
     web_sys::console::log_1(&msg);
 }
+
+// DOM
+
+#[no_mangle]
+pub extern "C" fn roc_fx_show_modal(selector: &RocStr) {
+    let window = web_sys::window().expect("No global `window` exists");
+    let document = window.document().expect("Should have a `document` on `window`");
+
+    if let Ok(Some(element)) = document.query_selector(&selector.to_string()) {
+        if let Ok(dialog) = element.dyn_into::<web_sys::HtmlDialogElement>() {
+            dialog.show_modal().expect("Failed to show modal");
+        } else {
+            console::log(&format!("Found element, but it's not a dialog: {}", selector.to_string()));
+        }
+    } else {
+        console::log(&format!("Element not found: {}", selector.to_string()));
+
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn roc_fx_close_modal(selector: &RocStr) {
+    let window = web_sys::window().expect("No global `window` exists");
+    let document = window.document().expect("Should have a `document` on `window`");
+
+    if let Ok(Some(element)) = document.query_selector(&selector.to_string()) {
+        if let Ok(dialog) = element.dyn_into::<web_sys::HtmlDialogElement>() {
+            dialog.close();
+        } else {
+            console::log(&format!("Found element, but it's not a dialog: {}", selector.to_string()));
+        }
+    } else {
+        console::log(&format!("Element not found: {}", selector.to_string()));
+
+    }
+}
+
+
+// HTTP
 
 #[no_mangle]
 pub extern "C" fn roc_fx_get(url: &RocStr, raw_event: &RocStr) {
