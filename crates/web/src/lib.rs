@@ -250,16 +250,16 @@ pub extern "C" fn roc_fx_close_modal(selector: &RocStr) {
 // HTTP
 
 #[no_mangle]
-pub extern "C" fn roc_fx_get(url: &RocStr, raw_event: &RocStr) {
-    let url_ = if url.starts_with('/') {
-        format!("{}{}", web_sys::window().expect("must have `window`").origin(), url)
+pub extern "C" fn roc_fx_get(uri: &RocStr, raw_event: &RocStr) {
+    let uri_ = if uri.starts_with('/') {
+        format!("{}{}", web_sys::window().expect("must have `window`").origin(), uri)
     } else {
-        url.to_string()
+        uri.to_string()
     };
     let raw_event_ = raw_event.clone();
 
     wasm_bindgen_futures::spawn_local(async move {
-        let body_or_error = match reqwest::get(url_).await {
+        let body_or_error = match reqwest::get(uri_).await {
             Ok(response) => response.text().await,
             Err(e) => Err(e),
         }
