@@ -175,6 +175,24 @@ impl RocRefcounted for HtmlElement {
     }
 }
 
+#[derive(Clone)]
+#[repr(C)]
+pub struct HtmlVoidElement {
+    pub data: ElementData,
+}
+
+impl RocRefcounted for HtmlVoidElement {
+    fn inc(&mut self) {
+        self.data.inc();
+    }
+    fn dec(&mut self) {
+        self.data.dec();
+    }
+    fn is_refcounted() -> bool {
+        true
+    }
+}
+
 #[derive(Clone, Default, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[repr(transparent)]
 pub struct HtmlText {
@@ -199,6 +217,7 @@ pub enum DiscriminantHtml {
     Element = 0,
     None = 1,
     Text = 2,
+    VoidElement = 3,
 }
 
 roc_refcounted_noop_impl!(DiscriminantHtml);
@@ -213,8 +232,7 @@ impl Html {
     pub fn discriminant(&self) -> DiscriminantHtml {
         let discriminants = {
             use DiscriminantHtml::*;
-
-            [Element, None, Text]
+            [ Element, None, Text, VoidElement ]
         };
 
         if self.0.is_null() {
@@ -267,6 +285,11 @@ impl std::fmt::Display for Html {
 
                     write!(f, "</{}>", tag)
                 }
+                DiscriminantHtml::VoidElement => {
+                    let element = &(*ptr).element;
+                    let tag = element.data.tag.as_str();
+                    write!(f, "<{} />", tag)
+                }
                 DiscriminantHtml::None => write!(f, "Html::None"),
                 DiscriminantHtml::Text => {
                     let text = &(*ptr).text;
@@ -297,6 +320,15 @@ impl core::fmt::Debug for Html {
                         .finish()
                 }
             }
+            DiscriminantHtml::VoidElement => {
+                let payload_union = self.ptr_read_union();
+
+                unsafe {
+                    f.debug_tuple("Html::VoidElement")
+                        .field(&payload_union.element.data)
+                        .finish()
+                }
+            }
             DiscriminantHtml::None => f.debug_tuple("Html::None").finish(),
             DiscriminantHtml::Text => {
                 let payload_union = self.ptr_read_union();
@@ -319,6 +351,7 @@ impl core::fmt::Debug for Html {
 #[repr(C)]
 pub union UnionHtml {
     pub element: core::mem::ManuallyDrop<HtmlElement>,
+    pub void_element: core::mem::ManuallyDrop<HtmlVoidElement>,
     pub none: (),
     pub text: core::mem::ManuallyDrop<HtmlText>,
 }
@@ -331,6 +364,10 @@ impl RocRefcounted for Html {
                 DiscriminantHtml::Element => {
                     let element = &mut (*ptr).element;
                     element.children.inc();
+                    element.data.inc();
+                }
+                DiscriminantHtml::VoidElement => {
+                    let element = &mut (*ptr).element;
                     element.data.inc();
                 }
                 DiscriminantHtml::Text => {
@@ -348,6 +385,10 @@ impl RocRefcounted for Html {
                 DiscriminantHtml::Element => {
                     let element = &mut (*ptr).element;
                     element.children.dec();
+                    element.data.dec();
+                }
+                DiscriminantHtml::VoidElement => {
+                    let element = &mut (*ptr).element;
                     element.data.dec();
                 }
                 DiscriminantHtml::Text => {

@@ -31,7 +31,7 @@ pub fn run(flags: String) {
         .document()
         .unwrap()
         .get_element_by_id("app")
-        .unwrap();
+        .expect("should have an `#app` node");
 
     pdom::set(percy_dom::PercyDom::new_replace_mount(
         initial_vnode,
@@ -49,6 +49,9 @@ fn roc_html_to_percy(value: &roc::glue::Html) -> percy_dom::VirtualNode {
     match value.discriminant() {
         roc::glue::DiscriminantHtml::None => percy_dom::VirtualNode::text(""),
         roc::glue::DiscriminantHtml::Text => roc_to_percy_text_node(value),
+        roc::glue::DiscriminantHtml::VoidElement => unsafe {
+            roc_to_percy_element_node(value, Vec::new())
+        },
         roc::glue::DiscriminantHtml::Element => unsafe {
             // convert all the children to percy virtual nodes
             let children: Vec<percy_dom::VirtualNode> = value
@@ -58,72 +61,75 @@ fn roc_html_to_percy(value: &roc::glue::Html) -> percy_dom::VirtualNode {
                 .into_iter()
                 .map(roc_html_to_percy)
                 .collect();
-
-            let tag = value.ptr_read_union().element.data.tag.as_str().to_owned();
-            let attrs = roc_to_percy_attrs(&value.ptr_read_union().element.data.attrs);
-            let mut events = percy_dom::event::Events::new();
-
-            // TODO: Support more event types
-            let mouse_event_callback = |raw_event: RocStr| {
-                std::rc::Rc::new(std::cell::RefCell::new(
-                    move |_event: percy_dom::event::MouseEvent| {
-                        roc_run_event(&raw_event, &("".into()))
-                    },
-                ))
-            };
-            let input_event_callback = |raw_event: RocStr| {
-                let tag = tag.clone();
-                std::rc::Rc::new(Closure::<dyn FnMut(web_sys::InputEvent)>::new(
-                    move |e: web_sys::InputEvent| {
-                        fn current_target<T>(event: web_sys::InputEvent) -> T
-                        where
-                            T: wasm_bindgen::JsCast,
-                        {
-                            event
-                                .current_target()
-                                .expect("must have a `current_target`")
-                                .dyn_into::<T>()
-                                .expect("failed to cast `current_target` into element type {T:?}")
-                        }
-
-                        // TODO: Should we support arbitrary elements with `contenteditable` or
-                        // `designMode`?
-                        let current_target_value = match tag.as_str() {
-                            "input" => current_target::<web_sys::HtmlInputElement>(e).value(),
-                            "textarea" => current_target::<web_sys::HtmlTextAreaElement>(e).value(),
-                            "select" => current_target::<web_sys::HtmlSelectElement>(e).value(),
-                            _ => panic!("Unsupported tag type for `InputEvent`: {tag}"),
-                        };
-
-                        roc_run_event(&raw_event, &(current_target_value.as_str().into()))
-                    },
-                ))
-            };
-
-            for event in value.ptr_read_union().element.data.events.into_iter() {
-                let event_name = event.name.to_string();
-                match event_name.as_str() {
-                    "onclick" => events.insert_mouse_event(
-                        event_name.into(),
-                        mouse_event_callback(event.handler.clone()),
-                    ),
-                    "oninput" => events.__insert_unsupported_signature(
-                        event_name.into(),
-                        input_event_callback(event.handler.clone()),
-                    ),
-                    event_name => panic!("Unsupported event type: {event_name}"),
-                }
-            }
-
-            percy_dom::VirtualNode::Element(percy_dom::VElement {
-                tag,
-                attrs,
-                events,
-                children,
-                special_attributes: percy_dom::SpecialAttributes::default(),
-            })
+            roc_to_percy_element_node(value, children)
         },
     }
+}
+
+unsafe fn roc_to_percy_element_node(value: &roc::glue::Html, children: Vec<percy_dom::VirtualNode>) -> percy_dom::VirtualNode {
+    let tag = value.ptr_read_union().element.data.tag.as_str().to_owned();
+    let attrs = roc_to_percy_attrs(&value.ptr_read_union().element.data.attrs);
+    let mut events = percy_dom::event::Events::new();
+
+    // TODO: Support more event types
+    let mouse_event_callback = |raw_event: RocStr| {
+        std::rc::Rc::new(std::cell::RefCell::new(
+            move |_event: percy_dom::event::MouseEvent| {
+                roc_run_event(&raw_event, &("".into()))
+            },
+        ))
+    };
+    let input_event_callback = |raw_event: RocStr| {
+        let tag = tag.clone();
+        std::rc::Rc::new(Closure::<dyn FnMut(web_sys::InputEvent)>::new(
+            move |e: web_sys::InputEvent| {
+                fn current_target<T>(event: web_sys::InputEvent) -> T
+                where
+                    T: wasm_bindgen::JsCast,
+                {
+                    event
+                        .current_target()
+                        .expect("must have a `current_target`")
+                        .dyn_into::<T>()
+                        .expect("failed to cast `current_target` into element type {T:?}")
+                }
+
+                // TODO: Should we support arbitrary elements with `contenteditable` or
+                // `designMode`?
+                let current_target_value = match tag.as_str() {
+                    "input" => current_target::<web_sys::HtmlInputElement>(e).value(),
+                    "textarea" => current_target::<web_sys::HtmlTextAreaElement>(e).value(),
+                    "select" => current_target::<web_sys::HtmlSelectElement>(e).value(),
+                    _ => panic!("Unsupported tag type for `InputEvent`: {tag}"),
+                };
+
+                roc_run_event(&raw_event, &(current_target_value.as_str().into()))
+            },
+        ))
+    };
+
+    for event in value.ptr_read_union().element.data.events.into_iter() {
+        let event_name = event.name.to_string();
+        match event_name.as_str() {
+            "onclick" => events.insert_mouse_event(
+                event_name.into(),
+                mouse_event_callback(event.handler.clone()),
+            ),
+            "oninput" => events.__insert_unsupported_signature(
+                event_name.into(),
+                input_event_callback(event.handler.clone()),
+            ),
+            event_name => panic!("Unsupported event type: {event_name}"),
+        }
+    }
+
+    percy_dom::VirtualNode::Element(percy_dom::VElement {
+        tag,
+        attrs,
+        events,
+        children,
+        special_attributes: percy_dom::SpecialAttributes::default(),
+    })
 }
 
 fn roc_run_event(roc_event: &RocStr, event_payload: &RocStr) {

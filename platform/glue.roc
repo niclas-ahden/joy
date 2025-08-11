@@ -19,6 +19,12 @@ Html : [
             events : List { name : Str, handler : Str },
         }
         (List Html),
+    VoidElement
+        {
+            tag : Str,
+            attrs : List { key : Str, value : Str },
+            events : List { name : Str, handler : Str },
+        },
 ]
 
 # Action : [
