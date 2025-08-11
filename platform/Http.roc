@@ -5,4 +5,4 @@ module [
 import Host
 
 get! : Str, Str => {}
-get! = |url, raw| Host.get!(url, raw)
+get! = |uri, raw| Host.get!(uri, raw)

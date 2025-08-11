@@ -251,7 +251,11 @@ pub extern "C" fn roc_fx_close_modal(selector: &RocStr) {
 
 #[no_mangle]
 pub extern "C" fn roc_fx_get(url: &RocStr, raw_event: &RocStr) {
-    let url_ = url.to_string();
+    let url_ = if url.starts_with('/') {
+        format!("{}{}", web_sys::window().expect("must have `window`").origin(), url)
+    } else {
+        url.to_string()
+    };
     let raw_event_ = raw_event.clone();
 
     wasm_bindgen_futures::spawn_local(async move {
