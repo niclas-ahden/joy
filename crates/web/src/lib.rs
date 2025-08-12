@@ -42,7 +42,7 @@ pub fn run(flags: String) {
 #[wasm_bindgen]
 pub fn port(event: String) {
     // console::log(&format!("Port received event: {event}"));
-    roc_run_event(&event.as_str().into(), &("".into()))
+    roc_run_event(&event.as_str().into(), &RocList::empty())
 }
 
 fn roc_html_to_percy(value: &roc::glue::Html) -> percy_dom::VirtualNode {
@@ -75,7 +75,7 @@ unsafe fn roc_to_percy_element_node(value: &roc::glue::Html, children: Vec<percy
     let mouse_event_callback = |raw_event: RocStr| {
         std::rc::Rc::new(std::cell::RefCell::new(
             move |_event: percy_dom::event::MouseEvent| {
-                roc_run_event(&raw_event, &("".into()))
+                roc_run_event(&raw_event, &RocList::empty())
             },
         ))
     };
@@ -103,7 +103,7 @@ unsafe fn roc_to_percy_element_node(value: &roc::glue::Html, children: Vec<percy
                     _ => panic!("Unsupported tag type for `InputEvent`: {tag}"),
                 };
 
-                roc_run_event(&raw_event, &(current_target_value.as_str().into()))
+                roc_run_event(&raw_event, &RocList::from_slice(current_target_value.as_bytes()))
             },
         ))
     };
@@ -132,7 +132,7 @@ unsafe fn roc_to_percy_element_node(value: &roc::glue::Html, children: Vec<percy
     })
 }
 
-fn roc_run_event(roc_event: &RocStr, event_payload: &RocStr) {
+fn roc_run_event(roc_event: &RocStr, event_payload: &RocList<u8>) {
     model::with(|maybe_model| {
         if let Some(boxed_model) = maybe_model {
             let mut action = roc::roc_update(boxed_model.clone(), roc_event, event_payload);
@@ -225,7 +225,6 @@ pub extern "C" fn roc_fx_show_modal(selector: &RocStr) {
         }
     } else {
         console::log(&format!("Element not found: {}", selector.to_string()));
-
     }
 }
 
@@ -242,10 +241,8 @@ pub extern "C" fn roc_fx_close_modal(selector: &RocStr) {
         }
     } else {
         console::log(&format!("Element not found: {}", selector.to_string()));
-
     }
 }
-
 
 // HTTP
 
@@ -266,9 +263,6 @@ pub extern "C" fn roc_fx_get(uri: &RocStr, raw_event: &RocStr) {
         .map_err(|e| e.to_string())
         .unwrap_or_else(|e| e);
 
-        // TODO: Return a fitting type such as `RocResult HttpResponse HttpError` (or
-        // perhaps `RocResult String HttpError` for this `get!` function and the more
-        // specific `HttpResponse` for a more general `request!` function).
-        roc_run_event(&raw_event_, &(body_or_error.as_str().into()))
+        roc_run_event(&raw_event_, &RocList::from_slice(body_or_error.as_bytes()))
     });
 }

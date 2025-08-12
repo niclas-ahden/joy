@@ -1,7 +1,7 @@
 platform ""
     requires { Model } {
         init! : Str => Model,
-        update! : Model, Str, Str => Action.Action Model,
+        update! : Model, Str, List U8 => Action.Action Model,
         render : Model -> Html.Html Model,
     }
     exposes [Html, Action]
@@ -15,7 +15,7 @@ import Action
 init_for_host! : Str => Box Model
 init_for_host! = |flags| Box.box(init!(flags))
 
-update_for_host! : Box Model, Str, Str => Action.Action (Box Model)
+update_for_host! : Box Model, Str, List U8 => Action.Action (Box Model)
 update_for_host! = |boxed_model, raw_event, event_payload|
     Action.map(update!(Box.unbox(boxed_model), raw_event, event_payload), Box.box)
 
