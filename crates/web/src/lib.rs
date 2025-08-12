@@ -266,3 +266,57 @@ pub extern "C" fn roc_fx_get(uri: &RocStr, raw_event: &RocStr) {
         roc_run_event(&raw_event_, &RocList::from_slice(body_or_error.as_bytes()))
     });
 }
+
+#[no_mangle]
+pub extern "C" fn roc_fx_post(url: &RocStr, body: &RocList<u8>, raw_event: &RocStr) {
+    let url_ = if url.starts_with('/') {
+        format!("{}{}", web_sys::window().expect("must have `window`").origin(), url)
+    } else {
+        url.to_string()
+    };
+    let body_ = body.as_slice().to_vec();
+    let raw_event_ = raw_event.clone();
+
+    wasm_bindgen_futures::spawn_local(async move {
+        let client = reqwest::Client::new();
+
+        let response_or_error_bytes = match client.post(&url_).body(body_).send().await {
+            Ok(response) => {
+                let status = response.status().as_u16();
+                match response.bytes().await {
+                    Ok(bytes) => {
+                        let body_json = bytes.iter()
+                            .map(|b| b.to_string())
+                            .collect::<Vec<_>>()
+                            .join(",");
+
+                        format!("{{\"ok\":{{\"status\":{},\"body\":[{}]}}}}", status, body_json)
+                    }
+                    Err(e) => {
+                        let msg = escape_json_string(&e.to_string());
+                        format!("{{\"err\":\"{}\"}}", msg)
+                    }
+                }
+            }
+            Err(e) => {
+                let msg = escape_json_string(&e.to_string());
+                format!("{{\"err\":\"{}\"}}", msg)
+            }
+        };
+
+        roc_run_event(&raw_event_, &RocList::from_slice(response_or_error_bytes.as_bytes()))
+    });
+}
+
+// Minimal JSON string escaper to avoid pulling in serde and thereby increasing asset size.
+fn escape_json_string(s: &str) -> String {
+    s.chars().flat_map(|c| match c {
+        '"'  => "\\\"".chars().collect::<Vec<_>>(),
+        '\\' => "\\\\".chars().collect::<Vec<_>>(),
+        '\n' => "\\n".chars().collect::<Vec<_>>(),
+        '\r' => "\\r".chars().collect::<Vec<_>>(),
+        '\t' => "\\t".chars().collect::<Vec<_>>(),
+        c if c.is_control() => format!("\\u{:04x}", c as u32).chars().collect(),
+        c => vec![c],
+    }).collect()
+}

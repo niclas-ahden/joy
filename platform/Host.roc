@@ -2,6 +2,7 @@ hosted [
     close_modal!,
     get!,
     log!,
+    post!,
     show_modal!,
 ]
 
@@ -10,6 +11,7 @@ log! : Str => {}
 
 # HTTP
 get! : Str, Str => {}
+post! : Str, List U8, Str => {}
 
 # DOM
 close_modal! : Str => {}
