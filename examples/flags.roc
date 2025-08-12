@@ -1,6 +1,6 @@
 app [Model, init!, update!, render] {
     pf: platform "../platform/main.roc",
-    html: "https://github.com/niclas-ahden/joy-html/releases/download/v0.1.0/g0btWTwHYXQ6ZTCsMRHnCxYuu73bZ5lharzD_p1s5lE.tar.br",
+    html: "https://github.com/niclas-ahden/joy-html/releases/download/v0.7.0/HRdu6jPerN3MsUjXXeDjQtbBgnqUMVaKaI7yyrcVHa8.tar.br",
     json: "https://github.com/lukewilliamboswell/roc-json/releases/download/0.12.0/1trwx8sltQ-e9Y2rOB4LWUWLS_sFVyETK8Twl0i9qpw.tar.gz",
 }
 
@@ -36,7 +36,7 @@ init! = |flags|
                 },
             )
 
-update! : Model, Str, Str => Action Model
+update! : Model, Str, List U8 => Action Model
 update! = |_, _, _| Action.none
 
 render : Model -> Html Model

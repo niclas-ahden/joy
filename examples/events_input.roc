@@ -1,6 +1,6 @@
 app [Model, init!, update!, render] {
     pf: platform "../platform/main.roc",
-    html: "https://github.com/niclas-ahden/joy-html/releases/download/v0.1.0/g0btWTwHYXQ6ZTCsMRHnCxYuu73bZ5lharzD_p1s5lE.tar.br",
+    html: "https://github.com/niclas-ahden/joy-html/releases/download/v0.7.0/HRdu6jPerN3MsUjXXeDjQtbBgnqUMVaKaI7yyrcVHa8.tar.br",
 }
 
 import html.Html exposing [Html, div, textarea, p, h1, text]
@@ -17,12 +17,11 @@ Event : [
 init! : Str => Model
 init! = |_flags| ""
 
-update! : Model, Str, Str => Action Model
+update! : Model, Str, List U8 => Action Model
 update! = |_model, raw, payload|
     when decode_event(raw, payload) is
         UserTypedSomething(message) ->
             Console.log!("User typed: ${message}")
-
             message |> Action.update
 
 render : Model -> Html Model
@@ -52,9 +51,8 @@ render = |model|
 encode_event : _ -> Str
 encode_event = |event| Inspect.to_str(event)
 
-decode_event : Str, Str -> Event
+decode_event : Str, List U8 -> Event
 decode_event = |raw, payload|
     when raw is
-        "UserTypedSomething" -> UserTypedSomething(payload)
-        _ -> crash("Unsupported event type \"${raw}\", payload \"${payload}\"")
-
+        "UserTypedSomething" -> UserTypedSomething(Str.from_utf8_lossy(payload))
+        _ -> crash("Unsupported event type \"${raw}\", payload \"${Inspect.to_str(payload)}\"")

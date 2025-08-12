@@ -1,6 +1,6 @@
 app [Model, init!, update!, render] {
     pf: platform "../platform/main.roc",
-    html: "https://github.com/niclas-ahden/joy-html/releases/download/v0.1.0/g0btWTwHYXQ6ZTCsMRHnCxYuu73bZ5lharzD_p1s5lE.tar.br",
+    html: "https://github.com/niclas-ahden/joy-html/releases/download/v0.7.0/HRdu6jPerN3MsUjXXeDjQtbBgnqUMVaKaI7yyrcVHa8.tar.br",
     json: "https://github.com/lukewilliamboswell/roc-json/releases/download/0.12.0/1trwx8sltQ-e9Y2rOB4LWUWLS_sFVyETK8Twl0i9qpw.tar.gz",
 }
 
@@ -25,7 +25,7 @@ Quote : List Str
 
 Event : [
     UserRequestedQuote,
-    ClientReceivedQuote Str,
+    ClientReceivedQuote (List U8),
 ]
 
 init! : Str => Model
@@ -33,20 +33,21 @@ init! = |_flags|
     # `init!` is effectful, so we can run effects and trigger Events when the app starts. We could
     # for example get a quote right away, without the user having to request one:
     #
-    #     Http.get!
-    #       "https://ron-swanson-quotes.herokuapp.com/v2/quotes"
-    #       (encodeEvent ClientReceivedQuote)
+    #     Http.get!(
+    #       "https://ron-swanson-quotes.herokuapp.com/v2/quotes",
+    #       encodeEvent(ClientReceivedQuote),
+    #     )
     { quote: NotRequestedYet }
 
-update! : Model, Str, Str => Action Model
+update! : Model, Str, List U8 => Action Model
 update! = |model, raw, payload|
     when decode_event(raw, payload) is
         UserRequestedQuote ->
             Console.log!("Requesting a quote...")
 
             # Make an HTTP request and then trigger the `ClientReceivedQuote` event. The event will
-            # have a string `payload` which contains either the body of a successful response or a
-            # stringified error.
+            # have a `payload` of bytes which is either the body of a succesful request or a UTF-8
+            # string with an error message.
             Http.get!(
                 "https://ron-swanson-quotes.herokuapp.com/v2/quotes",
                 encode_event(ClientReceivedQuote),
@@ -56,7 +57,7 @@ update! = |model, raw, payload|
 
         ClientReceivedQuote(json) ->
             decoded : DecodeResult Quote
-            decoded = from_bytes_partial(Str.to_utf8(json), Json.utf8)
+            decoded = from_bytes_partial(json, Json.utf8)
 
             when decoded.result is
                 Ok(quote) ->
@@ -130,9 +131,9 @@ request_quote_button_view =
 encode_event : _ -> Str
 encode_event = |event| Inspect.to_str(event)
 
-decode_event : Str, Str -> Event
+decode_event : Str, List U8 -> Event
 decode_event = |raw, payload|
     when raw is
         "UserRequestedQuote" -> UserRequestedQuote
         "ClientReceivedQuote" -> ClientReceivedQuote(payload)
-        _ -> crash("Unsupported event type \"${raw}\", payload \"${payload}\"")
+        _ -> crash("Unsupported event type \"${raw}\", payload \"${Str.from_utf8_lossy(payload)}\"")

@@ -1,6 +1,6 @@
 app [Model, init!, update!, render] {
     pf: platform "../platform/main.roc",
-    html: "https://github.com/niclas-ahden/joy-html/releases/download/v0.1.0/g0btWTwHYXQ6ZTCsMRHnCxYuu73bZ5lharzD_p1s5lE.tar.br",
+    html: "https://github.com/niclas-ahden/joy-html/releases/download/v0.7.0/HRdu6jPerN3MsUjXXeDjQtbBgnqUMVaKaI7yyrcVHa8.tar.br",
 }
 
 import pf.Action exposing [Action]
@@ -25,7 +25,7 @@ Event : [
     UserClickedIncrement [Left, Middle, Right],
 ]
 
-update! : Model, Str, Str => Action Model
+update! : Model, Str, List U8 => Action Model
 update! = |model, raw, _payload|
     when decode_event(raw) is
         UserClickedDecrement(Left) -> model |> &left(Num.sub_wrap(model.left, 1)) |> Action.update
