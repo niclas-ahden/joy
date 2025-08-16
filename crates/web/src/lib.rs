@@ -119,6 +119,18 @@ unsafe fn roc_to_percy_element_node(value: &roc::glue::Html, children: Vec<percy
                 event_name.into(),
                 input_event_callback(event.handler.clone()),
             ),
+            "onchange" => events.__insert_unsupported_signature(
+                event_name.into(),
+                input_event_callback(event.handler.clone()),
+            ),
+            "onkeyup" => events.__insert_unsupported_signature(
+                event_name.into(),
+                input_event_callback(event.handler.clone()),
+            ),
+            "onkeydown" => events.__insert_unsupported_signature(
+                event_name.into(),
+                input_event_callback(event.handler.clone()),
+            ),
             event_name => panic!("Unsupported event type: {event_name}"),
         }
     }
