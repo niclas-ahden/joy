@@ -1,4 +1,4 @@
-use roc_std::{RocBox, RocStr, RocList};
+use roc_std::{RocBox, RocList, RocStr};
 use std::alloc::{GlobalAlloc, Layout};
 use std::os::raw::c_void;
 

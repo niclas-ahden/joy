@@ -66,7 +66,10 @@ fn roc_html_to_percy(value: &roc::glue::Html) -> percy_dom::VirtualNode {
     }
 }
 
-unsafe fn roc_to_percy_element_node(value: &roc::glue::Html, children: Vec<percy_dom::VirtualNode>) -> percy_dom::VirtualNode {
+unsafe fn roc_to_percy_element_node(
+    value: &roc::glue::Html,
+    children: Vec<percy_dom::VirtualNode>,
+) -> percy_dom::VirtualNode {
     let tag = value.ptr_read_union().element.data.tag.as_str().to_owned();
     let attrs = roc_to_percy_attrs(&value.ptr_read_union().element.data.attrs);
     let mut events = percy_dom::event::Events::new();
@@ -103,7 +106,10 @@ unsafe fn roc_to_percy_element_node(value: &roc::glue::Html, children: Vec<percy
                     _ => panic!("Unsupported tag type for `InputEvent`: {tag}"),
                 };
 
-                roc_run_event(&raw_event, &RocList::from_slice(current_target_value.as_bytes()))
+                roc_run_event(
+                    &raw_event,
+                    &RocList::from_slice(current_target_value.as_bytes()),
+                )
             },
         ))
     };
@@ -222,13 +228,18 @@ pub extern "C" fn roc_fx_log(msg: &RocStr) {
 #[no_mangle]
 pub extern "C" fn roc_fx_show_modal(selector: &RocStr) {
     let window = web_sys::window().expect("No global `window` exists");
-    let document = window.document().expect("Should have a `document` on `window`");
+    let document = window
+        .document()
+        .expect("Should have a `document` on `window`");
 
     if let Ok(Some(element)) = document.query_selector(&selector.to_string()) {
         if let Ok(dialog) = element.dyn_into::<web_sys::HtmlDialogElement>() {
             dialog.show_modal().expect("Failed to show modal");
         } else {
-            console::log(&format!("Found element, but it's not a dialog: {}", selector.to_string()));
+            console::log(&format!(
+                "Found element, but it's not a dialog: {}",
+                selector.to_string()
+            ));
         }
     } else {
         console::log(&format!("Element not found: {}", selector.to_string()));
@@ -238,13 +249,18 @@ pub extern "C" fn roc_fx_show_modal(selector: &RocStr) {
 #[no_mangle]
 pub extern "C" fn roc_fx_close_modal(selector: &RocStr) {
     let window = web_sys::window().expect("No global `window` exists");
-    let document = window.document().expect("Should have a `document` on `window`");
+    let document = window
+        .document()
+        .expect("Should have a `document` on `window`");
 
     if let Ok(Some(element)) = document.query_selector(&selector.to_string()) {
         if let Ok(dialog) = element.dyn_into::<web_sys::HtmlDialogElement>() {
             dialog.close();
         } else {
-            console::log(&format!("Found element, but it's not a dialog: {}", selector.to_string()));
+            console::log(&format!(
+                "Found element, but it's not a dialog: {}",
+                selector.to_string()
+            ));
         }
     } else {
         console::log(&format!("Element not found: {}", selector.to_string()));
@@ -256,7 +272,11 @@ pub extern "C" fn roc_fx_close_modal(selector: &RocStr) {
 #[no_mangle]
 pub extern "C" fn roc_fx_get(uri: &RocStr, raw_event: &RocStr) {
     let uri_ = if uri.starts_with('/') {
-        format!("{}{}", web_sys::window().expect("must have `window`").origin(), uri)
+        format!(
+            "{}{}",
+            web_sys::window().expect("must have `window`").origin(),
+            uri
+        )
     } else {
         uri.to_string()
     };
@@ -277,7 +297,11 @@ pub extern "C" fn roc_fx_get(uri: &RocStr, raw_event: &RocStr) {
 #[no_mangle]
 pub extern "C" fn roc_fx_post(url: &RocStr, body: &RocList<u8>, raw_event: &RocStr) {
     let url_ = if url.starts_with('/') {
-        format!("{}{}", web_sys::window().expect("must have `window`").origin(), url)
+        format!(
+            "{}{}",
+            web_sys::window().expect("must have `window`").origin(),
+            url
+        )
     } else {
         url.to_string()
     };
@@ -292,12 +316,16 @@ pub extern "C" fn roc_fx_post(url: &RocStr, body: &RocList<u8>, raw_event: &RocS
                 let status = response.status().as_u16();
                 match response.bytes().await {
                     Ok(bytes) => {
-                        let body_json = bytes.iter()
+                        let body_json = bytes
+                            .iter()
                             .map(|b| b.to_string())
                             .collect::<Vec<_>>()
                             .join(",");
 
-                        format!("{{\"ok\":{{\"status\":{},\"body\":[{}]}}}}", status, body_json)
+                        format!(
+                            "{{\"ok\":{{\"status\":{},\"body\":[{}]}}}}",
+                            status, body_json
+                        )
                     }
                     Err(e) => {
                         let msg = escape_json_string(&e.to_string());
@@ -311,19 +339,24 @@ pub extern "C" fn roc_fx_post(url: &RocStr, body: &RocList<u8>, raw_event: &RocS
             }
         };
 
-        roc_run_event(&raw_event_, &RocList::from_slice(response_or_error_bytes.as_bytes()))
+        roc_run_event(
+            &raw_event_,
+            &RocList::from_slice(response_or_error_bytes.as_bytes()),
+        )
     });
 }
 
 // Minimal JSON string escaper to avoid pulling in serde and thereby increasing asset size.
 fn escape_json_string(s: &str) -> String {
-    s.chars().flat_map(|c| match c {
-        '"'  => "\\\"".chars().collect::<Vec<_>>(),
-        '\\' => "\\\\".chars().collect::<Vec<_>>(),
-        '\n' => "\\n".chars().collect::<Vec<_>>(),
-        '\r' => "\\r".chars().collect::<Vec<_>>(),
-        '\t' => "\\t".chars().collect::<Vec<_>>(),
-        c if c.is_control() => format!("\\u{:04x}", c as u32).chars().collect(),
-        c => vec![c],
-    }).collect()
+    s.chars()
+        .flat_map(|c| match c {
+            '"' => "\\\"".chars().collect::<Vec<_>>(),
+            '\\' => "\\\\".chars().collect::<Vec<_>>(),
+            '\n' => "\\n".chars().collect::<Vec<_>>(),
+            '\r' => "\\r".chars().collect::<Vec<_>>(),
+            '\t' => "\\t".chars().collect::<Vec<_>>(),
+            c if c.is_control() => format!("\\u{:04x}", c as u32).chars().collect(),
+            c => vec![c],
+        })
+        .collect()
 }

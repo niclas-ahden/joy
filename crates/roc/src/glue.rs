@@ -485,7 +485,7 @@ impl Html {
     pub fn discriminant(&self) -> DiscriminantHtml {
         let discriminants = {
             use DiscriminantHtml::*;
-            [ Element, None, Text, VoidElement ]
+            [Element, None, Text, VoidElement]
         };
 
         if self.0.is_null() {
