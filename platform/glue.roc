@@ -5,32 +5,37 @@ platform ""
     imports []
     provides [main_for_host]
 
-# the types used in here are placeholders, and usually swapped out as a workaround
-# for limitations in the current RustGlue.roc implementation
-# the generated `*.rs` glue code is still helpful to copy and past and then fixup manually
+# The types used in here are placeholders, and usually swapped out as a workaround
+# for limitations in the current RustGlue.roc implementation.
+# The generated `*.rs` glue code is still helpful to copy and past and then fixup manually.
 
-Html : [
+Html state : [
     None,
     Text Str,
     Element
         {
             tag : Str,
-            attrs : List { key : Str, value : Str },
+            attrs : List Attribute,
             events : List { name : Str, handler : Str },
         }
-        (List Html),
+        (List (Html state)),
     VoidElement
         {
             tag : Str,
-            attrs : List { key : Str, value : Str },
+            attrs : List Attribute,
             events : List { name : Str, handler : Str },
         },
 ]
 
-# Action : [
-#    None,
-#    Update Str,
-# ]
+Attribute : [
+    Boolean { key : Str, value : Bool },
+    String { key : Str, value : Str },
+]
 
-main_for_host : Html
+Action : [
+    None,
+    Update Str,
+]
+
+main_for_host : Html Action
 main_for_host = main({})

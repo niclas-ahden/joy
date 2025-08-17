@@ -185,32 +185,27 @@ fn roc_to_percy_text_node(value: &roc::glue::Html) -> percy_dom::VirtualNode {
 }
 
 pub fn roc_to_percy_attrs(
-    values: &RocList<roc::glue::ElementAttrs>,
+    attrs: &RocList<roc::glue::Attribute>,
 ) -> HashMap<String, percy_dom::AttributeValue> {
     HashMap::from_iter(
-        values.into_iter().filter_map(|attr| {
-            let key = attr.key.as_str();
-            let value = match key {
-                // TODO: Preferably we wouldn't have to maintain a list of all attributes
-                // where `percy-dom` expects a bool instead of a string.
-                "checked" | "disabled" => match attr.val.as_str() {
-                    "true" => percy_dom::AttributeValue::Bool(true),
-                    "false" => percy_dom::AttributeValue::Bool(false),
-                    non_bool => panic!("Unexpected value for attribute \"{key}\". Expected \"true\" or \"false\", got: \"{non_bool}\""),
-                },
-
-                // NOTE: The list of boolean attributes must be kept in sync with `joy-html`'s list
-                // in `Attribute.roc`.
-                "allowfullscreen" | "alpha" | "async" | "autofocus" | "autoplay" | "controls" | "default" | "defer" | "formnovalidate" | "inert" | "ismap" | "itemscope" | "loop" | "multiple" | "muted" | "nomodule" | "novalidate" | "open" | "playsinline" | "readonly" | "required" | "reversed" | "selected" | "shadowrootclonable" | "shadowrootdelegatesfocus" | "shadowrootserializable" => match attr.val.as_str() {
-                    "true" => percy_dom::AttributeValue::String("".to_string()),
-                    "false" => return None,
-                    non_bool => panic!("Unexpected value for attribute \"{key}\". Expected \"true\" or \"false\", got: \"{non_bool}\""),
-                },
-                _ => percy_dom::AttributeValue::String(attr.val.as_str().to_string()),
-            };
-
-            Some((key.to_string(), value))
-        })
+        attrs
+            .into_iter()
+            .filter_map(|attr| match attr.discriminant() {
+                roc::glue::DiscriminantAttribute::String => {
+                    let attr_ = attr.borrow_string();
+                    Some((
+                        attr_.key.to_string(),
+                        percy_dom::AttributeValue::String(attr_.value.to_string()),
+                    ))
+                }
+                roc::glue::DiscriminantAttribute::Boolean => {
+                    let attr_ = attr.borrow_boolean();
+                    Some((
+                        attr_.key.to_string(),
+                        percy_dom::AttributeValue::Bool(attr_.value),
+                    ))
+                }
+            }),
     )
 }
 

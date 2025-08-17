@@ -1,5 +1,7 @@
 use roc_std::{roc_refcounted_noop_impl, RocBox, RocList, RocRefcounted, RocStr};
 
+// Action
+
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[repr(u8)]
 pub enum DiscriminantAction {
@@ -88,26 +90,277 @@ impl std::fmt::Debug for RawAction {
     }
 }
 
+// Attribute
+
 #[derive(Clone, Default, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[repr(C)]
-pub struct ElementAttrs {
-    pub key: RocStr,
-    pub val: RocStr,
+pub struct BooleanAttr {
+    pub key: roc_std::RocStr,
+    pub value: bool,
 }
 
-impl RocRefcounted for ElementAttrs {
+impl roc_std::RocRefcounted for BooleanAttr {
     fn inc(&mut self) {
         self.key.inc();
-        self.val.inc();
     }
     fn dec(&mut self) {
         self.key.dec();
-        self.val.dec();
     }
     fn is_refcounted() -> bool {
         true
     }
 }
+
+#[derive(Clone, Default, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[repr(C)]
+pub struct StringAttr {
+    pub key: roc_std::RocStr,
+    pub value: roc_std::RocStr,
+}
+
+impl roc_std::RocRefcounted for StringAttr {
+    fn inc(&mut self) {
+        self.key.inc();
+        self.value.inc();
+    }
+    fn dec(&mut self) {
+        self.key.dec();
+        self.value.dec();
+    }
+    fn is_refcounted() -> bool {
+        true
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[repr(u8)]
+pub enum DiscriminantAttribute {
+    Boolean = 0,
+    String = 1,
+}
+
+impl core::fmt::Debug for DiscriminantAttribute {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Boolean => f.write_str("DiscriminantAttribute::Boolean"),
+            Self::String => f.write_str("DiscriminantAttribute::String"),
+        }
+    }
+}
+
+roc_refcounted_noop_impl!(DiscriminantAttribute);
+
+#[repr(C, align(4))]
+pub union UnionAttribute {
+    boolean: core::mem::ManuallyDrop<BooleanAttr>,
+    string: core::mem::ManuallyDrop<StringAttr>,
+}
+
+// TODO(@roc-lang): See https://github.com/roc-lang/roc/issues/6012
+// const _SIZE_CHECK_UnionAttribute: () = assert!(core::mem::size_of::<UnionAttribute>() == 24);
+const _ALIGN_CHECK_UNION_ATTRIBUTE: () = assert!(core::mem::align_of::<UnionAttribute>() == 4);
+
+const _SIZE_CHECK_ATTRIBUTE: () = assert!(core::mem::size_of::<Attribute>() == 28);
+const _ALIGN_CHECK_ATTRIBUTE: () = assert!(core::mem::align_of::<Attribute>() == 4);
+
+impl Attribute {
+    /// Returns which variant this tag union holds. Note that this never includes a payload!
+    pub fn discriminant(&self) -> DiscriminantAttribute {
+        unsafe {
+            let bytes = core::mem::transmute::<&Self, &[u8; core::mem::size_of::<Self>()]>(self);
+
+            core::mem::transmute::<u8, DiscriminantAttribute>(*bytes.as_ptr().add(24))
+        }
+    }
+}
+
+#[repr(C)]
+pub struct Attribute {
+    payload: UnionAttribute,
+    discriminant: DiscriminantAttribute,
+}
+
+impl Clone for Attribute {
+    fn clone(&self) -> Self {
+        use DiscriminantAttribute::*;
+
+        let payload = unsafe {
+            match self.discriminant {
+                Boolean => UnionAttribute {
+                    boolean: self.payload.boolean.clone(),
+                },
+                String => UnionAttribute {
+                    string: self.payload.string.clone(),
+                },
+            }
+        };
+
+        Self {
+            discriminant: self.discriminant,
+            payload,
+        }
+    }
+}
+
+impl core::fmt::Debug for Attribute {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        use DiscriminantAttribute::*;
+
+        unsafe {
+            match self.discriminant {
+                Boolean => {
+                    let field: &BooleanAttr = &self.payload.boolean;
+                    f.debug_tuple("Attribute::Boolean").field(field).finish()
+                }
+                String => {
+                    let field: &StringAttr = &self.payload.string;
+                    f.debug_tuple("Attribute::String").field(field).finish()
+                }
+            }
+        }
+    }
+}
+
+impl Eq for Attribute {}
+
+impl PartialEq for Attribute {
+    fn eq(&self, other: &Self) -> bool {
+        use DiscriminantAttribute::*;
+
+        if self.discriminant != other.discriminant {
+            return false;
+        }
+
+        unsafe {
+            match self.discriminant {
+                Boolean => self.payload.boolean == other.payload.boolean,
+                String => self.payload.string == other.payload.string,
+            }
+        }
+    }
+}
+
+impl Ord for Attribute {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+
+impl PartialOrd for Attribute {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        use DiscriminantAttribute::*;
+
+        use std::cmp::Ordering::*;
+
+        match self.discriminant.cmp(&other.discriminant) {
+            Less => Option::Some(Less),
+            Greater => Option::Some(Greater),
+            Equal => unsafe {
+                match self.discriminant {
+                    Boolean => self.payload.boolean.partial_cmp(&other.payload.boolean),
+                    String => self.payload.string.partial_cmp(&other.payload.string),
+                }
+            },
+        }
+    }
+}
+
+impl core::hash::Hash for Attribute {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        use DiscriminantAttribute::*;
+
+        unsafe {
+            match self.discriminant {
+                Boolean => self.payload.boolean.hash(state),
+                String => self.payload.string.hash(state),
+            }
+        }
+    }
+}
+
+impl Attribute {
+    pub fn unwrap_boolean(mut self) -> BooleanAttr {
+        debug_assert_eq!(self.discriminant, DiscriminantAttribute::Boolean);
+        unsafe { core::mem::ManuallyDrop::take(&mut self.payload.boolean) }
+    }
+
+    pub fn borrow_boolean(&self) -> &BooleanAttr {
+        debug_assert_eq!(self.discriminant, DiscriminantAttribute::Boolean);
+        use core::borrow::Borrow;
+        unsafe { self.payload.boolean.borrow() }
+    }
+
+    pub fn borrow_mut_boolean(&mut self) -> &mut BooleanAttr {
+        debug_assert_eq!(self.discriminant, DiscriminantAttribute::Boolean);
+        use core::borrow::BorrowMut;
+        unsafe { self.payload.boolean.borrow_mut() }
+    }
+
+    pub fn unwrap_string(mut self) -> StringAttr {
+        debug_assert_eq!(self.discriminant, DiscriminantAttribute::String);
+        unsafe { core::mem::ManuallyDrop::take(&mut self.payload.string) }
+    }
+
+    pub fn borrow_string(&self) -> &StringAttr {
+        debug_assert_eq!(self.discriminant, DiscriminantAttribute::String);
+        use core::borrow::Borrow;
+        unsafe { self.payload.string.borrow() }
+    }
+
+    pub fn borrow_mut_string(&mut self) -> &mut StringAttr {
+        debug_assert_eq!(self.discriminant, DiscriminantAttribute::String);
+        use core::borrow::BorrowMut;
+        unsafe { self.payload.string.borrow_mut() }
+    }
+}
+
+impl Attribute {
+    pub fn boolean(payload: BooleanAttr) -> Self {
+        Self {
+            discriminant: DiscriminantAttribute::Boolean,
+            payload: UnionAttribute {
+                boolean: core::mem::ManuallyDrop::new(payload),
+            },
+        }
+    }
+
+    pub fn string(payload: StringAttr) -> Self {
+        Self {
+            discriminant: DiscriminantAttribute::String,
+            payload: UnionAttribute {
+                string: core::mem::ManuallyDrop::new(payload),
+            },
+        }
+    }
+}
+
+impl Drop for Attribute {
+    fn drop(&mut self) {
+        // Drop the payloads
+        match self.discriminant() {
+            DiscriminantAttribute::Boolean => unsafe {
+                core::mem::ManuallyDrop::drop(&mut self.payload.boolean)
+            },
+            DiscriminantAttribute::String => unsafe {
+                core::mem::ManuallyDrop::drop(&mut self.payload.string)
+            },
+        }
+    }
+}
+
+impl roc_std::RocRefcounted for Attribute {
+    fn inc(&mut self) {
+        unimplemented!();
+    }
+    fn dec(&mut self) {
+        unimplemented!();
+    }
+    fn is_refcounted() -> bool {
+        true
+    }
+}
+
+// Event
 
 #[derive(Clone, Default, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[repr(C)]
@@ -133,7 +386,7 @@ impl RocRefcounted for EventData {
 #[derive(Clone, Default, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[repr(C)]
 pub struct ElementData {
-    pub attrs: RocList<ElementAttrs>,
+    pub attrs: RocList<Attribute>,
     pub events: RocList<EventData>,
     pub tag: RocStr,
 }
