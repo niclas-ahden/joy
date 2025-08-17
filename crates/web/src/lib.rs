@@ -26,16 +26,16 @@ pub fn run(flags: String) {
         roc_html_to_percy(&roc_html)
     });
 
-    let app_node = web_sys::window()
+    let app_element = web_sys::window()
         .expect("should have a browser window")
         .document()
         .unwrap()
         .get_element_by_id("app")
-        .expect("should have an `#app` node");
+        .expect("should have an `#app` element");
 
-    pdom::set(percy_dom::PercyDom::new_replace_mount(
+    pdom::set(percy_dom::PercyDom::new_hydrate_mount(
         initial_vnode,
-        app_node,
+        app_element,
     ));
 }
 

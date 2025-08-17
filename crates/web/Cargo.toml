@@ -12,7 +12,10 @@ crate-type = ["cdylib"]
 
 [dependencies]
 console_error_panic_hook = "0.1.7"
-percy-dom = { version = "0.10.0", default-features = false }
+# We use this version to get hydration
+percy-dom = { git = "https://github.com/niclas-ahden/percy", branch = "master", default-features = false }
+# percy-dom = { version = "0.10.0", default-features = false }
+# percy-dom = { path = "../../../../percy/crates/percy-dom", default-features = false }
 reqwest = { version = "0.12.9" }
 roc = { path = "../roc" }
 roc_std = { workspace = true}

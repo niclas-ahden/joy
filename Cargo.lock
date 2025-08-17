@@ -295,8 +295,7 @@ version = "0.0.1"
 [[package]]
 name = "html-validation"
 version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1db2f65f15fd0ad8b2f07e8ef73c05fa5d7f231395c2f8083aaee794932464b1"
+source = "git+https://github.com/niclas-ahden/percy?branch=master#cab79fb08aa256ca6c035f119f40a4d19694297a"
 dependencies = [
  "lazy_static",
 ]
@@ -736,8 +735,7 @@ checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
 [[package]]
 name = "percy-dom"
 version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b49ebfcb42b18d445077f7083be3a6a6b471a26762f44dcd9b9bf9cdc12f957"
+source = "git+https://github.com/niclas-ahden/percy?branch=master#cab79fb08aa256ca6c035f119f40a4d19694297a"
 dependencies = [
  "js-sys",
  "virtual-node",
@@ -1251,8 +1249,7 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 [[package]]
 name = "virtual-node"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e7e9bd48a8c0486f08364efd322ab712487034dc06a6d7fe5d03b3c58a76034"
+source = "git+https://github.com/niclas-ahden/percy?branch=master#cab79fb08aa256ca6c035f119f40a4d19694297a"
 dependencies = [
  "html-validation",
  "js-sys",
