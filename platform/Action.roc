@@ -13,8 +13,8 @@ Action state : [
 none : Action _
 none = None
 
-update : _ -> Action _
-update = Update
+update : state -> Action state
+update = |state| Update(state)
 
 map : Action a, (a -> b) -> Action b
 map = |action, transform|
