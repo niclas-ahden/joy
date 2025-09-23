@@ -283,14 +283,35 @@ pub extern "C" fn roc_fx_http_get(uri: &RocStr, raw_event: &RocStr) {
     let raw_event_ = raw_event.clone();
 
     wasm_bindgen_futures::spawn_local(async move {
-        let body_or_error = match reqwest::get(uri_).await {
-            Ok(response) => response.text().await,
-            Err(e) => Err(e),
-        }
-        .map_err(|e| e.to_string())
-        .unwrap_or_else(|e| e);
+        let response_or_error_bytes = match reqwest::get(uri_).await {
+            Ok(response) => {
+                let status = response.status().as_u16();
+                match response.bytes().await {
+                    Ok(bytes) => {
+                        let body_json = bytes
+                            .iter()
+                            .map(|b| b.to_string())
+                            .collect::<Vec<_>>()
+                            .join(",");
 
-        roc_run_event(&raw_event_, &RocList::from_slice(body_or_error.as_bytes()))
+                        format!(
+                            "{{\"ok\":{{\"status\":{},\"body\":[{}]}}}}",
+                            status, body_json
+                        )
+                    }
+                    Err(e) => {
+                        let msg = escape_json_string(&e.to_string());
+                        format!("{{\"err\":\"{}\"}}", msg)
+                    }
+                }
+            }
+            Err(e) => {
+                let msg = escape_json_string(&e.to_string());
+                format!("{{\"err\":\"{}\"}}", msg)
+            }
+        };
+
+        roc_run_event(&raw_event_, &RocList::from_slice(response_or_error_bytes.as_bytes()))
     });
 }
 
