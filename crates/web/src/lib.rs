@@ -218,7 +218,7 @@ pub fn roc_to_percy_attrs(
 // Console
 
 #[no_mangle]
-pub extern "C" fn roc_fx_log(msg: &RocStr) {
+pub extern "C" fn roc_fx_console_log(msg: &RocStr) {
     let msg: wasm_bindgen::JsValue = msg.as_str().into();
     web_sys::console::log_1(&msg);
 }
@@ -226,7 +226,7 @@ pub extern "C" fn roc_fx_log(msg: &RocStr) {
 // DOM
 
 #[no_mangle]
-pub extern "C" fn roc_fx_show_modal(selector: &RocStr) {
+pub extern "C" fn roc_fx_dom_show_modal(selector: &RocStr) {
     let window = web_sys::window().expect("No global `window` exists");
     let document = window
         .document()
@@ -247,7 +247,7 @@ pub extern "C" fn roc_fx_show_modal(selector: &RocStr) {
 }
 
 #[no_mangle]
-pub extern "C" fn roc_fx_close_modal(selector: &RocStr) {
+pub extern "C" fn roc_fx_dom_close_modal(selector: &RocStr) {
     let window = web_sys::window().expect("No global `window` exists");
     let document = window
         .document()
@@ -270,7 +270,7 @@ pub extern "C" fn roc_fx_close_modal(selector: &RocStr) {
 // HTTP
 
 #[no_mangle]
-pub extern "C" fn roc_fx_get(uri: &RocStr, raw_event: &RocStr) {
+pub extern "C" fn roc_fx_http_get(uri: &RocStr, raw_event: &RocStr) {
     let uri_ = if uri.starts_with('/') {
         format!(
             "{}{}",
@@ -295,7 +295,7 @@ pub extern "C" fn roc_fx_get(uri: &RocStr, raw_event: &RocStr) {
 }
 
 #[no_mangle]
-pub extern "C" fn roc_fx_post(url: &RocStr, body: &RocList<u8>, raw_event: &RocStr) {
+pub extern "C" fn roc_fx_http_post(url: &RocStr, body: &RocList<u8>, raw_event: &RocStr) {
     let url_ = if url.starts_with('/') {
         format!(
             "{}{}",
@@ -359,4 +359,38 @@ fn escape_json_string(s: &str) -> String {
             c => vec![c],
         })
         .collect()
+}
+
+// Keyboard
+
+#[no_mangle]
+pub extern "C" fn roc_fx_keyboard_add_global_listener(event_name: &RocStr, key_filter: &RocList<RocStr>) {
+    use wasm_bindgen::JsCast;
+
+    let event_name_clone = event_name.clone();
+    let key_filter_vec: Vec<String> = key_filter.iter().map(|s| s.to_string()).collect();
+
+    let closure = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |e: web_sys::KeyboardEvent| {
+        let key = e.key();
+
+        // Filter keys: if filter is empty, allow all keys; otherwise only allow keys in the filter
+        let should_trigger = key_filter_vec.is_empty() || key_filter_vec.contains(&key);
+
+        if should_trigger {
+            // Send the keyboard event with the key as payload
+            roc_run_event(&event_name_clone, &RocList::from_slice(key.as_bytes()));
+        }
+    });
+
+    let window = web_sys::window().expect("No global `window` exists");
+    let document = window
+        .document()
+        .expect("Should have a `document` on `window`");
+
+    document
+        .add_event_listener_with_callback("keydown", closure.as_ref().unchecked_ref())
+        .expect("Failed to add keydown event listener");
+
+    // Keep the closure alive by leaking it
+    closure.forget();
 }

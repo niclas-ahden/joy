@@ -4,13 +4,14 @@ platform ""
         update! : Model, Str, List U8 => Action.Action Model,
         render : Model -> Html.Html Model,
     }
-    exposes [Html, Action]
+    exposes [Html, Action, Keyboard]
     packages {}
     imports []
     provides [init_for_host!, update_for_host!, render_for_host]
 
 import Html
 import Action
+import Keyboard
 
 init_for_host! : Str => Box Model
 init_for_host! = |flags| Box.box(init!(flags))

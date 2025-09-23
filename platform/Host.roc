@@ -1,18 +1,22 @@
 hosted [
-    close_modal!,
-    get!,
-    log!,
-    post!,
-    show_modal!,
+    console_log!,
+    http_get!,
+    http_post!,
+    dom_show_modal!,
+    dom_close_modal!,
+    keyboard_add_global_listener!,
 ]
 
 # Console
-log! : Str => {}
+console_log! : Str => {}
 
 # HTTP
-get! : Str, Str => {}
-post! : Str, List U8, Str => {}
+http_get! : Str, Str => {}
+http_post! : Str, List U8, Str => {}
 
 # DOM
-close_modal! : Str => {}
-show_modal! : Str => {}
+dom_show_modal! : Str => {}
+dom_close_modal! : Str => {}
+
+# Keyboard
+keyboard_add_global_listener! : Str, List Str => {}

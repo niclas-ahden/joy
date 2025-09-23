@@ -6,7 +6,7 @@ module [
 import Host
 
 show_modal! : Str => {}
-show_modal! = |selector| Host.show_modal!(selector)
+show_modal! = |selector| Host.dom_show_modal!(selector)
 
 close_modal! : Str => {}
-close_modal! = |selector| Host.close_modal!(selector)
+close_modal! = |selector| Host.dom_close_modal!(selector)

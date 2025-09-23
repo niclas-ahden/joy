@@ -35,6 +35,7 @@ features = [
   "HtmlElement",
   "HtmlSelectElement",
   "IntersectionObserver",
+  "KeyboardEvent",
   "Node",
   "Window",
   "console",

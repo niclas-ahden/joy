@@ -5,4 +5,4 @@ module [
 import Host
 
 log! : Str => {}
-log! = |msg| Host.log!(msg)
+log! = |msg| Host.console_log!(msg)
