@@ -1,7 +1,12 @@
 use roc_std::RocList;
 use roc_std::RocStr;
 use std::collections::HashMap;
+use std::sync::Mutex;
 use wasm_bindgen::prelude::*;
+
+// Global storage for debounce timers
+static DEBOUNCE_TIMERS: std::sync::LazyLock<Mutex<HashMap<String, i32>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 mod console;
 mod model;
@@ -414,4 +419,85 @@ pub extern "C" fn roc_fx_keyboard_add_global_listener(event_name: &RocStr, key_f
 
     // Keep the closure alive by leaking it
     closure.forget();
+}
+
+// Time
+
+#[no_mangle]
+pub extern "C" fn roc_fx_time_after(delay_ms: u32, raw_event: &RocStr) -> i32 {
+    let window = web_sys::window().expect("No global `window` exists");
+    let raw_event_clone = raw_event.clone();
+
+    let closure = Closure::once_into_js(move || {
+        roc_run_event(&raw_event_clone, &RocList::empty());
+    });
+
+    window
+        .set_timeout_with_callback_and_timeout_and_arguments_0(
+            closure.as_ref().unchecked_ref(),
+            delay_ms as i32,
+        )
+        .expect("Failed to set timeout")
+}
+
+#[no_mangle]
+pub extern "C" fn roc_fx_time_every(interval_ms: u32, raw_event: &RocStr) -> i32 {
+    let window = web_sys::window().expect("No global `window` exists");
+    let raw_event_clone = raw_event.clone();
+
+    let closure = Closure::<dyn Fn()>::new(move || {
+        roc_run_event(&raw_event_clone, &RocList::empty());
+    });
+
+    let timer_id = window
+        .set_interval_with_callback_and_timeout_and_arguments_0(
+            closure.as_ref().unchecked_ref(),
+            interval_ms as i32,
+        )
+        .expect("Failed to set interval");
+
+    // Keep the closure alive by leaking it (for repeating timers)
+    closure.forget();
+
+    timer_id
+}
+
+#[no_mangle]
+pub extern "C" fn roc_fx_time_debounce(key: &RocStr, delay_ms: u32, raw_event: &RocStr) {
+    let window = web_sys::window().expect("No global `window` exists");
+    let key_string = key.to_string();
+
+    // Cancel previous timer with the same key if it exists
+    {
+        let timers = DEBOUNCE_TIMERS.lock().unwrap();
+        if let Some(&timer_id) = timers.get(&key_string) {
+            window.clear_timeout_with_handle(timer_id);
+        }
+    }
+
+    // Set new timer
+    let raw_event_clone = raw_event.clone();
+    let key_clone = key_string.clone();
+    let closure = Closure::once_into_js(move || {
+        // Remove timer from map and trigger event
+        DEBOUNCE_TIMERS.lock().unwrap().remove(&key_clone);
+        roc_run_event(&raw_event_clone, &RocList::empty());
+    });
+
+    let timer_id = window
+        .set_timeout_with_callback_and_timeout_and_arguments_0(
+            closure.as_ref().unchecked_ref(),
+            delay_ms as i32,
+        )
+        .expect("Failed to set timeout");
+
+    // Store timer ID for potential cancellation
+    DEBOUNCE_TIMERS.lock().unwrap().insert(key_string, timer_id);
+}
+
+#[no_mangle]
+pub extern "C" fn roc_fx_time_cancel(timer_id: i32) {
+    let window = web_sys::window().expect("No global `window` exists");
+    window.clear_timeout_with_handle(timer_id);
+    window.clear_interval_with_handle(timer_id);
 }
