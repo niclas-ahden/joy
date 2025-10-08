@@ -38,10 +38,13 @@ pub fn run(flags: String) {
         .get_element_by_id("app")
         .expect("should have an `#app` element");
 
-    pdom::set(percy_dom::PercyDom::new_hydrate_mount(
-        initial_vnode,
-        app_element,
-    ));
+    let pdom_instance = if app_element.first_child().is_some() {
+        percy_dom::PercyDom::new_hydrate_mount(initial_vnode, app_element)
+    } else {
+        percy_dom::PercyDom::new_replace_mount(initial_vnode, app_element)
+    };
+
+    pdom::set(pdom_instance);
 }
 
 #[wasm_bindgen]
