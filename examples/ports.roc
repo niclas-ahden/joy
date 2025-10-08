@@ -1,6 +1,6 @@
 app [Model, init!, update!, render] {
     pf: platform "../platform/main.roc",
-    html: "https://github.com/niclas-ahden/joy-html/releases/download/v0.7.0/HRdu6jPerN3MsUjXXeDjQtbBgnqUMVaKaI7yyrcVHa8.tar.br",
+    html: "https://github.com/niclas-ahden/joy-html/releases/download/v0.10.0/VM_GLBCvmmdZAxFHzkRqOX2YHYxt4qPVrs5Omm2L374.tar.br",
 }
 
 import html.Html exposing [Html, div, h1, small, p, pre, text]
@@ -39,7 +39,7 @@ render = |model|
                 [],
                 [
                     h1([], [text("Your excitement level for Roc: ${Num.to_str(model)}")]),
-                    small([], [text("(you don't have to close this page if you don't want to)")]),
+                    small([], [text("(you don't ever have to close this page if you don't want to)")]),
                 ],
             )
 

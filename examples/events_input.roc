@@ -1,10 +1,11 @@
 app [Model, init!, update!, render] {
     pf: platform "../platform/main.roc",
-    html: "https://github.com/niclas-ahden/joy-html/releases/download/v0.7.0/HRdu6jPerN3MsUjXXeDjQtbBgnqUMVaKaI7yyrcVHa8.tar.br",
+    html: "https://github.com/niclas-ahden/joy-html/releases/download/v0.10.0/VM_GLBCvmmdZAxFHzkRqOX2YHYxt4qPVrs5Omm2L374.tar.br",
 }
 
 import html.Html exposing [Html, div, textarea, p, h1, text]
 import html.Attribute exposing [rows, cols]
+import html.Event
 import pf.Action exposing [Action]
 import pf.Console
 
@@ -31,8 +32,7 @@ render = |model|
         [
             h1([], [text("Dear diary")]),
             textarea(
-                [rows("10"), cols("30")],
-                [{ name: "oninput", handler: encode_event(UserTypedSomething) }],
+                [rows("10"), cols("30"), Event.on_input(encode_event(UserTypedSomething))],
                 [],
             ),
             p([], [text(model)]),

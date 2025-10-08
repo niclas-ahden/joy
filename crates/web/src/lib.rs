@@ -76,73 +76,32 @@ unsafe fn roc_to_percy_element_node(
     children: Vec<percy_dom::VirtualNode>,
 ) -> percy_dom::VirtualNode {
     let tag = value.ptr_read_union().element.data.tag.as_str().to_owned();
-    let attrs = roc_to_percy_attrs(&value.ptr_read_union().element.data.attrs);
+    let roc_attrs = &value.ptr_read_union().element.data.attrs;
+
+    // Separate regular attributes from events
+    let mut attrs = std::collections::HashMap::new();
     let mut events = percy_dom::event::Events::new();
 
-    // TODO: Support more event types
-    let mouse_event_callback = |raw_event: RocStr| {
-        std::rc::Rc::new(std::cell::RefCell::new(
-            move |_event: percy_dom::event::MouseEvent| {
-                roc_run_event(&raw_event, &RocList::empty())
-            },
-        ))
-    };
-    let input_event_callback = |raw_event: RocStr| {
-        let tag = tag.clone();
-        std::rc::Rc::new(Closure::<dyn FnMut(web_sys::InputEvent)>::new(
-            move |e: web_sys::InputEvent| {
-                fn current_target<T>(event: web_sys::InputEvent) -> T
-                where
-                    T: wasm_bindgen::JsCast,
-                {
-                    event
-                        .current_target()
-                        .expect("must have a `current_target`")
-                        .dyn_into::<T>()
-                        .expect("failed to cast `current_target` into element type {T:?}")
-                }
-
-                // TODO: Should we support arbitrary elements with `contenteditable` or
-                // `designMode`?
-                let current_target_value = match tag.as_str() {
-                    "input" => current_target::<web_sys::HtmlInputElement>(e).value(),
-                    "textarea" => current_target::<web_sys::HtmlTextAreaElement>(e).value(),
-                    "select" => current_target::<web_sys::HtmlSelectElement>(e).value(),
-                    _ => panic!("Unsupported tag type for `InputEvent`: {tag}"),
-                };
-
-                roc_run_event(
-                    &raw_event,
-                    &RocList::from_slice(current_target_value.as_bytes()),
-                )
-            },
-        ))
-    };
-
-    for event in value.ptr_read_union().element.data.events.into_iter() {
-        let event_name = event.name.to_string();
-        match event_name.as_str() {
-            "onclick" => events.insert_mouse_event(
-                event_name.into(),
-                mouse_event_callback(event.handler.clone()),
-            ),
-            "oninput" => events.__insert_unsupported_signature(
-                event_name.into(),
-                input_event_callback(event.handler.clone()),
-            ),
-            "onchange" => events.__insert_unsupported_signature(
-                event_name.into(),
-                input_event_callback(event.handler.clone()),
-            ),
-            "onkeyup" => events.__insert_unsupported_signature(
-                event_name.into(),
-                input_event_callback(event.handler.clone()),
-            ),
-            "onkeydown" => events.__insert_unsupported_signature(
-                event_name.into(),
-                input_event_callback(event.handler.clone()),
-            ),
-            event_name => panic!("Unsupported event type: {event_name}"),
+    for attr in roc_attrs.into_iter() {
+        match attr.discriminant() {
+            roc::glue::DiscriminantAttribute::Boolean => {
+                let attr_data = attr.borrow_boolean();
+                attrs.insert(
+                    attr_data.key.to_string(),
+                    percy_dom::AttributeValue::Bool(attr_data.value),
+                );
+            }
+            roc::glue::DiscriminantAttribute::String => {
+                let attr_data = attr.borrow_string();
+                attrs.insert(
+                    attr_data.key.to_string(),
+                    percy_dom::AttributeValue::String(attr_data.value.to_string()),
+                );
+            }
+            roc::glue::DiscriminantAttribute::Event => {
+                let event_data = attr.borrow_event();
+                register_event(&mut events, &tag, event_data);
+            }
         }
     }
 
@@ -153,6 +112,74 @@ unsafe fn roc_to_percy_element_node(
         children,
         special_attributes: percy_dom::SpecialAttributes::default(),
     })
+}
+
+fn register_event(
+    events: &mut percy_dom::event::Events,
+    tag: &str,
+    event_attr: &roc::glue::EventAttr,
+) {
+    use wasm_bindgen::prelude::*;
+
+    let event_name = event_attr.name.to_string();
+    let handler = event_attr.handler.clone();
+    let should_stop_propagation = event_attr.stop_propagation;
+    let should_prevent_default = event_attr.prevent_default;
+
+    match event_name.as_str() {
+        "onclick" => {
+            let callback = std::rc::Rc::new(std::cell::RefCell::new(
+                move |event: percy_dom::event::MouseEvent| {
+                    if should_prevent_default {
+                        event.prevent_default();
+                    }
+                    if should_stop_propagation {
+                        event.stop_propagation();
+                    }
+                    roc_run_event(&handler, &RocList::empty())
+                },
+            ));
+            events.insert_mouse_event(event_name.into(), callback);
+        }
+        "oninput" | "onchange" | "onkeyup" | "onkeydown" => {
+            let tag_owned = tag.to_owned();
+            let callback = std::rc::Rc::new(Closure::<dyn FnMut(web_sys::InputEvent)>::new(
+                move |e: web_sys::InputEvent| {
+                    if should_prevent_default {
+                        e.prevent_default();
+                    }
+                    if should_stop_propagation {
+                        e.stop_propagation();
+                    }
+
+                    fn current_target<T>(event: &web_sys::InputEvent) -> T
+                    where
+                        T: wasm_bindgen::JsCast,
+                    {
+                        event
+                            .current_target()
+                            .expect("must have a `current_target`")
+                            .dyn_into::<T>()
+                            .expect("failed to cast `current_target` into element type")
+                    }
+
+                    let current_target_value = match tag_owned.as_str() {
+                        "input" => current_target::<web_sys::HtmlInputElement>(&e).value(),
+                        "textarea" => current_target::<web_sys::HtmlTextAreaElement>(&e).value(),
+                        "select" => current_target::<web_sys::HtmlSelectElement>(&e).value(),
+                        _ => panic!("Unsupported tag type for `InputEvent`: {tag_owned}"),
+                    };
+
+                    roc_run_event(
+                        &handler,
+                        &RocList::from_slice(current_target_value.as_bytes()),
+                    )
+                },
+            ));
+            events.__insert_unsupported_signature(event_name.into(), callback);
+        }
+        _ => panic!("Unsupported event type: {event_name}"),
+    }
 }
 
 fn roc_run_event(roc_event: &RocStr, event_payload: &RocList<u8>) {
@@ -195,30 +222,6 @@ fn roc_to_percy_text_node(value: &roc::glue::Html) -> percy_dom::VirtualNode {
     unsafe { percy_dom::VirtualNode::text(value.ptr_read_union().text.str.as_str()) }
 }
 
-pub fn roc_to_percy_attrs(
-    attrs: &RocList<roc::glue::Attribute>,
-) -> HashMap<String, percy_dom::AttributeValue> {
-    HashMap::from_iter(
-        attrs
-            .into_iter()
-            .filter_map(|attr| match attr.discriminant() {
-                roc::glue::DiscriminantAttribute::String => {
-                    let attr_ = attr.borrow_string();
-                    Some((
-                        attr_.key.to_string(),
-                        percy_dom::AttributeValue::String(attr_.value.to_string()),
-                    ))
-                }
-                roc::glue::DiscriminantAttribute::Boolean => {
-                    let attr_ = attr.borrow_boolean();
-                    Some((
-                        attr_.key.to_string(),
-                        percy_dom::AttributeValue::Bool(attr_.value),
-                    ))
-                }
-            }),
-    )
-}
 
 // Console
 

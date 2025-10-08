@@ -132,17 +132,42 @@ impl roc_std::RocRefcounted for StringAttr {
     }
 }
 
+#[derive(Clone, Default, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[repr(C)]
+pub struct EventAttr {
+    pub handler: roc_std::RocStr,
+    pub name: roc_std::RocStr,
+    pub prevent_default: bool,
+    pub stop_propagation: bool,
+}
+
+impl roc_std::RocRefcounted for EventAttr {
+    fn inc(&mut self) {
+        self.handler.inc();
+        self.name.inc();
+    }
+    fn dec(&mut self) {
+        self.handler.dec();
+        self.name.dec();
+    }
+    fn is_refcounted() -> bool {
+        true
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[repr(u8)]
 pub enum DiscriminantAttribute {
     Boolean = 0,
-    String = 1,
+    Event = 1,
+    String = 2,
 }
 
 impl core::fmt::Debug for DiscriminantAttribute {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Boolean => f.write_str("DiscriminantAttribute::Boolean"),
+            Self::Event => f.write_str("DiscriminantAttribute::Event"),
             Self::String => f.write_str("DiscriminantAttribute::String"),
         }
     }
@@ -153,6 +178,7 @@ roc_refcounted_noop_impl!(DiscriminantAttribute);
 #[repr(C, align(4))]
 pub union UnionAttribute {
     boolean: core::mem::ManuallyDrop<BooleanAttr>,
+    event: core::mem::ManuallyDrop<EventAttr>,
     string: core::mem::ManuallyDrop<StringAttr>,
 }
 
@@ -160,7 +186,7 @@ pub union UnionAttribute {
 // const _SIZE_CHECK_UnionAttribute: () = assert!(core::mem::size_of::<UnionAttribute>() == 24);
 const _ALIGN_CHECK_UNION_ATTRIBUTE: () = assert!(core::mem::align_of::<UnionAttribute>() == 4);
 
-const _SIZE_CHECK_ATTRIBUTE: () = assert!(core::mem::size_of::<Attribute>() == 28);
+const _SIZE_CHECK_ATTRIBUTE: () = assert!(core::mem::size_of::<Attribute>() == 32);
 const _ALIGN_CHECK_ATTRIBUTE: () = assert!(core::mem::align_of::<Attribute>() == 4);
 
 impl Attribute {
@@ -169,7 +195,7 @@ impl Attribute {
         unsafe {
             let bytes = core::mem::transmute::<&Self, &[u8; core::mem::size_of::<Self>()]>(self);
 
-            core::mem::transmute::<u8, DiscriminantAttribute>(*bytes.as_ptr().add(24))
+            core::mem::transmute::<u8, DiscriminantAttribute>(*bytes.as_ptr().add(28))
         }
     }
 }
@@ -188,6 +214,9 @@ impl Clone for Attribute {
             match self.discriminant {
                 Boolean => UnionAttribute {
                     boolean: self.payload.boolean.clone(),
+                },
+                Event => UnionAttribute {
+                    event: self.payload.event.clone(),
                 },
                 String => UnionAttribute {
                     string: self.payload.string.clone(),
@@ -212,6 +241,10 @@ impl core::fmt::Debug for Attribute {
                     let field: &BooleanAttr = &self.payload.boolean;
                     f.debug_tuple("Attribute::Boolean").field(field).finish()
                 }
+                Event => {
+                    let field: &EventAttr = &self.payload.event;
+                    f.debug_tuple("Attribute::Event").field(field).finish()
+                }
                 String => {
                     let field: &StringAttr = &self.payload.string;
                     f.debug_tuple("Attribute::String").field(field).finish()
@@ -234,6 +267,7 @@ impl PartialEq for Attribute {
         unsafe {
             match self.discriminant {
                 Boolean => self.payload.boolean == other.payload.boolean,
+                Event => self.payload.event == other.payload.event,
                 String => self.payload.string == other.payload.string,
             }
         }
@@ -258,6 +292,7 @@ impl PartialOrd for Attribute {
             Equal => unsafe {
                 match self.discriminant {
                     Boolean => self.payload.boolean.partial_cmp(&other.payload.boolean),
+                    Event => self.payload.event.partial_cmp(&other.payload.event),
                     String => self.payload.string.partial_cmp(&other.payload.string),
                 }
             },
@@ -272,6 +307,7 @@ impl core::hash::Hash for Attribute {
         unsafe {
             match self.discriminant {
                 Boolean => self.payload.boolean.hash(state),
+                Event => self.payload.event.hash(state),
                 String => self.payload.string.hash(state),
             }
         }
@@ -312,6 +348,23 @@ impl Attribute {
         use core::borrow::BorrowMut;
         unsafe { self.payload.string.borrow_mut() }
     }
+
+    pub fn unwrap_event(mut self) -> EventAttr {
+        debug_assert_eq!(self.discriminant, DiscriminantAttribute::Event);
+        unsafe { core::mem::ManuallyDrop::take(&mut self.payload.event) }
+    }
+
+    pub fn borrow_event(&self) -> &EventAttr {
+        debug_assert_eq!(self.discriminant, DiscriminantAttribute::Event);
+        use core::borrow::Borrow;
+        unsafe { self.payload.event.borrow() }
+    }
+
+    pub fn borrow_mut_event(&mut self) -> &mut EventAttr {
+        debug_assert_eq!(self.discriminant, DiscriminantAttribute::Event);
+        use core::borrow::BorrowMut;
+        unsafe { self.payload.event.borrow_mut() }
+    }
 }
 
 impl Attribute {
@@ -332,6 +385,15 @@ impl Attribute {
             },
         }
     }
+
+    pub fn event(payload: EventAttr) -> Self {
+        Self {
+            discriminant: DiscriminantAttribute::Event,
+            payload: UnionAttribute {
+                event: core::mem::ManuallyDrop::new(payload),
+            },
+        }
+    }
 }
 
 impl Drop for Attribute {
@@ -340,6 +402,9 @@ impl Drop for Attribute {
         match self.discriminant() {
             DiscriminantAttribute::Boolean => unsafe {
                 core::mem::ManuallyDrop::drop(&mut self.payload.boolean)
+            },
+            DiscriminantAttribute::Event => unsafe {
+                core::mem::ManuallyDrop::drop(&mut self.payload.event)
             },
             DiscriminantAttribute::String => unsafe {
                 core::mem::ManuallyDrop::drop(&mut self.payload.string)
@@ -360,46 +425,20 @@ impl roc_std::RocRefcounted for Attribute {
     }
 }
 
-// Event
-
-#[derive(Clone, Default, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[repr(C)]
-pub struct EventData {
-    pub handler: RocStr,
-    pub name: RocStr,
-}
-
-impl RocRefcounted for EventData {
-    fn inc(&mut self) {
-        self.name.inc();
-        self.handler.inc();
-    }
-    fn dec(&mut self) {
-        self.name.dec();
-        self.handler.dec();
-    }
-    fn is_refcounted() -> bool {
-        true
-    }
-}
-
 #[derive(Clone, Default, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[repr(C)]
 pub struct ElementData {
     pub attrs: RocList<Attribute>,
-    pub events: RocList<EventData>,
     pub tag: RocStr,
 }
 
 impl RocRefcounted for ElementData {
     fn inc(&mut self) {
         self.attrs.inc();
-        self.events.inc();
         self.tag.inc();
     }
     fn dec(&mut self) {
         self.attrs.dec();
-        self.events.dec();
         self.tag.dec();
     }
     fn is_refcounted() -> bool {

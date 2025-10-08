@@ -16,20 +16,19 @@ Html state : [
         {
             tag : Str,
             attrs : List Attribute,
-            events : List { name : Str, handler : Str },
         }
         (List (Html state)),
     VoidElement
         {
             tag : Str,
             attrs : List Attribute,
-            events : List { name : Str, handler : Str },
         },
 ]
 
 Attribute : [
     Boolean { key : Str, value : Bool },
     String { key : Str, value : Str },
+    Event { name : Str, handler : Str, stop_propagation : Bool, prevent_default : Bool },
 ]
 
 Action : [
