@@ -37,6 +37,9 @@ features = [
   "IntersectionObserver",
   "KeyboardEvent",
   "Node",
+  "Touch",
+  "TouchEvent",
+  "TouchList",
   "Window",
   "console",
 ]

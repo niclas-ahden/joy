@@ -146,8 +146,10 @@ fn register_event(
         }
         "oninput" | "onchange" | "onkeyup" | "onkeydown" => {
             let tag_owned = tag.to_owned();
-            let callback = std::rc::Rc::new(Closure::<dyn FnMut(web_sys::InputEvent)>::new(
-                move |e: web_sys::InputEvent| {
+            // Use generic Event instead of InputEvent to handle both real keyboard
+            // events and synthetic events from Playwright's fill()
+            let callback = std::rc::Rc::new(Closure::<dyn FnMut(web_sys::Event)>::new(
+                move |e: web_sys::Event| {
                     if should_prevent_default {
                         e.prevent_default();
                     }
@@ -155,7 +157,7 @@ fn register_event(
                         e.stop_propagation();
                     }
 
-                    fn current_target<T>(event: &web_sys::InputEvent) -> T
+                    fn current_target<T>(event: &web_sys::Event) -> T
                     where
                         T: wasm_bindgen::JsCast,
                     {
@@ -170,7 +172,7 @@ fn register_event(
                         "input" => current_target::<web_sys::HtmlInputElement>(&e).value(),
                         "textarea" => current_target::<web_sys::HtmlTextAreaElement>(&e).value(),
                         "select" => current_target::<web_sys::HtmlSelectElement>(&e).value(),
-                        _ => panic!("Unsupported tag type for `InputEvent`: {tag_owned}"),
+                        _ => panic!("Unsupported tag type for input event: {tag_owned}"),
                     };
 
                     roc_run_event(
@@ -180,6 +182,49 @@ fn register_event(
                 },
             ));
             events.__insert_unsupported_signature(event_name.into(), callback);
+        }
+        "ontouchstart" | "ontouchmove" | "ontouchend" => {
+            let callback = std::rc::Rc::new(Closure::<dyn FnMut(web_sys::TouchEvent)>::new(
+                move |e: web_sys::TouchEvent| {
+                    if should_prevent_default {
+                        e.prevent_default();
+                    }
+                    if should_stop_propagation {
+                        e.stop_propagation();
+                    }
+
+                    // Get the first touch point's coordinates
+                    let payload = if let Some(touch) = e.touches().get(0) {
+                        format!("{},{}", touch.client_x(), touch.client_y())
+                    } else {
+                        // For touchend, use changed_touches
+                        if let Some(touch) = e.changed_touches().get(0) {
+                            format!("{},{}", touch.client_x(), touch.client_y())
+                        } else {
+                            "0,0".to_string()
+                        }
+                    };
+
+                    roc_run_event(&handler, &RocList::from_slice(payload.as_bytes()))
+                },
+            ));
+            events.__insert_unsupported_signature(event_name.into(), callback);
+        }
+        "onmousedown" | "onmousemove" | "onmouseup" | "onmouseleave" => {
+            let callback = std::rc::Rc::new(std::cell::RefCell::new(
+                move |event: percy_dom::event::MouseEvent| {
+                    if should_prevent_default {
+                        event.prevent_default();
+                    }
+                    if should_stop_propagation {
+                        event.stop_propagation();
+                    }
+
+                    let payload = format!("{},{}", event.client_x(), event.client_y());
+                    roc_run_event(&handler, &RocList::from_slice(payload.as_bytes()))
+                },
+            ));
+            events.insert_mouse_event(event_name.into(), callback);
         }
         _ => panic!("Unsupported event type: {event_name}"),
     }
