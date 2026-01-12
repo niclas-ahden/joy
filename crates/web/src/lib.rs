@@ -45,6 +45,16 @@ pub fn run(flags: String) {
     };
 
     pdom::set(pdom_instance);
+
+    // Mark that Joy/WASM has fully initialized
+    web_sys::window()
+        .expect("should have a browser window")
+        .document()
+        .unwrap()
+        .get_element_by_id("app")
+        .expect("should have an `#app` element")
+        .set_attribute("data-joy-initialized", "")
+        .expect("Failed to set data-joy-initialized attribute on #app");
 }
 
 #[wasm_bindgen]
