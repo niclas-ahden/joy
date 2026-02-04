@@ -5,6 +5,7 @@ hosted [
     dom_show_modal!,
     dom_close_modal!,
     keyboard_add_global_listener!,
+    keyboard_add_global_listener_prevent_default!,
     time_after!,
     time_every!,
     time_debounce!,
@@ -24,6 +25,7 @@ dom_close_modal! : Str => {}
 
 # Keyboard
 keyboard_add_global_listener! : Str, List Str => {}
+keyboard_add_global_listener_prevent_default! : Str, List Str => {}
 
 # Time
 time_after! : U32, Str => I32

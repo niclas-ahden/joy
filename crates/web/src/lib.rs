@@ -450,8 +450,7 @@ fn escape_json_string(s: &str) -> String {
 
 // Keyboard
 
-#[no_mangle]
-pub extern "C" fn roc_fx_keyboard_add_global_listener(event_name: &RocStr, key_filter: &RocList<RocStr>) {
+fn keyboard_add_global_listener_impl(event_name: &RocStr, key_filter: &RocList<RocStr>, prevent_default: bool) {
     use wasm_bindgen::JsCast;
 
     let event_name_clone = event_name.clone();
@@ -464,6 +463,9 @@ pub extern "C" fn roc_fx_keyboard_add_global_listener(event_name: &RocStr, key_f
         let should_trigger = key_filter_vec.is_empty() || key_filter_vec.contains(&key);
 
         if should_trigger {
+            if prevent_default {
+                e.prevent_default();
+            }
             // Send the keyboard event with the key as payload
             roc_run_event(&event_name_clone, &RocList::from_slice(key.as_bytes()));
         }
@@ -480,6 +482,16 @@ pub extern "C" fn roc_fx_keyboard_add_global_listener(event_name: &RocStr, key_f
 
     // Keep the closure alive by leaking it
     closure.forget();
+}
+
+#[no_mangle]
+pub extern "C" fn roc_fx_keyboard_add_global_listener(event_name: &RocStr, key_filter: &RocList<RocStr>) {
+    keyboard_add_global_listener_impl(event_name, key_filter, false);
+}
+
+#[no_mangle]
+pub extern "C" fn roc_fx_keyboard_add_global_listener_prevent_default(event_name: &RocStr, key_filter: &RocList<RocStr>) {
+    keyboard_add_global_listener_impl(event_name, key_filter, true);
 }
 
 // Time
