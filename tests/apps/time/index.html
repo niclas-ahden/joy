@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+    <head><title>Joy Time Test App</title></head>
+    <body>
+        <div id="app"></div>
+        <script type="module">
+            import init, { run } from "/time/pkg/web.js";
+            async function startup() {
+                await init("/time/pkg/web_bg.wasm");
+                run("");
+            }
+            startup().catch(console.error);
+        </script>
+    </body>
+</html>

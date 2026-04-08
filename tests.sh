@@ -73,6 +73,9 @@ build_test_app() {
 
 build_test_app "tests/apps/crypto"
 build_test_app "tests/apps/http"
+build_test_app "tests/apps/time"
+build_test_app "tests/apps/dom"
+build_test_app "tests/apps/keyboard"
 
 # ── Build test server ────────────────────────────────────────────────────
 
@@ -82,7 +85,14 @@ roc build tests/server/main.roc --output ./test-server --linker=legacy
 echo "Build complete"
 echo
 
-# ── Run tests ────────────────────────────────────────────────────────────
+# ── Unit tests (roc test) ────────────────────────────────────────────────
 
-echo "Running Joy tests..."
+echo "Running unit tests..."
+roc test platform/Action.roc
+roc test platform/Url.roc
+echo
+
+# ── Browser tests (roc-playwright) ──────────────────────────────────────
+
+echo "Running browser tests..."
 run_scoped roc dev tests/run.roc --linker=legacy -- "$@"

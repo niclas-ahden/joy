@@ -25,3 +25,7 @@ map = |action, transform|
     when action is
         None -> None
         Update(state) -> Update(transform(state))
+
+expect map(None, |x| x + 1) == None
+expect map(Update(5), |x| x + 1) == Update(6)
+expect map(Update("hello"), Str.count_utf8_bytes) == Update(5)

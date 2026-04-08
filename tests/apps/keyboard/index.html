@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+    <head><title>Joy Keyboard Test App</title></head>
+    <body>
+        <div id="app"></div>
+        <script type="module">
+            import init, { run } from "/keyboard/pkg/web.js";
+            async function startup() {
+                await init("/keyboard/pkg/web_bg.wasm");
+                run("");
+            }
+            startup().catch(console.error);
+        </script>
+    </body>
+</html>
