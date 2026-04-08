@@ -1,3 +1,10 @@
+# Compiled binaries (no extension)
+*
+!*.*
+!*/
+!Caddyfile
+
+# Build artifacts
 target/
 generated-docs/
 asdf/
@@ -6,5 +13,7 @@ asdf/
 *.ll
 .direnv
 .envrc
-# for CI test script
 watch_output.log
+
+# Test build artifacts
+tests/apps/*/www/

@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+    <head>
+        <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
+        <title>Joy Crypto Test App</title>
+    </head>
+    <body>
+        <div id="app"></div>
+        <script type="module">
+            import init, { run } from "/crypto/pkg/web.js";
+
+            async function startup() {
+                await init("/crypto/pkg/web_bg.wasm");
+                const params = new URLSearchParams(location.search);
+                const flags = JSON.stringify({
+                    chunk_size: parseInt(params.get("chunk_size") || "10"),
+                    algorithm: params.get("algorithm") || "SHA-1",
+                    parallelism: parseInt(params.get("parallelism") || "2"),
+                });
+                run(flags);
+            }
+
+            startup().catch(console.error);
+        </script>
+    </body>
+</html>

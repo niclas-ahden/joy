@@ -8,6 +8,15 @@ use wasm_bindgen::prelude::*;
 static DEBOUNCE_TIMERS: std::sync::LazyLock<Mutex<HashMap<String, i32>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
+// Global storage for File objects selected via <input type="file">.
+// Files are stored by numeric ID so Roc can reference them without touching the bytes.
+// Uses thread_local because web_sys::File is not Send+Sync (JS objects are single-threaded).
+use std::cell::RefCell;
+thread_local! {
+    static FILE_STORE: RefCell<HashMap<u32, web_sys::File>> = RefCell::new(HashMap::new());
+    static NEXT_FILE_ID: RefCell<u32> = RefCell::new(1);
+}
+
 mod console;
 mod model;
 mod pdom;
@@ -178,17 +187,61 @@ fn register_event(
                             .expect("failed to cast `current_target` into element type")
                     }
 
-                    let current_target_value = match tag_owned.as_str() {
-                        "input" => current_target::<web_sys::HtmlInputElement>(&e).value(),
-                        "textarea" => current_target::<web_sys::HtmlTextAreaElement>(&e).value(),
-                        "select" => current_target::<web_sys::HtmlSelectElement>(&e).value(),
-                        _ => panic!("Unsupported tag type for input event: {tag_owned}"),
-                    };
+                    if tag_owned == "input" {
+                        let input = current_target::<web_sys::HtmlInputElement>(&e);
 
-                    roc_run_event(
-                        &handler,
-                        &RocList::from_slice(current_target_value.as_bytes()),
-                    )
+                        // File inputs: store the File object and send metadata as JSON
+                        if input.type_() == "file" {
+                            if let Some(files) = input.files() {
+                                if let Some(file) = files.get(0) {
+                                    let file_id = NEXT_FILE_ID.with(|id| {
+                                        let mut id = id.borrow_mut();
+                                        let current = *id;
+                                        *id += 1;
+                                        current
+                                    });
+
+                                    let metadata = format!(
+                                        "{{\"file_id\":{},\"name\":\"{}\",\"size\":{},\"type\":\"{}\"}}",
+                                        file_id,
+                                        file.name().replace('"', "\\\""),
+                                        file.size(),
+                                        file.type_().replace('"', "\\\""),
+                                    );
+
+                                    FILE_STORE.with(|store| {
+                                        store.borrow_mut().insert(file_id, file);
+                                    });
+
+                                    roc_run_event(
+                                        &handler,
+                                        &RocList::from_slice(metadata.as_bytes()),
+                                    );
+                                    return;
+                                }
+                            }
+                            // No file selected (e.g. user cancelled)
+                            roc_run_event(&handler, &RocList::empty());
+                            return;
+                        }
+
+                        // Regular text/number inputs
+                        roc_run_event(
+                            &handler,
+                            &RocList::from_slice(input.value().as_bytes()),
+                        );
+                    } else {
+                        let current_target_value = match tag_owned.as_str() {
+                            "textarea" => current_target::<web_sys::HtmlTextAreaElement>(&e).value(),
+                            "select" => current_target::<web_sys::HtmlSelectElement>(&e).value(),
+                            _ => panic!("Unsupported tag type for input event: {tag_owned}"),
+                        };
+
+                        roc_run_event(
+                            &handler,
+                            &RocList::from_slice(current_target_value.as_bytes()),
+                        );
+                    }
                 },
             ));
             events.__insert_unsupported_signature(event_name.into(), callback);
@@ -333,57 +386,174 @@ pub extern "C" fn roc_fx_dom_close_modal(selector: &RocStr) {
     }
 }
 
-// HTTP
+// HTTP — all requests use the browser fetch API directly (no reqwest dependency).
 
 #[no_mangle]
-pub extern "C" fn roc_fx_http_get(uri: &RocStr, raw_event: &RocStr) {
-    let uri_ = if uri.starts_with('/') {
-        format!(
-            "{}{}",
-            web_sys::window().expect("must have `window`").origin(),
-            uri
-        )
-    } else {
-        uri.to_string()
-    };
+pub extern "C" fn roc_fx_http_get(url: &RocStr, raw_event: &RocStr) {
+    let url_ = resolve_url(url);
     let raw_event_ = raw_event.clone();
 
     wasm_bindgen_futures::spawn_local(async move {
-        let response_or_error_bytes = match reqwest::get(uri_).await {
-            Ok(response) => {
-                let status = response.status().as_u16();
-                match response.bytes().await {
-                    Ok(bytes) => {
-                        let body_json = bytes
-                            .iter()
-                            .map(|b| b.to_string())
-                            .collect::<Vec<_>>()
-                            .join(",");
-
-                        format!(
-                            "{{\"ok\":{{\"status\":{},\"body\":[{}]}}}}",
-                            status, body_json
-                        )
-                    }
-                    Err(e) => {
-                        let msg = escape_json_string(&e.to_string());
-                        format!("{{\"err\":\"{}\"}}", msg)
-                    }
-                }
-            }
-            Err(e) => {
-                let msg = escape_json_string(&e.to_string());
-                format!("{{\"err\":\"{}\"}}", msg)
-            }
-        };
-
-        roc_run_event(&raw_event_, &RocList::from_slice(response_or_error_bytes.as_bytes()))
+        let result = fetch("GET", &url_, FetchBody::None, &[]).await;
+        roc_run_event(&raw_event_, &RocList::from_slice(result.as_bytes()));
     });
 }
 
 #[no_mangle]
 pub extern "C" fn roc_fx_http_post(url: &RocStr, body: &RocList<u8>, raw_event: &RocStr) {
-    let url_ = if url.starts_with('/') {
+    let url_ = resolve_url(url);
+    let body_ = body.as_slice().to_vec();
+    let raw_event_ = raw_event.clone();
+
+    wasm_bindgen_futures::spawn_local(async move {
+        let result = fetch("POST", &url_, FetchBody::Bytes(body_), &[]).await;
+        roc_run_event(&raw_event_, &RocList::from_slice(result.as_bytes()));
+    });
+}
+
+#[no_mangle]
+pub extern "C" fn roc_fx_http_put(url: &RocStr, body: &RocList<u8>, raw_event: &RocStr) {
+    let url_ = resolve_url(url);
+    let body_ = body.as_slice().to_vec();
+    let raw_event_ = raw_event.clone();
+
+    wasm_bindgen_futures::spawn_local(async move {
+        let result = fetch("PUT", &url_, FetchBody::Bytes(body_), &[]).await;
+        roc_run_event(&raw_event_, &RocList::from_slice(result.as_bytes()));
+    });
+}
+
+#[no_mangle]
+pub extern "C" fn roc_fx_http_send_file(
+    method: &RocStr,
+    url: &RocStr,
+    file_id: u32,
+    start: u64,
+    len: u64,
+    headers: &RocList<(RocStr, RocStr)>,
+    raw_event: &RocStr,
+) {
+    let method_ = method.to_string();
+    let url_ = resolve_url(url);
+    let raw_event_ = raw_event.clone();
+    let headers_: Vec<(String, String)> = headers
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+
+    wasm_bindgen_futures::spawn_local(async move {
+        let body = match file_body(file_id, start, len) {
+            Ok(b) => b,
+            Err(e) => {
+                let payload = format!("{{\"err\":\"{}\"}}", escape_json_string(&e));
+                roc_run_event(&raw_event_, &RocList::from_slice(payload.as_bytes()));
+                return;
+            }
+        };
+        let result = fetch(&method_, &url_, body, &headers_).await;
+        roc_run_event(&raw_event_, &RocList::from_slice(result.as_bytes()));
+    });
+}
+
+/// Body for a fetch request.
+enum FetchBody {
+    None,
+    Bytes(Vec<u8>),
+    Blob(web_sys::Blob),
+}
+
+/// Resolve a file handle + range into a FetchBody::Blob.
+fn file_body(file_id: u32, start: u64, len: u64) -> Result<FetchBody, String> {
+    let file = FILE_STORE.with(|store| {
+        store.borrow().get(&file_id).cloned()
+    }).ok_or_else(|| format!("File with id {} not found", file_id))?;
+
+    let blob: web_sys::Blob = if len == 0 {
+        file.into()
+    } else {
+        file.slice_with_f64_and_f64(start as f64, (start + len) as f64)
+            .map_err(|_| format!("Failed to slice file {} at {}+{}", file_id, start, len))?
+    };
+
+    Ok(FetchBody::Blob(blob))
+}
+
+/// Send an HTTP request using the browser fetch API. Returns a JSON string
+/// in the format `{"ok":{"status":200,"body":[...]}}` or `{"err":"message"}`.
+async fn fetch(
+    method: &str,
+    url: &str,
+    body: FetchBody,
+    headers: &[(String, String)],
+) -> String {
+    match fetch_impl(method, url, body, headers).await {
+        Ok(json) => json,
+        Err(e) => format!("{{\"err\":\"{}\"}}", escape_json_string(&e)),
+    }
+}
+
+async fn fetch_impl(
+    method: &str,
+    url: &str,
+    body: FetchBody,
+    headers: &[(String, String)],
+) -> Result<String, String> {
+    use wasm_bindgen::JsCast;
+
+    let opts = web_sys::RequestInit::new();
+    opts.set_method(method);
+
+    match body {
+        FetchBody::None => {}
+        FetchBody::Bytes(bytes) => {
+            let array = web_sys::js_sys::Uint8Array::from(bytes.as_slice());
+            opts.set_body(&array);
+        }
+        FetchBody::Blob(blob) => {
+            opts.set_body(&blob);
+        }
+    }
+
+    let request = web_sys::Request::new_with_str_and_init(url, &opts)
+        .map_err(|_| format!("Failed to create request for {}", url))?;
+
+    for (key, value) in headers {
+        request.headers().set(key, value)
+            .map_err(|_| format!("Failed to set header {}: {}", key, value))?;
+    }
+
+    let window = web_sys::window().ok_or("no window")?;
+    let resp_js = wasm_bindgen_futures::JsFuture::from(window.fetch_with_request(&request))
+        .await
+        .map_err(|e| format!("Fetch failed: {:?}", e))?;
+
+    let response: web_sys::Response = resp_js.dyn_into()
+        .map_err(|_| "Response is not a Response object".to_string())?;
+
+    let status = response.status();
+
+    let body_buffer = wasm_bindgen_futures::JsFuture::from(
+        response.array_buffer().map_err(|_| "Failed to read response body")?
+    )
+    .await
+    .map_err(|_| "Failed to await response body".to_string())?;
+
+    let body_array = web_sys::js_sys::Uint8Array::new(&body_buffer);
+    let body_bytes = body_array.to_vec();
+    let body_json = body_bytes
+        .iter()
+        .map(|b| b.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+
+    Ok(format!(
+        "{{\"ok\":{{\"status\":{},\"body\":[{}]}}}}",
+        status, body_json
+    ))
+}
+
+fn resolve_url(url: &RocStr) -> String {
+    if url.starts_with('/') {
         format!(
             "{}{}",
             web_sys::window().expect("must have `window`").origin(),
@@ -391,46 +561,7 @@ pub extern "C" fn roc_fx_http_post(url: &RocStr, body: &RocList<u8>, raw_event: 
         )
     } else {
         url.to_string()
-    };
-    let body_ = body.as_slice().to_vec();
-    let raw_event_ = raw_event.clone();
-
-    wasm_bindgen_futures::spawn_local(async move {
-        let client = reqwest::Client::new();
-
-        let response_or_error_bytes = match client.post(&url_).body(body_).send().await {
-            Ok(response) => {
-                let status = response.status().as_u16();
-                match response.bytes().await {
-                    Ok(bytes) => {
-                        let body_json = bytes
-                            .iter()
-                            .map(|b| b.to_string())
-                            .collect::<Vec<_>>()
-                            .join(",");
-
-                        format!(
-                            "{{\"ok\":{{\"status\":{},\"body\":[{}]}}}}",
-                            status, body_json
-                        )
-                    }
-                    Err(e) => {
-                        let msg = escape_json_string(&e.to_string());
-                        format!("{{\"err\":\"{}\"}}", msg)
-                    }
-                }
-            }
-            Err(e) => {
-                let msg = escape_json_string(&e.to_string());
-                format!("{{\"err\":\"{}\"}}", msg)
-            }
-        };
-
-        roc_run_event(
-            &raw_event_,
-            &RocList::from_slice(response_or_error_bytes.as_bytes()),
-        )
-    });
+    }
 }
 
 // Minimal JSON string escaper to avoid pulling in serde and thereby increasing asset size.
@@ -573,4 +704,240 @@ pub extern "C" fn roc_fx_time_cancel(timer_id: i32) {
     let window = web_sys::window().expect("No global `window` exists");
     window.clear_timeout_with_handle(timer_id);
     window.clear_interval_with_handle(timer_id);
+}
+
+// File hashing
+
+fn bytes_to_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+fn hash_size_for_algorithm(algorithm: &str) -> usize {
+    match algorithm {
+        "SHA-1" => 20,
+        "SHA-256" => 32,
+        "SHA-384" => 48,
+        "SHA-512" => 64,
+        other => panic!("Unknown hash algorithm: {}", other),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// File chunk hashing via Web Workers + SubtleCrypto
+// ---------------------------------------------------------------------------
+
+#[wasm_bindgen(inline_js = r#"
+export function hashFileChunks(file, algorithm, chunkSize, workerCount, hashSize, onChunkHashed) {
+    return new Promise((resolve, reject) => {
+        const totalChunks = Math.ceil(file.size / chunkSize);
+
+        if (totalChunks === 0) {
+            crypto.subtle.digest(algorithm, new Uint8Array(0)).then((emptyHash) => {
+                resolve({
+                    totalChunks: 0,
+                    hashOfChunkHashes: new Uint8Array(emptyHash),
+                });
+            });
+            return;
+        }
+
+        const effectiveWorkers = Math.min(workerCount, totalChunks);
+
+        const workerSrc = `
+self.onmessage = async (e) => {
+  const { index, blob, algorithm } = e.data;
+  const buf = await blob.arrayBuffer();
+  const hash = await crypto.subtle.digest(algorithm, buf);
+  self.postMessage({ index, hash }, [hash]);
+};`;
+
+        const workerUrl = URL.createObjectURL(
+            new Blob([workerSrc], { type: "application/javascript" })
+        );
+        const workers = Array.from({ length: effectiveWorkers }, () => new Worker(workerUrl));
+
+        // Accumulate chunk hashes in order for computing hash_of_chunk_hashes at the end.
+        const allChunkHashes = new Uint8Array(totalChunks * hashSize);
+        let assigned = 0;
+        let completed = 0;
+
+        const assignNext = (worker) => {
+            if (assigned >= totalChunks) return;
+            const index = assigned++;
+            const start = index * chunkSize;
+            const end = Math.min(start + chunkSize, file.size);
+            worker.postMessage({ index, blob: file.slice(start, end), algorithm });
+        };
+
+        const cleanup = () => {
+            workers.forEach((w) => w.terminate());
+            URL.revokeObjectURL(workerUrl);
+        };
+
+        workers.forEach((worker) => {
+            worker.onmessage = (e) => {
+                const hashBytes = new Uint8Array(e.data.hash);
+                const index = e.data.index;
+                allChunkHashes.set(hashBytes, index * hashSize);
+                completed++;
+
+                const startsAtByte = index * chunkSize;
+                const endsAtByte = Math.min(startsAtByte + chunkSize, file.size);
+
+                try { onChunkHashed(index, hashBytes, totalChunks, startsAtByte, endsAtByte); } catch (err) {
+                    console.error("Crypto.hash_file_chunks! chunk event error:", err);
+                }
+
+                if (completed === totalChunks) {
+                    cleanup();
+                    crypto.subtle.digest(algorithm, allChunkHashes).then((combinedHash) => {
+                        resolve({
+                            totalChunks,
+                            hashOfChunkHashes: new Uint8Array(combinedHash),
+                        });
+                    });
+                } else {
+                    assignNext(worker);
+                }
+            };
+            worker.onerror = (err) => {
+                cleanup();
+                reject(new Error(err.message || "Worker error"));
+            };
+        });
+
+        workers.forEach(assignNext);
+    });
+}
+"#)]
+extern "C" {
+    #[wasm_bindgen(js_name = hashFileChunks)]
+    fn hash_file_chunks_js(
+        file: &web_sys::File,
+        algorithm: &str,
+        chunk_size: f64,
+        worker_count: u32,
+        hash_size: u32,
+        on_chunk_hashed: &web_sys::js_sys::Function,
+    ) -> web_sys::js_sys::Promise;
+}
+
+#[no_mangle]
+pub extern "C" fn roc_fx_crypto_hash_file_chunks(
+    file_id: u32,
+    algorithm: &RocStr,
+    chunk_size: u64,
+    worker_count: i64,
+    chunk_event: &RocStr,
+    done_event: &RocStr,
+) {
+    let algorithm_ = algorithm.to_string();
+    let chunk_event_ = chunk_event.clone();
+    let done_event_ = done_event.clone();
+
+    let chunk_size: u64 = std::cmp::max(chunk_size, 1);
+    let hash_size = hash_size_for_algorithm(&algorithm_) as u32;
+
+    // 0 = UseAllCores (from Roc Parallelism tag), positive = Exact(n)
+    let worker_count: u32 = if worker_count <= 0 {
+        let hw = web_sys::js_sys::Reflect::get(
+            &web_sys::js_sys::global(),
+            &"navigator".into(),
+        )
+        .ok()
+        .and_then(|nav| web_sys::js_sys::Reflect::get(&nav, &"hardwareConcurrency".into()).ok())
+        .and_then(|v| v.as_f64())
+        .unwrap_or(4.0) as u32;
+        hw.max(1)
+    } else {
+        (worker_count as u32).max(1)
+    };
+
+    wasm_bindgen_futures::spawn_local(async move {
+        let file = FILE_STORE.with(|store| store.borrow().get(&file_id).cloned());
+
+        let Some(file) = file else {
+            fire_hash_error(&done_event_, file_id, &format!("File with id {} not found", file_id));
+            return;
+        };
+
+        // Per-chunk callback. Leaked via forget() because wasm_bindgen::Closure panics on
+        // drop if JS still holds a reference. The leak is bounded: one closure per hash call.
+        let chunk_event_for_closure = chunk_event_.clone();
+        let file_id_for_closure = file_id;
+        let on_chunk_hashed = wasm_bindgen::closure::Closure::<
+            dyn FnMut(u32, web_sys::js_sys::Uint8Array, u32, f64, f64),
+        >::new(
+            move |chunk_index: u32,
+                  hash_bytes: web_sys::js_sys::Uint8Array,
+                  total_chunks: u32,
+                  starts_at_byte: f64,
+                  ends_at_byte: f64| {
+                let hash_hex = bytes_to_hex(&hash_bytes.to_vec());
+                let payload = format!(
+                    "{{\"file_id\":{},\"total_chunks\":{},\"chunk\":{{\"index\":{},\"starts_at_byte\":{},\"ends_at_byte\":{},\"hash\":\"{}\"}}}}",
+                    file_id_for_closure,
+                    total_chunks,
+                    chunk_index,
+                    starts_at_byte as u64,
+                    ends_at_byte as u64,
+                    hash_hex,
+                );
+                roc_run_event(
+                    &chunk_event_for_closure,
+                    &RocList::from_slice(payload.as_bytes()),
+                );
+            },
+        );
+
+        let result = wasm_bindgen_futures::JsFuture::from(hash_file_chunks_js(
+            &file,
+            &algorithm_,
+            chunk_size as f64,
+            worker_count,
+            hash_size,
+            on_chunk_hashed.as_ref().unchecked_ref(),
+        ))
+        .await;
+
+        on_chunk_hashed.forget();
+
+        match result {
+            Ok(val) => {
+                let total_chunks = web_sys::js_sys::Reflect::get(&val, &"totalChunks".into())
+                    .ok()
+                    .and_then(|v| v.as_f64())
+                    .map(|v| v as u32)
+                    .unwrap_or(0);
+
+                let hash_of_chunk_hashes_js =
+                    web_sys::js_sys::Reflect::get(&val, &"hashOfChunkHashes".into());
+                let hash_hex = match hash_of_chunk_hashes_js {
+                    Ok(ref js_val) => bytes_to_hex(&web_sys::js_sys::Uint8Array::new(js_val).to_vec()),
+                    Err(_) => {
+                        fire_hash_error(&done_event_, file_id, "Missing hashOfChunkHashes in result");
+                        return;
+                    }
+                };
+
+                let payload = format!(
+                    "{{\"file_id\":{},\"ok\":{{\"total_chunks\":{},\"hash_of_chunk_hashes\":\"{}\"}}}}",
+                    file_id, total_chunks, hash_hex,
+                );
+                roc_run_event(&done_event_, &RocList::from_slice(payload.as_bytes()));
+            }
+            Err(e) => {
+                fire_hash_error(&done_event_, file_id, &format!("{:?}", e));
+            }
+        }
+    });
+}
+
+fn fire_hash_error(event: &RocStr, file_id: u32, msg: &str) {
+    let payload = format!(
+        "{{\"file_id\":{},\"err\":\"{}\"}}",
+        file_id,
+        escape_json_string(msg)
+    );
+    roc_run_event(event, &RocList::from_slice(payload.as_bytes()));
 }
