@@ -1,22 +1,26 @@
 module [
+    HostErr,
     Url,
     append,
-    from_str,
-    to_str,
     append_param,
-    has_query,
-    has_fragment,
-    query,
     fragment,
+    from_str,
+    has_fragment,
+    has_query,
+    host,
+    path,
+    query,
+    query_params,
     reserve,
-    with_query,
+    to_str,
     with_fragment,
+    with_query,
 ]
 
 ## A [Uniform Resource Locator](https://en.wikipedia.org/wiki/URL).
 ##
 ## It could be an absolute address, such as `https://roc-lang.org/authors` or
-## a relative address, such as `/authors`. You can create one using [Url.fromStr].
+## a relative address, such as `/authors`. You can create one using [Url.from_str].
 Url := Str implements [Inspect]
 
 ## Reserve the given number of bytes as extra capacity. This can avoid reallocation
@@ -24,16 +28,16 @@ Url := Str implements [Inspect]
 ##
 ## The following example reserves 50 bytes, then builds the url `https://example.com/stuff?caf%C3%A9=du%20Monde&email=hi%40example.com`;
 ## ```
-## Url.fromStr "https://example.com"
-## |> Url.reserve 50
-## |> Url.append "stuff"
-## |> Url.appendParam "café" "du Monde"
-## |> Url.appendParam "email" "hi@example.com"
+## Url.from_str("https://example.com")
+## |> Url.reserve(50)
+## |> Url.append("stuff")
+## |> Url.append_param("café", "du Monde")
+## |> Url.append_param("email", "hi@example.com")
 ## ```
-## The [Str.countUtf8Bytes](https://www.roc-lang.org/builtins/Str#countUtf8Bytes) function can be helpful in finding out how many bytes to reserve.
+## The [Str.count_utf8_bytes](https://www.roc-lang.org/builtins/Str#count_utf8_bytes) function can be helpful in finding out how many bytes to reserve.
 ##
-## There is no `Url.withCapacity` because it's better to reserve extra capacity
-## on a [Str] first, and then pass that string to [Url.fromStr]. This function will make use
+## There is no `Url.with_capacity` because it's better to reserve extra capacity
+## on a [Str] first, and then pass that string to [Url.from_str]. This function will make use
 ## of the extra capacity.
 reserve : Url, U64 -> Url
 reserve = |@Url(str), cap|
@@ -43,19 +47,19 @@ reserve = |@Url(str), cap|
 ## anything.
 ##
 ## ```
-## Url.fromStr "https://example.com#stuff"
+## Url.from_str("https://example.com#stuff")
 ## ```
 ##
 ## URLs can be absolute, like `https://example.com`, or they can be relative, like `/blah`.
 ##
 ## ```
-## Url.fromStr "/this/is#relative"
+## Url.from_str("/this/is#relative")
 ## ```
 ##
 ## Since nothing is validated, this can return invalid URLs.
 ##
 ## ```
-## Url.fromStr "https://this is not a valid URL, not at all!"
+## Url.from_str("https://this is not a valid URL, not at all!")
 ## ```
 ##
 ## Naturally, passing invalid URLs to functions that need valid ones will tend to result in errors.
@@ -66,9 +70,9 @@ from_str = |str| @Url(str)
 ## Return a [Str] representation of this URL.
 ## ```
 ## # Gives "https://example.com/two%20words"
-## Url.fromStr "https://example.com"
-## |> Url.append "two words"
-## |> Url.toStr
+## Url.from_str("https://example.com")
+## |> Url.append("two words")
+## |> Url.to_str
 ## ```
 to_str : Url -> Str
 to_str = |@Url(str)| str
@@ -82,21 +86,21 @@ to_str = |@Url(str)| str
 ##
 ## ```
 ## # Gives https://example.com/some%20stuff
-## Url.fromStr "https://example.com"
-## |> Url.append "some stuff"
+## Url.from_str("https://example.com")
+## |> Url.append("some stuff")
 ##
 ## # Gives https://example.com/stuff?search=blah#fragment
-## Url.fromStr "https://example.com?search=blah#fragment"
-## |> Url.append "stuff"
+## Url.from_str("https://example.com?search=blah#fragment")
+## |> Url.append("stuff")
 ##
 ## # Gives https://example.com/things/stuff/more/etc/"
-## Url.fromStr "https://example.com/things/"
-## |> Url.append "/stuff/"
-## |> Url.append "/more/etc/"
+## Url.from_str "https://example.com/things/"
+## |> Url.append("/stuff/")
+## |> Url.append("/more/etc/")
 ##
 ## # Gives https://example.com/things
-## Url.fromStr "https://example.com/things"
-## |> Url.append ""
+## Url.from_str("https://example.com/things")
+## |> Url.append("")
 ## ```
 append : Url, Str -> Url
 append = |@Url(url_str), suffix_unencoded|
@@ -153,7 +157,7 @@ append_help = |prefix, suffix|
 
                 Err(NotFound) ->
                     # This should never happen, because we already verified
-                    # that the suffix startsWith "/"
+                    # that the suffix starts_with "/"
                     # TODO `expect Bool.false` here with a comment
                     Str.concat(prefix, suffix)
         else
@@ -179,9 +183,9 @@ append_help = |prefix, suffix|
 ## you can always do:
 ##
 ## ```
-## Url.fromStr ""
-## |> Url.append myStrToEncode
-## |> Url.toStr
+## Url.from_str("")
+## |> Url.append(my_str_to_encode)
+## |> Url.to_str
 ## ```
 ##
 ## > It is recommended to encode spaces as `%20`, the HTML 2.0 specification
@@ -235,17 +239,17 @@ percent_encode = |input|
 ##
 ## ```
 ## # Gives https://example.com?email=someone%40example.com
-## Url.fromStr "https://example.com"
-## |> Url.appendParam "email" "someone@example.com"
+## Url.from_str("https://example.com")
+## |> Url.append_param("email", "someone@example.com")
 ## ```
 ##
 ## This can be called multiple times on the same URL.
 ##
 ## ```
 ## # Gives https://example.com?caf%C3%A9=du%20Monde&email=hi%40example.com
-## Url.fromStr "https://example.com"
-## |> Url.appendParam "café" "du Monde"
-## |> Url.appendParam "email" "hi@example.com"
+## Url.from_str("https://example.com")
+## |> Url.append_param("café", "du Monde")
+## |> Url.append_param("email", "hi@example.com")
 ## ```
 ##
 append_param : Url, Str, Str -> Url
@@ -287,12 +291,12 @@ append_param = |@Url(url_str), key, value|
 ##
 ## ```
 ## # Gives https://example.com?newQuery=thisRightHere#stuff
-## Url.fromStr "https://example.com?key1=val1&key2=val2#stuff"
-## |> Url.withQuery "newQuery=thisRightHere"
+## Url.from_str("https://example.com?key1=val1&key2=val2#stuff")
+## |> Url.with_query("newQuery=thisRightHere")
 ##
 ## # Gives https://example.com#stuff
-## Url.fromStr "https://example.com?key1=val1&key2=val2#stuff"
-## |> Url.withQuery ""
+## Url.from_str("https://example.com?key1=val1&key2=val2#stuff")
+## |> Url.with_query("")
 ## ```
 with_query : Url, Str -> Url
 with_query = |@Url(url_str), query_str|
@@ -334,11 +338,11 @@ with_query = |@Url(url_str), query_str|
 ##
 ## ```
 ## # Gives "key1=val1&key2=val2&key3=val3"
-## Url.fromStr "https://example.com?key1=val1&key2=val2&key3=val3#stuff"
+## Url.from_str("https://example.com?key1=val1&key2=val2&key3=val3#stuff")
 ## |> Url.query
 ##
 ## # Gives ""
-## Url.fromStr "https://example.com#stuff"
+## Url.from_str("https://example.com#stuff")
 ## |> Url.query
 ## ```
 ##
@@ -357,12 +361,12 @@ query = |@Url(url_str)|
 ##
 ## ```
 ## # Gives Bool.true
-## Url.fromStr "https://example.com?key=value#stuff"
-## |> Url.hasQuery
+## Url.from_str("https://example.com?key=value#stuff")
+## |> Url.has_query
 ##
 ## # Gives Bool.false
-## Url.fromStr "https://example.com#stuff"
-## |> Url.hasQuery
+## Url.from_str("https://example.com#stuff")
+## |> Url.has_query
 ## ```
 ##
 has_query : Url -> Bool
@@ -376,11 +380,11 @@ has_query = |@Url(url_str)|
 ##
 ## ```
 ## # Gives "stuff"
-## Url.fromStr "https://example.com#stuff"
+## Url.from_str("https://example.com#stuff")
 ## |> Url.fragment
 ##
 ## # Gives ""
-## Url.fromStr "https://example.com"
+## Url.from_str("https://example.com")
 ## |> Url.fragment
 ## ```
 ##
@@ -396,16 +400,16 @@ fragment = |@Url(url_str)|
 ##
 ## ```
 ## # Gives https://example.com#things
-## Url.fromStr "https://example.com#stuff"
-## |> Url.withFragment "things"
+## Url.from_str("https://example.com#stuff")
+## |> Url.with_fragment("things")
 ##
 ## # Gives https://example.com#things
-## Url.fromStr "https://example.com"
-## |> Url.withFragment "things"
+## Url.from_str("https://example.com")
+## |> Url.with_fragment("things")
 ##
 ## # Gives https://example.com
-## Url.fromStr "https://example.com#stuff"
-## |> Url.withFragment ""
+## Url.from_str("https://example.com#stuff")
+## |> Url.with_fragment ""
 ## ```
 ##
 with_fragment : Url, Str -> Url
@@ -431,12 +435,12 @@ with_fragment = |@Url(url_str), fragment_str|
 ##
 ## ```
 ## # Gives Bool.true
-## Url.fromStr "https://example.com?key=value#stuff"
-## |> Url.hasFragment
+## Url.from_str("https://example.com?key=value#stuff")
+## |> Url.has_fragment
 ##
 ## # Gives Bool.false
-## Url.fromStr "https://example.com?key=value"
-## |> Url.hasFragment
+## Url.from_str("https://example.com?key=value")
+## |> Url.has_fragment
 ## ```
 ##
 has_fragment : Url -> Bool
@@ -449,3 +453,265 @@ has_fragment = |@Url(url_str)|
 percent_encoded : Str
 percent_encoded = "%00%01%02%03%04%05%06%07%08%09%0A%0B%0C%0D%0E%0F%10%11%12%13%14%15%16%17%18%19%1A%1B%1C%1D%1E%1F%20%21%22%23%24%25%26%27%28%29%2A%2B%2C%2D%2E%2F%30%31%32%33%34%35%36%37%38%39%3A%3B%3C%3D%3E%3F%40%41%42%43%44%45%46%47%48%49%4A%4B%4C%4D%4E%4F%50%51%52%53%54%55%56%57%58%59%5A%5B%5C%5D%5E%5F%60%61%62%63%64%65%66%67%68%69%6A%6B%6C%6D%6E%6F%70%71%72%73%74%75%76%77%78%79%7A%7B%7C%7D%7E%7F%80%81%82%83%84%85%86%87%88%89%8A%8B%8C%8D%8E%8F%90%91%92%93%94%95%96%97%98%99%9A%9B%9C%9D%9E%9F%A0%A1%A2%A3%A4%A5%A6%A7%A8%A9%AA%AB%AC%AD%AE%AF%B0%B1%B2%B3%B4%B5%B6%B7%B8%B9%BA%BB%BC%BD%BE%BF%C0%C1%C2%C3%C4%C5%C6%C7%C8%C9%CA%CB%CC%CD%CE%CF%D0%D1%D2%D3%D4%D5%D6%D7%D8%D9%DA%DB%DC%DD%DE%DF%E0%E1%E2%E3%E4%E5%E6%E7%E8%E9%EA%EB%EC%ED%EE%EF%F0%F1%F2%F3%F4%F5%F6%F7%F8%F9%FA%FB%FC%FD%FE%FF"
 
+query_params : Url -> Dict Str Str
+query_params = |url|
+    query(url)
+    |> Str.split_on("&")
+    |> List.walk(
+        Dict.empty({}),
+        |dict, pair|
+            when Str.split_first(pair, "=") is
+                Ok({ before, after }) -> Dict.insert(dict, before, after)
+                Err(NotFound) -> Dict.insert(dict, pair, ""),
+    )
+
+## Returns the URL's [path](https://en.wikipedia.org/wiki/URL#Syntax)—the part after
+## the scheme and authority (e.g. `https://`) but before any `?` or `#` it might have.
+##
+## Returns `""` if the URL has no path.
+##
+## ```
+## # Gives "example.com/"
+## Url.from_str("https://example.com/?key1=val1&key2=val2&key3=val3#stuff")
+## |> Url.path
+## ```
+##
+## ```
+## # Gives "/foo/"
+## Url.from_str("/foo/?key1=val1&key2=val2&key3=val3#stuff")
+## |> Url.path
+## ```
+path : Url -> Str
+path = |@Url(url_str)|
+    without_scheme =
+        if Str.starts_with(url_str, "/") then
+            url_str
+        else
+            when Str.split_first(url_str, ":") is
+                Ok({ after }) ->
+                    when Str.split_first(after, "//") is
+                        # Only drop the `//` if it's right after the `://` like in `https://`
+                        # (so, `before` is empty) - otherwise, the `//` is part of the path!
+                        Ok({ before, after: after_slashes }) if Str.is_empty(before) -> after_slashes
+                        _ -> after
+
+                # There's no `//` and also no `:` so this must be a path-only URL, e.g. "/foo?bar=baz#blah"
+                Err(NotFound) -> url_str
+
+    # Drop the query and/or fragment
+    when Str.split_last(without_scheme, "?") is
+        Ok({ before }) -> before
+        Err(NotFound) ->
+            when Str.split_last(without_scheme, "#") is
+                Ok({ before }) -> before
+                Err(NotFound) -> without_scheme
+
+# `Url.path` supports non-encoded URIs in query parameters (https://datatracker.ietf.org/doc/html/rfc3986#section-3.4)
+expect
+    input = Url.from_str("https://example.com/foo/bar?key1=https://www.baz.com/some-path#stuff")
+    expected = "example.com/foo/bar"
+    path(input) == expected
+
+# `Url.path` supports non-encoded URIs in query parameters (https://datatracker.ietf.org/doc/html/rfc3986#section-3.4)
+expect
+    input = Url.from_str("/foo/bar?key1=https://www.baz.com/some-path#stuff")
+    output = Url.path(input)
+    expected = "/foo/bar"
+    output == expected
+
+## Returns the URL's [host](https://en.wikipedia.org/wiki/URL#Syntax).
+##
+## Returns `Err(RelativeUrl)` if the URL is relative or `Err(HostMissing)` if the URL appears absolute but has no host.
+##
+## ```
+## # Gives "hello.example.com:8000"
+## Url.from_str("https://hello.example.com:8000/?key1=val1&key2=val2&key3=val3#stuff")
+## |> Url.host
+## ```
+##
+## ```
+## # Gives Err(RelativeUrl)
+## Url.from_str("/foo/?key1=val1&key2=val2&key3=val3#stuff")
+## |> Url.host
+## ```
+##
+## ```
+## # Gives "irc.gov"
+## Url.from_str("http://AzureDiamond:hunter2@irc.gov/")
+## |> Url.host
+## ```
+HostErr : [
+    RelativeUrl,
+    HostMissing,
+]
+
+host : Url -> Result Str HostErr
+host = |url|
+    when Str.split_on(Url.to_str(url), "/") is
+        [] | [""] | [_scheme, "", "", ..] -> Err(HostMissing)
+        ["", "", authority, ..] -> extract_host_from_authority(authority)
+        ["", ..] -> Err(RelativeUrl)
+        [_scheme, "", authority, ..] | [authority, ..] -> extract_host_from_authority(authority)
+
+extract_host_from_authority = |authority|
+    when Str.split_first(authority, "@") is
+        Ok({ after }) ->
+            when after is
+                "" -> Err(HostMissing)
+                host_ -> Ok(host_)
+
+        Err(_) -> Ok(authority)
+
+# HTTPS scheme
+expect
+    input = "https://foo.example.com/baz"
+    output = host(Url.from_str(input))
+    expected = Ok("foo.example.com")
+    expected == output
+
+# HTTP scheme
+expect
+    input = "http://foo.example.com/baz"
+    output = host(Url.from_str(input))
+    expected = Ok("foo.example.com")
+    expected == output
+
+# FTP scheme
+expect
+    input = "ftp://files.example.com/downloads"
+    output = host(Url.from_str(input))
+    expected = Ok("files.example.com")
+    expected == output
+
+# Without protocol
+expect
+    input = "foo.example.com/baz"
+    output = host(Url.from_str(input))
+    expected = Ok("foo.example.com")
+    expected == output
+
+# Without host
+expect
+    input = "/baz"
+    output = host(Url.from_str(input))
+    expected = Err(RelativeUrl)
+    expected == output
+
+# With port
+expect
+    input = "https://foo.example.com:8080/baz"
+    output = host(Url.from_str(input))
+    expected = Ok("foo.example.com:8080")
+    expected == output
+
+# With query parameters
+expect
+    input = "https://foo.example.com/baz?x=1&y=2"
+    output = host(Url.from_str(input))
+    expected = Ok("foo.example.com")
+    expected == output
+
+# With trailing slash only
+expect
+    input = "https://foo.example.com/"
+    output = host(Url.from_str(input))
+    expected = Ok("foo.example.com")
+    expected == output
+
+# Only domain
+expect
+    input = "foo.example.com"
+    output = host(Url.from_str(input))
+    expected = Ok("foo.example.com")
+    expected == output
+
+# Relative URL with query
+expect
+    input = "/foo/bar?test=true"
+    output = host(Url.from_str(input))
+    expected = Err(RelativeUrl)
+    expected == output
+
+# Empty string
+expect
+    input = ""
+    output = host(Url.from_str(input))
+    expected = Err(HostMissing)
+    expected == output
+
+# Scheme only
+expect
+    input = "https://"
+    output = host(Url.from_str(input))
+    expected = Err(HostMissing)
+    expected == output
+
+# Double slashes in path
+expect
+    input = "https://foo.example.com//baz"
+    output = host(Url.from_str(input))
+    expected = Ok("foo.example.com")
+    expected == output
+
+# Basic auth in URL
+expect
+    input = "https://user:pass@secure.example.com/secret"
+    output = host(Url.from_str(input))
+    expected = Ok("secure.example.com")
+    expected == output
+
+# IP address as host
+expect
+    input = "http://192.168.1.1/settings"
+    output = host(Url.from_str(input))
+    expected = Ok("192.168.1.1")
+    expected == output
+
+# Localhost
+expect
+    input = "http://localhost:3000/"
+    output = host(Url.from_str(input))
+    expected = Ok("localhost:3000")
+    expected == output
+
+# File protocol
+expect
+    input = "file:///etc/passwd"
+    output = host(Url.from_str(input))
+    expected = Err(HostMissing)
+    expected == output
+
+# Only scheme and userinfo
+expect
+    input = "https://user@"
+    output = host(Url.from_str(input))
+    expected = Err(HostMissing)
+    expected == output
+
+# Double-slash without scheme
+expect
+    input = "//foo.example.com/path"
+    output = host(Url.from_str(input))
+    expected = Ok("foo.example.com")
+    expected == output
+
+# Uppercase domain
+expect
+    input = "https://FOO.EXAMPLE.COM/path"
+    output = host(Url.from_str(input))
+    expected = Ok("FOO.EXAMPLE.COM")
+    expected == output
+
+# # No slashes after protocol: is this valid?
+# expect
+#     input = "https:foo.example.com/path"
+#     output = host(Url.from_str(input))
+#     expected = Ok("foo.example.com")
+#     expected == output
+
+# Port only, no hostname: is this valid?
+# expect
+#     input = "https://:3000/path"
+#     output = host(Url.from_str(input))
+#     expected = Ok(":3000")
+#     expected == output
