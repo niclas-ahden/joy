@@ -18,7 +18,12 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action@v22
 
+      # Use PR #173 which fixes GitHub Actions cache rate limiting
+      # https://github.com/DeterminateSystems/magic-nix-cache/pull/173
+      # Remove source-pr once the fix is released
       - uses: DeterminateSystems/magic-nix-cache-action@v13
+        with:
+          source-pr: 173
 
       - name: Fetch Nix dependencies
         run: nix develop --command true
