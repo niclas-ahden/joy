@@ -16,14 +16,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: DeterminateSystems/nix-installer-action@v22
-
-      # Use PR #173 which fixes GitHub Actions cache rate limiting
-      # https://github.com/DeterminateSystems/magic-nix-cache/pull/173
-      # Remove source-pr once the fix is released
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
+      - uses: cachix/install-nix-action@02a151ada4993995686f9ed4f1be7cfbb229e56f # v31
         with:
-          source-pr: 173
+          nix_path: nixpkgs=channel:nixos-unstable
+          # Trust magic-nix-cache-action's local cache server and accept its unsigned paths
+          extra_nix_config: |
+            substituters = https://cache.nixos.org http://127.0.0.1:37515
+            trusted-substituters = https://cache.nixos.org http://127.0.0.1:37515
+            require-sigs = false
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
 
       - name: Fetch Nix dependencies
         run: nix develop --command true
