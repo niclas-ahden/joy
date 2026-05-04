@@ -3,6 +3,7 @@ module [
     every!,
     debounce!,
     cancel!,
+    now!,
 ]
 
 import Host
@@ -22,3 +23,7 @@ debounce! = |key, delay_ms, event| Host.time_debounce!(key, delay_ms, event)
 ## Cancel a timer by its ID (returned from `after!` or `every!`).
 cancel! : I32 => {}
 cancel! = |timer_id| Host.time_cancel!(timer_id)
+
+## Current wall-clock time as milliseconds since the Unix epoch (`Date.now()`).
+now! : {} => I64
+now! = |{}| Host.time_now!({})

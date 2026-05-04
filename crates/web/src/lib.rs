@@ -706,6 +706,11 @@ pub extern "C" fn roc_fx_time_cancel(timer_id: i32) {
     window.clear_interval_with_handle(timer_id);
 }
 
+#[no_mangle]
+pub extern "C" fn roc_fx_time_now() -> i64 {
+    web_sys::js_sys::Date::now() as i64
+}
+
 // File hashing
 
 fn bytes_to_hex(bytes: &[u8]) -> String {

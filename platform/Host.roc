@@ -12,6 +12,7 @@ hosted [
     time_every!,
     time_debounce!,
     time_cancel!,
+    time_now!,
     crypto_hash_file_chunks!,
 ]
 
@@ -40,3 +41,4 @@ time_after! : U32, Str => I32
 time_every! : U32, Str => I32
 time_debounce! : Str, U32, Str => {}
 time_cancel! : I32 => {}
+time_now! : {} => I64

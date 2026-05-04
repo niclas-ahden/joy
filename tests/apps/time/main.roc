@@ -13,11 +13,12 @@ Model : {
     timer_id : I32,
     event_count : I64,
     last_event : Str,
+    now_value : I64,
 }
 
 init! : Str => Model
 init! = |_flags|
-    { timer_id: 0, event_count: 0, last_event: "" }
+    { timer_id: 0, event_count: 0, last_event: "", now_value: 0 }
 
 Ev : [
     StartAfter,
@@ -25,6 +26,7 @@ Ev : [
     StartDebounce,
     DebounceAgain,
     CancelTimer,
+    CaptureNow,
     TimerFired,
     IntervalFired,
     DebounceFired,
@@ -53,6 +55,9 @@ update! = |model, raw, _payload|
             Time.cancel!(model.timer_id)
             { model & last_event: "cancelled" } |> Action.update
 
+        CaptureNow ->
+            { model & now_value: Time.now!({}) } |> Action.update
+
         TimerFired ->
             { model & event_count: model.event_count + 1, last_event: "after" } |> Action.update
 
@@ -71,9 +76,11 @@ render = |model|
             button([id("btn-debounce"), Event.on_click(encode_ev(StartDebounce))], [text("debounce!")]),
             button([id("btn-debounce-again"), Event.on_click(encode_ev(DebounceAgain))], [text("debounce again")]),
             button([id("btn-cancel"), Event.on_click(encode_ev(CancelTimer))], [text("cancel!")]),
+            button([id("btn-now"), Event.on_click(encode_ev(CaptureNow))], [text("now!")]),
         ]),
         div([id("event-count")], [text(Num.to_str(model.event_count))]),
         div([id("last-event")], [text(model.last_event)]),
+        div([id("now-value")], [text(Num.to_str(model.now_value))]),
     ])
 
 encode_ev : Ev -> Str
@@ -87,6 +94,7 @@ decode_ev = |raw|
         "StartDebounce" -> StartDebounce
         "DebounceAgain" -> DebounceAgain
         "CancelTimer" -> CancelTimer
+        "CaptureNow" -> CaptureNow
         "TimerFired" -> TimerFired
         "IntervalFired" -> IntervalFired
         "DebounceFired" -> DebounceFired
