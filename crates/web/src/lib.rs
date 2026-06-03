@@ -386,6 +386,50 @@ pub extern "C" fn roc_fx_dom_close_modal(selector: &RocStr) {
     }
 }
 
+#[no_mangle]
+pub extern "C" fn roc_fx_dom_navigate(url: &RocStr) {
+    let window = web_sys::window().expect("No global `window` exists");
+    if let Err(e) = window.location().set_href(&url.to_string()) {
+        console::log(&format!(
+            "Failed to navigate to {}: {:?}",
+            url.to_string(),
+            e
+        ));
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn roc_fx_dom_replace_url(url: &RocStr) {
+    let window = web_sys::window().expect("No global `window` exists");
+    let history = window.history().expect("Should have a `history` on `window`");
+    // replaceState rewrites the current history entry in place, with no reload
+    // and no new entry. We pass NULL for the state since Roc only supplies a URL.
+    if let Err(e) =
+        history.replace_state_with_url(&JsValue::NULL, "", Some(&url.to_string()))
+    {
+        console::log(&format!(
+            "Failed to replace URL with {}: {:?}",
+            url.to_string(),
+            e
+        ));
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn roc_fx_dom_push_url(url: &RocStr) {
+    let window = web_sys::window().expect("No global `window` exists");
+    let history = window.history().expect("Should have a `history` on `window`");
+    // pushState adds a new history entry without reloading.
+    if let Err(e) = history.push_state_with_url(&JsValue::NULL, "", Some(&url.to_string()))
+    {
+        console::log(&format!(
+            "Failed to push URL {}: {:?}",
+            url.to_string(),
+            e
+        ));
+    }
+}
+
 // HTTP — all requests use the browser fetch API directly (no reqwest dependency).
 
 #[no_mangle]

@@ -7,7 +7,9 @@
             import init, { run } from "/dom/pkg/web.js";
             async function startup() {
                 await init("/dom/pkg/web_bg.wasm");
-                run("");
+                // Pass the current path as flags so the app can render where it
+                // booted, letting the navigate test assert the URL actually changed.
+                run(location.pathname);
             }
             startup().catch(console.error);
         </script>

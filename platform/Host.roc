@@ -6,6 +6,9 @@ hosted [
     http_send_file!,
     dom_show_modal!,
     dom_close_modal!,
+    dom_navigate!,
+    dom_replace_url!,
+    dom_push_url!,
     keyboard_add_global_listener!,
     keyboard_add_global_listener_prevent_default!,
     time_after!,
@@ -28,6 +31,9 @@ http_send_file! : Str, Str, U32, U64, U64, List (Str, Str), Str => {}
 # DOM
 dom_show_modal! : Str => {}
 dom_close_modal! : Str => {}
+dom_navigate! : Str => {}
+dom_replace_url! : Str => {}
+dom_push_url! : Str => {}
 
 # Keyboard
 keyboard_add_global_listener! : Str, List Str => {}
