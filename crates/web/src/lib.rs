@@ -17,6 +17,8 @@ thread_local! {
     static NEXT_FILE_ID: RefCell<u32> = RefCell::new(1);
 }
 
+#[cfg(feature = "joy_bench")]
+mod bench;
 mod console;
 mod model;
 mod pdom;
@@ -53,17 +55,22 @@ pub fn run(flags: String) {
         percy_dom::PercyDom::new_replace_mount(initial_vnode, app_element)
     };
 
+    let root_node = pdom_instance.root_node();
     pdom::set(pdom_instance);
 
-    // Mark that Joy/WASM has fully initialized
-    web_sys::window()
-        .expect("should have a browser window")
-        .document()
-        .unwrap()
-        .get_element_by_id("app")
-        .expect("should have an `#app` element")
-        .set_attribute("data-joy-initialized", "")
-        .expect("Failed to set data-joy-initialized attribute on #app");
+    // Mark that Joy/WASM has fully initialized, on the mounted root: the marker is a
+    // readiness signal for *this app's subtree* (external test harnesses wait on
+    // `#app[data-joy-initialized]` before interacting), so it belongs on the node it vouches
+    // for, scoped to the app and torn down with it. On the hydrate path the root *is* `#app`,
+    // preserving that selector. Don't re-look-up `#app` instead: `new_replace_mount` replaces
+    // it, and the old post-mount `#app` lookup `.expect()`ed on the vanished node and trapped
+    // on every page load. Note the attribute is not part of any vnode, so a patch
+    // that swaps out the root element itself (root tag change) would drop it; percy's differ
+    // never removes attributes it didn't render, so it survives ordinary patches.
+    use wasm_bindgen::JsCast;
+    if let Some(root) = root_node.dyn_ref::<web_sys::Element>() {
+        let _ = root.set_attribute("data-joy-initialized", "");
+    }
 }
 
 #[wasm_bindgen]
@@ -101,7 +108,7 @@ unsafe fn roc_to_percy_element_node(
     let roc_attrs = &value.ptr_read_union().element.data.attrs;
 
     // Separate regular attributes from events
-    let mut attrs = std::collections::HashMap::new();
+    let mut attrs = percy_dom::Attributes::new();
     let mut events = percy_dom::event::Events::new();
 
     for attr in roc_attrs.into_iter() {
@@ -307,14 +314,33 @@ fn roc_run_event(roc_event: &RocStr, event_payload: &RocList<u8>) {
                     let new_model = action.unwrap_model();
 
                     pdom::with(|pdom| {
+                        #[cfg(feature = "joy_bench")]
+                        let t_render_start = bench::now();
+
                         // pass the new model to roc to render the new html
                         let new_html = roc::roc_render(new_model.clone());
+
+                        #[cfg(feature = "joy_bench")]
+                        let t_convert_start = bench::now();
 
                         // convert the new roc html to percy virtual node
                         let new_vnode = roc_html_to_percy(&new_html);
 
+                        #[cfg(feature = "joy_bench")]
+                        let t_diff_patch_start = bench::now();
+
                         // diff and patch the DOM
                         pdom.update(new_vnode);
+
+                        #[cfg(feature = "joy_bench")]
+                        {
+                            let t_end = bench::now();
+                            bench::emit(
+                                t_convert_start - t_render_start,
+                                t_diff_patch_start - t_convert_start,
+                                t_end - t_diff_patch_start,
+                            );
+                        }
                     });
 
                     // save the new model for later

@@ -29,3 +29,11 @@ version = "0.0.1"
 #
 # Remember to also pin the Roc compiler to the same version in `./flake.nix` (or however else you install the compiler).
 roc_std = { git = "https://github.com/roc-lang/roc.git", rev = "4c206185a278f3adf7a23e8336cc94cd849b358f" }
+
+# Size-tuned release profile for the wasm bundle: bundle weight is Joy's real "startup
+# cost" (runtime init is ~5-15 ms). Settings chosen by a measured sweep in
+# benchmarks/jsframework/ (94.7 -> 81.8 KB compressed with no measurable CPU cost).
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "z"

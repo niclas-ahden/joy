@@ -9,7 +9,6 @@ description.workspace = true
 
 [dependencies]
 roc_std = { workspace = true}
-wee_alloc = "0.4.5"
 
 [build-dependencies]
 helpers = { path = "../helpers" }

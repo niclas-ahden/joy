@@ -1,4 +1,4 @@
-use roc_std::{roc_refcounted_noop_impl, RocBox, RocList, RocRefcounted, RocStr};
+use roc_std::{roc_refcounted_noop_impl, RocBox, RocList, RocRefcounted, RocStr, Storage};
 
 // Action
 
@@ -414,11 +414,49 @@ impl Drop for Attribute {
 }
 
 impl roc_std::RocRefcounted for Attribute {
+    // Attribute is an inline (un-boxed) tagged union, so inc/dec just propagate to the
+    // RocStr fields of the active variant. RocList<Attribute>::dec calls dec() on each
+    // element by &mut (it does not Drop them), so this is the only release of those
+    // RocStrs -- no double-free with the Drop impl above.
     fn inc(&mut self) {
-        unimplemented!();
+        unsafe {
+            match self.discriminant() {
+                DiscriminantAttribute::Boolean => {
+                    let v = &mut self.payload.boolean;
+                    v.key.inc();
+                }
+                DiscriminantAttribute::String => {
+                    let v = &mut self.payload.string;
+                    v.key.inc();
+                    v.value.inc();
+                }
+                DiscriminantAttribute::Event => {
+                    let v = &mut self.payload.event;
+                    v.handler.inc();
+                    v.name.inc();
+                }
+            }
+        }
     }
     fn dec(&mut self) {
-        unimplemented!();
+        unsafe {
+            match self.discriminant() {
+                DiscriminantAttribute::Boolean => {
+                    let v = &mut self.payload.boolean;
+                    v.key.dec();
+                }
+                DiscriminantAttribute::String => {
+                    let v = &mut self.payload.string;
+                    v.key.dec();
+                    v.value.dec();
+                }
+                DiscriminantAttribute::Event => {
+                    let v = &mut self.payload.event;
+                    v.handler.dec();
+                    v.name.dec();
+                }
+            }
+        }
     }
     fn is_refcounted() -> bool {
         true
@@ -648,50 +686,83 @@ pub union UnionHtml {
     pub text: core::mem::ManuallyDrop<HtmlText>,
 }
 
+impl Html {
+    /// Alignment of the boxed node's allocation. Like `RocBox`, the refcount `Storage`
+    /// word lives this many bytes before the union contents.
+    #[inline]
+    fn box_alignment() -> usize {
+        core::mem::align_of::<UnionHtml>().max(core::mem::align_of::<Storage>())
+    }
+
+    /// The refcount cell preceding the union contents. `ptr` must be the unmasked,
+    /// non-null contents pointer.
+    #[inline]
+    unsafe fn storage_cell(ptr: *mut UnionHtml) -> *const core::cell::Cell<Storage> {
+        (ptr as *const u8)
+            .sub(Self::box_alignment())
+            .cast::<core::cell::Cell<Storage>>()
+    }
+}
+
 impl RocRefcounted for Html {
     fn inc(&mut self) {
+        // The None variant is a null pointer with no backing allocation.
+        if self.0.is_null() {
+            return;
+        }
         unsafe {
-            let ptr = self.unmasked_pointer();
-            match self.discriminant() {
-                DiscriminantHtml::Element => {
-                    let element = &mut (*ptr).element;
-                    element.children.inc();
-                    element.data.inc();
-                }
-                DiscriminantHtml::VoidElement => {
-                    let element = &mut (*ptr).element;
-                    element.data.inc();
-                }
-                DiscriminantHtml::Text => {
-                    let text = &mut (*ptr).text;
-                    text.str.inc();
-                }
-                DiscriminantHtml::None => {}
+            let storage = &*Self::storage_cell(self.unmasked_pointer());
+            let mut s = storage.get();
+            if !s.is_readonly() {
+                s.increment_reference_count();
+                storage.set(s);
             }
         }
     }
     fn dec(&mut self) {
+        if self.0.is_null() {
+            return;
+        }
         unsafe {
             let ptr = self.unmasked_pointer();
-            match self.discriminant() {
-                DiscriminantHtml::Element => {
-                    let element = &mut (*ptr).element;
-                    element.children.dec();
-                    element.data.dec();
+            let storage = &*Self::storage_cell(ptr);
+            let mut s = storage.get();
+            // Only on the last reference do we release contents and free the box. The
+            // previous glue always dec'd the contents and *never* freed the boxed
+            // UnionHtml node, so every rendered tree leaked. This mirrors RocBox::dec.
+            if s.decrease() {
+                match self.discriminant() {
+                    DiscriminantHtml::Element => {
+                        let element = &mut (*ptr).element;
+                        element.children.dec();
+                        element.data.dec();
+                    }
+                    DiscriminantHtml::VoidElement => {
+                        let element = &mut (*ptr).element;
+                        element.data.dec();
+                    }
+                    DiscriminantHtml::Text => {
+                        let text = &mut (*ptr).text;
+                        text.str.dec();
+                    }
+                    DiscriminantHtml::None => {}
                 }
-                DiscriminantHtml::VoidElement => {
-                    let element = &mut (*ptr).element;
-                    element.data.dec();
-                }
-                DiscriminantHtml::Text => {
-                    let text = &mut (*ptr).text;
-                    text.str.dec();
-                }
-                DiscriminantHtml::None => {}
+                crate::roc_dealloc(
+                    (ptr as *mut u8).sub(Self::box_alignment()),
+                    Self::box_alignment() as u32,
+                );
+            } else if !s.is_readonly() {
+                storage.set(s);
             }
         }
     }
     fn is_refcounted() -> bool {
         true
+    }
+}
+
+impl Drop for Html {
+    fn drop(&mut self) {
+        self.dec();
     }
 }

@@ -10,17 +10,22 @@ description.workspace = true
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+# Enable end-to-end performance instrumentation of the update cycle (see src/bench.rs).
+# Off by default so normal builds carry zero overhead.
+joy_bench = []
+
 [dependencies]
 console_error_panic_hook = "0.1.7"
-# We use this version to get hydration
+js-sys = "0.3.72"
+# Our fork carries hydration plus the vdom performance work.
 percy-dom = { git = "https://github.com/niclas-ahden/percy", branch = "master", default-features = false }
-# percy-dom = { version = "0.10.0", default-features = false }
-# percy-dom = { path = "../../../../percy/crates/percy-dom", default-features = false }
+# For local percy development:
+# percy-dom = { path = "../../../percy/crates/percy-dom", default-features = false }
 roc = { path = "../roc" }
 roc_std = { workspace = true}
 wasm-bindgen = "0.2.95"
 wasm-bindgen-futures = "0.4.45"
-wee_alloc = "0.4.5"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(wasm_bindgen_unstable_test_coverage)'] }
@@ -38,6 +43,7 @@ features = [
   "KeyboardEvent",
   "Location",
   "Node",
+  "Performance",
   "Touch",
   "TouchEvent",
   "TouchList",
@@ -57,3 +63,8 @@ features = [
 
 [build-dependencies]
 build-target = "0.4"
+
+# wasm-pack post-processing: optimize for size (default is -O, speed). Measured to
+# cost nothing on CPU while shrinking the bundle.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Oz"]
