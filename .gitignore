@@ -17,3 +17,9 @@ watch_output.log
 
 # Test build artifacts
 tests/apps/*/www/
+
+# Raw benchmark run snapshots (trend line lives in benchmarks/jsframework/history.jsonl)
+benchmarks/jsframework/runs/
+
+# Local working notes
+notes/

@@ -129,6 +129,9 @@ You'll end up with a complete front-end app in the `www` directory. You can depl
 
 Contributions are very welcome, including feature requests, design discussion, etc.
 
+If you're working on performance, see [BENCHMARK.md](./BENCHMARK.md) for how Joy's
+performance is measured and tracked over time.
+
 ## Development setup
 
 Do everything under "Try it out" and you're golden.

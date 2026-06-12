@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+    <head><title>Joy Bench App</title></head>
+    <body>
+        <div id="app"></div>
+        <script type="module">
+            import init, { run } from "/bench/pkg/web.js";
+            async function startup() {
+                await init("/bench/pkg/web_bg.wasm");
+                run("");
+            }
+            startup().catch(console.error);
+        </script>
+    </body>
+</html>
