@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+    <head><title>Joy VDOM Test App</title></head>
+    <body>
+        <div id="app"></div>
+        <script type="module">
+            import init, { run, port } from "/vdom/pkg/web.js";
+            async function startup() {
+                const wasm = await init("/vdom/pkg/web_bg.wasm");
+                // Expose the WASM linear-memory size so the leak test can watch the heap
+                // (where Joy's memory lives) grow across create/clear cycles. It only ever
+                // grows, so steady growth across cycles = a leak.
+                window.__joy_wasm_bytes = () => wasm.memory.buffer.byteLength;
+                // Expose the Roc event port BEFORE run() so the harness can push states
+                // (window.__joy_port("set:...")) the moment the app is mounted. run()
+                // used to trap post-mount (it re-looked-up the now-replaced #app, since
+                // fixed), so the try/catch is now only belt-and-suspenders.
+                window.__joy_port = port;
+                try {
+                    run("");
+                } catch (e) {
+                    console.error("run() threw unexpectedly:", e);
+                }
+            }
+            startup().catch(console.error);
+        </script>
+    </body>
+</html>
