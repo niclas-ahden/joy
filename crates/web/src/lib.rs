@@ -1016,3 +1016,61 @@ fn fire_hash_error(event: &RocStr, file_id: u32, msg: &str) {
     );
     roc_run_event(event, &RocList::from_slice(payload.as_bytes()));
 }
+
+// ---------------------------------------------------------------------------
+// File byte-range read
+// ---------------------------------------------------------------------------
+
+fn fire_file_error(event: &RocStr, file_id: u32, msg: &str) {
+    let payload = format!(
+        "{{\"file_id\":{},\"err\":\"{}\"}}",
+        file_id,
+        escape_json_string(msg)
+    );
+    roc_run_event(event, &RocList::from_slice(payload.as_bytes()));
+}
+
+// Read `len` bytes starting at byte offset `start` from a stored File and fire
+// `event` with the bytes. The byte array is emitted the same way HTTP response
+// bodies are (a JSON array of U8), so the Roc side decodes it straight into a
+// `List U8`. Payload shape:
+//   success: {"file_id":<id>,"bytes":[<u8>,...]}
+//   failure: {"file_id":<id>,"err":"<message>"}
+#[no_mangle]
+pub extern "C" fn roc_fx_file_read_bytes_at(file_id: u32, start: u64, len: u64, event: &RocStr) {
+    let event = event.clone();
+    wasm_bindgen_futures::spawn_local(async move {
+        let file = FILE_STORE.with(|store| store.borrow().get(&file_id).cloned());
+
+        let Some(file) = file else {
+            fire_file_error(&event, file_id, &format!("File with id {} not found", file_id));
+            return;
+        };
+
+        let start_f = start as f64;
+        let end = (start + len) as f64;
+        let blob = match file.slice_with_f64_and_f64(start_f, end) {
+            Ok(b) => b,
+            Err(_) => {
+                fire_file_error(&event, file_id, &format!("Failed to slice file {} at {}+{}", file_id, start, len));
+                return;
+            }
+        };
+
+        match wasm_bindgen_futures::JsFuture::from(blob.array_buffer()).await {
+            Ok(buf) => {
+                let bytes = web_sys::js_sys::Uint8Array::new(&buf).to_vec();
+                let bytes_json = bytes
+                    .iter()
+                    .map(|b| b.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let payload = format!("{{\"file_id\":{},\"bytes\":[{}]}}", file_id, bytes_json);
+                roc_run_event(&event, &RocList::from_slice(payload.as_bytes()));
+            }
+            Err(e) => {
+                fire_file_error(&event, file_id, &format!("{:?}", e));
+            }
+        }
+    });
+}

@@ -17,6 +17,7 @@ hosted [
     time_cancel!,
     time_now!,
     crypto_hash_file_chunks!,
+    file_read_bytes_at!,
 ]
 
 # Console
@@ -41,6 +42,9 @@ keyboard_add_global_listener_prevent_default! : Str, List Str => {}
 
 # File hashing
 crypto_hash_file_chunks! : U32, Str, U64, I64, Str, Str => {}
+
+# File byte-range read (e.g. magic-byte sniffing before upload)
+file_read_bytes_at! : U32, U64, U64, Str => {}
 
 # Time
 time_after! : U32, Str => I32

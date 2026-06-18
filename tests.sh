@@ -73,6 +73,7 @@ build_test_app() {
 }
 
 build_test_app "tests/apps/crypto"
+build_test_app "tests/apps/file"
 build_test_app "tests/apps/http"
 build_test_app "tests/apps/time"
 build_test_app "tests/apps/dom"
