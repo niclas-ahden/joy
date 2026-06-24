@@ -155,12 +155,39 @@ impl roc_std::RocRefcounted for EventAttr {
     }
 }
 
+// Field order follows Roc's record layout: equal alignment (all RocStr), so
+// alphabetical: on_visible, rearm_key, root_margin.
+#[derive(Clone, Default, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[repr(C)]
+pub struct VisibilityAttr {
+    pub on_visible: roc_std::RocStr,
+    pub rearm_key: roc_std::RocStr,
+    pub root_margin: roc_std::RocStr,
+}
+
+impl roc_std::RocRefcounted for VisibilityAttr {
+    fn inc(&mut self) {
+        self.on_visible.inc();
+        self.rearm_key.inc();
+        self.root_margin.inc();
+    }
+    fn dec(&mut self) {
+        self.on_visible.dec();
+        self.rearm_key.dec();
+        self.root_margin.dec();
+    }
+    fn is_refcounted() -> bool {
+        true
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[repr(u8)]
 pub enum DiscriminantAttribute {
     Boolean = 0,
     Event = 1,
     String = 2,
+    Visibility = 3,
 }
 
 impl core::fmt::Debug for DiscriminantAttribute {
@@ -169,6 +196,7 @@ impl core::fmt::Debug for DiscriminantAttribute {
             Self::Boolean => f.write_str("DiscriminantAttribute::Boolean"),
             Self::Event => f.write_str("DiscriminantAttribute::Event"),
             Self::String => f.write_str("DiscriminantAttribute::String"),
+            Self::Visibility => f.write_str("DiscriminantAttribute::Visibility"),
         }
     }
 }
@@ -180,13 +208,18 @@ pub union UnionAttribute {
     boolean: core::mem::ManuallyDrop<BooleanAttr>,
     event: core::mem::ManuallyDrop<EventAttr>,
     string: core::mem::ManuallyDrop<StringAttr>,
+    visibility: core::mem::ManuallyDrop<VisibilityAttr>,
 }
 
 // TODO(@roc-lang): See https://github.com/roc-lang/roc/issues/6012
 // const _SIZE_CHECK_UnionAttribute: () = assert!(core::mem::size_of::<UnionAttribute>() == 24);
 const _ALIGN_CHECK_UNION_ATTRIBUTE: () = assert!(core::mem::align_of::<UnionAttribute>() == 4);
 
-const _SIZE_CHECK_ATTRIBUTE: () = assert!(core::mem::size_of::<Attribute>() == 32);
+// The largest variant is now VisibilityAttr (3 RocStr = 36 bytes on wasm32), so the
+// payload union is 36 bytes and the discriminant byte sits at offset 36, with the whole
+// tag union padded to 40. (Before the rearm_key field the largest was EventAttr at 28,
+// giving size 32 and the discriminant at offset 28.)
+const _SIZE_CHECK_ATTRIBUTE: () = assert!(core::mem::size_of::<Attribute>() == 40);
 const _ALIGN_CHECK_ATTRIBUTE: () = assert!(core::mem::align_of::<Attribute>() == 4);
 
 impl Attribute {
@@ -195,7 +228,7 @@ impl Attribute {
         unsafe {
             let bytes = core::mem::transmute::<&Self, &[u8; core::mem::size_of::<Self>()]>(self);
 
-            core::mem::transmute::<u8, DiscriminantAttribute>(*bytes.as_ptr().add(28))
+            core::mem::transmute::<u8, DiscriminantAttribute>(*bytes.as_ptr().add(36))
         }
     }
 }
@@ -220,6 +253,9 @@ impl Clone for Attribute {
                 },
                 String => UnionAttribute {
                     string: self.payload.string.clone(),
+                },
+                Visibility => UnionAttribute {
+                    visibility: self.payload.visibility.clone(),
                 },
             }
         };
@@ -249,6 +285,10 @@ impl core::fmt::Debug for Attribute {
                     let field: &StringAttr = &self.payload.string;
                     f.debug_tuple("Attribute::String").field(field).finish()
                 }
+                Visibility => {
+                    let field: &VisibilityAttr = &self.payload.visibility;
+                    f.debug_tuple("Attribute::Visibility").field(field).finish()
+                }
             }
         }
     }
@@ -269,6 +309,7 @@ impl PartialEq for Attribute {
                 Boolean => self.payload.boolean == other.payload.boolean,
                 Event => self.payload.event == other.payload.event,
                 String => self.payload.string == other.payload.string,
+                Visibility => self.payload.visibility == other.payload.visibility,
             }
         }
     }
@@ -294,6 +335,10 @@ impl PartialOrd for Attribute {
                     Boolean => self.payload.boolean.partial_cmp(&other.payload.boolean),
                     Event => self.payload.event.partial_cmp(&other.payload.event),
                     String => self.payload.string.partial_cmp(&other.payload.string),
+                    Visibility => self
+                        .payload
+                        .visibility
+                        .partial_cmp(&other.payload.visibility),
                 }
             },
         }
@@ -309,6 +354,7 @@ impl core::hash::Hash for Attribute {
                 Boolean => self.payload.boolean.hash(state),
                 Event => self.payload.event.hash(state),
                 String => self.payload.string.hash(state),
+                Visibility => self.payload.visibility.hash(state),
             }
         }
     }
@@ -365,6 +411,23 @@ impl Attribute {
         use core::borrow::BorrowMut;
         unsafe { self.payload.event.borrow_mut() }
     }
+
+    pub fn unwrap_visibility(mut self) -> VisibilityAttr {
+        debug_assert_eq!(self.discriminant, DiscriminantAttribute::Visibility);
+        unsafe { core::mem::ManuallyDrop::take(&mut self.payload.visibility) }
+    }
+
+    pub fn borrow_visibility(&self) -> &VisibilityAttr {
+        debug_assert_eq!(self.discriminant, DiscriminantAttribute::Visibility);
+        use core::borrow::Borrow;
+        unsafe { self.payload.visibility.borrow() }
+    }
+
+    pub fn borrow_mut_visibility(&mut self) -> &mut VisibilityAttr {
+        debug_assert_eq!(self.discriminant, DiscriminantAttribute::Visibility);
+        use core::borrow::BorrowMut;
+        unsafe { self.payload.visibility.borrow_mut() }
+    }
 }
 
 impl Attribute {
@@ -394,6 +457,15 @@ impl Attribute {
             },
         }
     }
+
+    pub fn visibility(payload: VisibilityAttr) -> Self {
+        Self {
+            discriminant: DiscriminantAttribute::Visibility,
+            payload: UnionAttribute {
+                visibility: core::mem::ManuallyDrop::new(payload),
+            },
+        }
+    }
 }
 
 impl Drop for Attribute {
@@ -408,6 +480,9 @@ impl Drop for Attribute {
             },
             DiscriminantAttribute::String => unsafe {
                 core::mem::ManuallyDrop::drop(&mut self.payload.string)
+            },
+            DiscriminantAttribute::Visibility => unsafe {
+                core::mem::ManuallyDrop::drop(&mut self.payload.visibility)
             },
         }
     }
@@ -435,6 +510,12 @@ impl roc_std::RocRefcounted for Attribute {
                     v.handler.inc();
                     v.name.inc();
                 }
+                DiscriminantAttribute::Visibility => {
+                    let v = &mut self.payload.visibility;
+                    v.on_visible.inc();
+                    v.rearm_key.inc();
+                    v.root_margin.inc();
+                }
             }
         }
     }
@@ -454,6 +535,12 @@ impl roc_std::RocRefcounted for Attribute {
                     let v = &mut self.payload.event;
                     v.handler.dec();
                     v.name.dec();
+                }
+                DiscriminantAttribute::Visibility => {
+                    let v = &mut self.payload.visibility;
+                    v.on_visible.dec();
+                    v.rearm_key.dec();
+                    v.root_margin.dec();
                 }
             }
         }

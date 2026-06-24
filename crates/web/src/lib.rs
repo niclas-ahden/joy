@@ -17,6 +17,15 @@ thread_local! {
     static NEXT_FILE_ID: RefCell<u32> = RefCell::new(1);
 }
 
+// The IntersectionObserver and its callback created by the `Visibility` attribute. percy
+// owns this state for the lifetime of the observed element (see `register_visibility`) and
+// hands it back to our teardown when the element is removed or the effect re-runs.
+struct VisibilityObserver {
+    observer: web_sys::IntersectionObserver,
+    // Kept alive alongside the observer. Dropped on teardown, after the disconnect.
+    _closure: wasm_bindgen::closure::Closure<dyn Fn(web_sys::js_sys::Array)>,
+}
+
 #[cfg(feature = "joy_bench")]
 mod bench;
 mod console;
@@ -107,9 +116,10 @@ unsafe fn roc_to_percy_element_node(
     let tag = value.ptr_read_union().element.data.tag.as_str().to_owned();
     let roc_attrs = &value.ptr_read_union().element.data.attrs;
 
-    // Separate regular attributes from events
+    // Separate regular attributes from events and lifecycle-managed special attributes.
     let mut attrs = percy_dom::Attributes::new();
     let mut events = percy_dom::event::Events::new();
+    let mut special = percy_dom::SpecialAttributes::default();
 
     for attr in roc_attrs.into_iter() {
         match attr.discriminant() {
@@ -131,6 +141,9 @@ unsafe fn roc_to_percy_element_node(
                 let event_data = attr.borrow_event();
                 register_event(&mut events, &tag, event_data);
             }
+            roc::glue::DiscriminantAttribute::Visibility => {
+                register_visibility(&mut special, attr.borrow_visibility());
+            }
         }
     }
 
@@ -139,8 +152,80 @@ unsafe fn roc_to_percy_element_node(
         attrs,
         events,
         children,
-        special_attributes: percy_dom::SpecialAttributes::default(),
+        special_attributes: special,
     })
+}
+
+/// Wire an `IntersectionObserver` to a node's lifecycle via percy's element-effect primitive.
+///
+/// `setup` (run when the element is created, including on hydration) builds the observer,
+/// starts observing, and returns it as the effect's state. percy stores that state for the
+/// lifetime of the element and hands it back to `teardown` when the element is removed or
+/// the effect re-runs, where we disconnect the observer and drop its callback. The observer
+/// lives as long as the element, with no global registry and no leaked closure.
+///
+/// `rearm_key` is the effect's dependency key. An IntersectionObserver only fires on a
+/// crossing, so a target already in view does not re-fire when only the model changed. When
+/// the caller bumps `rearm_key`, percy tears down the old observer then sets up a fresh one
+/// whose `observe` re-delivers the current visibility on the next frame. A constant key
+/// never re-runs.
+fn register_visibility(
+    special: &mut percy_dom::SpecialAttributes,
+    attr: &roc::glue::VisibilityAttr,
+) {
+    use wasm_bindgen::prelude::*;
+    use wasm_bindgen::JsCast;
+
+    let on_visible = attr.on_visible.clone();
+    let root_margin = attr.root_margin.to_string();
+
+    // The effect re-runs (teardown + setup) exactly when this key changes. It does not need to
+    // include on_visible/root_margin: a node whose on_visible attribute changes identity is a
+    // different effect to percy and is handled by the normal create/teardown around it.
+    let rearm_key = attr.rearm_key.to_string();
+
+    special.set_element_effect(
+        rearm_key,
+        move |element: web_sys::Element| -> VisibilityObserver {
+            let event = on_visible.clone();
+            // The observer callback receives (entries, observer), but we only need entries.
+            let closure = Closure::<dyn Fn(web_sys::js_sys::Array)>::new(
+                move |entries: web_sys::js_sys::Array| {
+                    for entry in entries.iter() {
+                        let entry: web_sys::IntersectionObserverEntry = entry.unchecked_into();
+                        if entry.is_intersecting() {
+                            roc_run_event(&event, &RocList::empty());
+                        }
+                    }
+                },
+            );
+
+            // `root_margin` grows or shrinks the viewport rectangle used for the intersection
+            // test (CSS-margin syntax, e.g. "200px"), so a sentinel can fire before it
+            // actually scrolls into view. Empty string means the browser default.
+            let options = web_sys::IntersectionObserverInit::new();
+            if !root_margin.is_empty() {
+                options.set_root_margin(&root_margin);
+            }
+
+            let observer = web_sys::IntersectionObserver::new_with_options(
+                closure.as_ref().unchecked_ref(),
+                &options,
+            )
+            .expect("Failed to create IntersectionObserver");
+            observer.observe(&element);
+
+            VisibilityObserver {
+                observer,
+                _closure: closure,
+            }
+        },
+        |state: VisibilityObserver| {
+            // Disconnect before dropping the callback so the browser holds no reference to it
+            // when it is freed.
+            state.observer.disconnect();
+        },
+    );
 }
 
 fn register_event(

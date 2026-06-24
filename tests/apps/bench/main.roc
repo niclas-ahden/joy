@@ -1,6 +1,6 @@
 app [Model, init!, update!, render] {
     pf: platform "../../../platform/main.roc",
-    html: "https://github.com/niclas-ahden/joy-html/releases/download/0.11.0/7rgWAa6Gu3IGfdGl1JKxHQyCBVK9IUbZXbDui0jIZSQ.tar.br",
+    html: "../../../../../joy-html/package/main.roc",
 }
 
 # Benchmark app for Joy's end-to-end update cycle (render -> convert -> diff+patch).
