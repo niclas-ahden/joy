@@ -24,9 +24,9 @@ hosted [
 console_log! : Str => {}
 
 # HTTP
-http_get! : Str, Str => {}
-http_post! : Str, List U8, Str => {}
-http_put! : Str, List U8, Str => {}
+http_get! : Str, List (Str, Str), Str => {}
+http_post! : Str, List U8, List (Str, Str), Str => {}
+http_put! : Str, List U8, List (Str, Str), Str => {}
 http_send_file! : Str, Str, U32, U64, U64, List (Str, Str), Str => {}
 
 # DOM

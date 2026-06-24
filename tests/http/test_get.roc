@@ -48,6 +48,8 @@ main! = |_args|
 
         Assert.true(Str.contains(response, "\"method\": \"GET\"")) ? WrongMethod(response)
         Assert.eq(status, "200") ? WrongStatus(status)
+        # The caller-supplied header is forwarded (echoed back by the server)
+        Assert.true(Str.contains(response, "get-value")) ? MissingHeader(response)
 
         Playwright.close!(browser)?
         Ok({})

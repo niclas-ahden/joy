@@ -459,36 +459,62 @@ pub extern "C" fn roc_fx_dom_push_url(url: &RocStr) {
 // HTTP — all requests use the browser fetch API directly (no reqwest dependency).
 
 #[no_mangle]
-pub extern "C" fn roc_fx_http_get(url: &RocStr, raw_event: &RocStr) {
+pub extern "C" fn roc_fx_http_get(
+    url: &RocStr,
+    headers: &RocList<(RocStr, RocStr)>,
+    raw_event: &RocStr,
+) {
     let url_ = resolve_url(url);
     let raw_event_ = raw_event.clone();
+    let headers_: Vec<(String, String)> = headers
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
 
     wasm_bindgen_futures::spawn_local(async move {
-        let result = fetch("GET", &url_, FetchBody::None, &[]).await;
+        let result = fetch("GET", &url_, FetchBody::None, &headers_).await;
         roc_run_event(&raw_event_, &RocList::from_slice(result.as_bytes()));
     });
 }
 
 #[no_mangle]
-pub extern "C" fn roc_fx_http_post(url: &RocStr, body: &RocList<u8>, raw_event: &RocStr) {
+pub extern "C" fn roc_fx_http_post(
+    url: &RocStr,
+    body: &RocList<u8>,
+    headers: &RocList<(RocStr, RocStr)>,
+    raw_event: &RocStr,
+) {
     let url_ = resolve_url(url);
     let body_ = body.as_slice().to_vec();
     let raw_event_ = raw_event.clone();
+    let headers_: Vec<(String, String)> = headers
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
 
     wasm_bindgen_futures::spawn_local(async move {
-        let result = fetch("POST", &url_, FetchBody::Bytes(body_), &[]).await;
+        let result = fetch("POST", &url_, FetchBody::Bytes(body_), &headers_).await;
         roc_run_event(&raw_event_, &RocList::from_slice(result.as_bytes()));
     });
 }
 
 #[no_mangle]
-pub extern "C" fn roc_fx_http_put(url: &RocStr, body: &RocList<u8>, raw_event: &RocStr) {
+pub extern "C" fn roc_fx_http_put(
+    url: &RocStr,
+    body: &RocList<u8>,
+    headers: &RocList<(RocStr, RocStr)>,
+    raw_event: &RocStr,
+) {
     let url_ = resolve_url(url);
     let body_ = body.as_slice().to_vec();
     let raw_event_ = raw_event.clone();
+    let headers_: Vec<(String, String)> = headers
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
 
     wasm_bindgen_futures::spawn_local(async move {
-        let result = fetch("PUT", &url_, FetchBody::Bytes(body_), &[]).await;
+        let result = fetch("PUT", &url_, FetchBody::Bytes(body_), &headers_).await;
         roc_run_event(&raw_event_, &RocList::from_slice(result.as_bytes()));
     });
 }

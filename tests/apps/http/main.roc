@@ -43,43 +43,43 @@ update! = |model, raw, payload|
             Action.none
 
         PostFile ->
-            Http.post_file!("/echo", File(1), [("X-Test-Header", "post-file-value")], encode_ev(Response))
+            Http.post_file!({ url: "/echo", body: File(1), headers: [("X-Test-Header", "post-file-value")], on_response: encode_ev(Response) })
             { model & response: "", error: "", status: "" } |> Action.update
 
         PostFileSlice ->
-            Http.post_file!("/echo", Slice({ file: 1, start: 2, len: 5 }), [("X-Slice", "true")], encode_ev(Response))
+            Http.post_file!({ url: "/echo", body: Slice({ file: 1, start: 2, len: 5 }), headers: [("X-Slice", "true")], on_response: encode_ev(Response) })
             { model & response: "", error: "", status: "" } |> Action.update
 
         PutFile ->
-            Http.put_file!("/echo", File(1), [("X-Test-Header", "put-file-value")], encode_ev(Response))
+            Http.put_file!({ url: "/echo", body: File(1), headers: [("X-Test-Header", "put-file-value")], on_response: encode_ev(Response) })
             { model & response: "", error: "", status: "" } |> Action.update
 
         PutFileSlice ->
-            Http.put_file!("/echo", Slice({ file: 1, start: 0, len: 5 }), [("X-Slice", "true")], encode_ev(Response))
+            Http.put_file!({ url: "/echo", body: Slice({ file: 1, start: 0, len: 5 }), headers: [("X-Slice", "true")], on_response: encode_ev(Response) })
             { model & response: "", error: "", status: "" } |> Action.update
 
         PostBody ->
-            Http.post!("/echo", Str.to_utf8("hello from post"), encode_ev(Response))
+            Http.post!({ url: "/echo", body: Str.to_utf8("hello from post"), headers: [("X-Test-Header", "post-body-value")], on_response: encode_ev(Response) })
             { model & response: "", error: "", status: "" } |> Action.update
 
         PostEmptyBody ->
-            Http.post!("/echo", [], encode_ev(Response))
+            Http.post!({ url: "/echo", body: [], headers: [], on_response: encode_ev(Response) })
             { model & response: "", error: "", status: "" } |> Action.update
 
         PutBody ->
-            Http.put!("/echo", Str.to_utf8("hello from put"), encode_ev(Response))
+            Http.put!({ url: "/echo", body: Str.to_utf8("hello from put"), headers: [("X-Test-Header", "put-body-value")], on_response: encode_ev(Response) })
             { model & response: "", error: "", status: "" } |> Action.update
 
         GetRequest ->
-            Http.get!("/echo", encode_ev(Response))
+            Http.get!({ url: "/echo", headers: [("X-Test-Header", "get-value")], on_response: encode_ev(Response) })
             { model & response: "", error: "", status: "" } |> Action.update
 
         GetError500 ->
-            Http.get!("/error-500", encode_ev(Response))
+            Http.get!({ url: "/error-500", headers: [], on_response: encode_ev(Response) })
             { model & response: "", error: "", status: "" } |> Action.update
 
         PostError500 ->
-            Http.post!("/error-500", Str.to_utf8("test"), encode_ev(Response))
+            Http.post!({ url: "/error-500", body: Str.to_utf8("test"), headers: [], on_response: encode_ev(Response) })
             { model & response: "", error: "", status: "" } |> Action.update
 
         Response ->

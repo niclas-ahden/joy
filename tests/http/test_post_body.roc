@@ -48,6 +48,8 @@ main! = |_args|
         # The echo endpoint returns JSON with the request details
         Assert.true(Str.contains(response, "\"method\": \"POST\"")) ? WrongMethod(response)
         Assert.true(Str.contains(response, "hello from post")) ? WrongBody(response)
+        # The caller-supplied header is forwarded (echoed back by the server)
+        Assert.true(Str.contains(response, "post-body-value")) ? MissingHeader(response)
 
         error_text = Playwright.text_content!(page, "#error")?
         Assert.eq(error_text, "") ? UnexpectedError(error_text)

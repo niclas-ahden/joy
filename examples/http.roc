@@ -42,10 +42,11 @@ update! = |model, raw, payload|
             Console.log!("Requesting a quote...")
 
             # Make an HTTP request and then trigger the `ClientReceivedQuote` event.
-            Http.get!(
-                "https://ron-swanson-quotes.herokuapp.com/v2/quotes",
-                encode_event(ClientReceivedQuote),
-            )
+            Http.get!({
+                url: "https://ron-swanson-quotes.herokuapp.com/v2/quotes",
+                headers: [],
+                on_response: encode_event(ClientReceivedQuote),
+            })
 
             model |> &quote(Loading) |> Action.update
 

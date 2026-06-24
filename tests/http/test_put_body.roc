@@ -47,6 +47,8 @@ main! = |_args|
 
         Assert.true(Str.contains(response, "\"method\": \"PUT\"")) ? WrongMethod(response)
         Assert.true(Str.contains(response, "hello from put")) ? WrongBody(response)
+        # The caller-supplied header is forwarded (echoed back by the server)
+        Assert.true(Str.contains(response, "put-body-value")) ? MissingHeader(response)
 
         Playwright.close!(browser)?
         Ok({})
