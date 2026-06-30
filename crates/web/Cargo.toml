@@ -19,9 +19,9 @@ joy_bench = []
 console_error_panic_hook = "0.1.7"
 js-sys = "0.3.72"
 # Our fork carries hydration plus the vdom performance work.
-# percy-dom = { git = "https://github.com/niclas-ahden/percy", branch = "master", default-features = false }
+percy-dom = { git = "https://github.com/niclas-ahden/percy", rev = "14c3dd7a7956bd3b5cdc6571db400752b406934d", default-features = false }
 # For local percy development:
-percy-dom = { path = "../../../../percy/crates/percy-dom", default-features = false }
+# percy-dom = { path = "../../../../percy/crates/percy-dom", default-features = false }
 roc = { path = "../roc" }
 roc_std = { workspace = true}
 wasm-bindgen = "0.2.95"
