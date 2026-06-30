@@ -96,6 +96,20 @@ echo "Checking the joy_bench build..."
 JOY_PROJECT_ROOT=$(pwd) cargo check -p web --target wasm32-unknown-unknown --features joy_bench
 echo
 
+# The examples are not otherwise built by the suite, so a platform change can silently
+# break them. Type-check each one so they at least keep compiling. roc check exits 0 when
+# clean and 2 on warnings-only; anything else is a real error and fails the suite.
+echo "Checking examples compile..."
+for example in examples/*.roc; do
+    echo "  $example"
+    check_exit=0
+    roc check "$example" || check_exit=$?
+    if [ "${check_exit}" -ne 0 ] && [ "${check_exit}" -ne 2 ]; then
+        exit $check_exit
+    fi
+done
+echo
+
 # ── Unit tests (roc test) ────────────────────────────────────────────────
 
 echo "Running unit tests..."
