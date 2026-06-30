@@ -11,7 +11,6 @@ platform ""
 
 import Html
 import Action
-import Keyboard
 
 init_for_host! : Str => Box Model
 init_for_host! = |flags| Box.box(init!(flags))
