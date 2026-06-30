@@ -6,11 +6,11 @@
 // Run it from the benchmark clone's webdriver-ts dir (where `playwright` is installed),
 // with the benchmark server running on :8080 and the nix chromium path in $CHROME:
 //
-//   cp benchmarks/jsframework/memcheck.mjs ~/dev/js-framework-benchmark/webdriver-ts/
-//   ( cd ~/dev/js-framework-benchmark && npm start & )
-//   direnv exec ~/dev/js-framework-benchmark bash -c '
+//   cp benchmarks/jsframework/memcheck.mjs path/to/js-framework-benchmark/webdriver-ts/
+//   ( cd path/to/js-framework-benchmark && npm start & )
+//   direnv exec path/to/js-framework-benchmark bash -c '
 //     export CHROME=$(ls -d "$PLAYWRIGHT_BROWSERS_PATH"/chromium-*/chrome-linux64/chrome | head -1)
-//     cd ~/dev/js-framework-benchmark/webdriver-ts && node memcheck.mjs'
+//     cd path/to/js-framework-benchmark/webdriver-ts && node memcheck.mjs'
 import { chromium } from "playwright";
 
 const CHROME = process.env.CHROME;
