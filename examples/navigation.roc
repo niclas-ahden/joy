@@ -1,6 +1,6 @@
 app [Model, init!, update!, render] {
     pf: platform "../platform/main.roc",
-    html: "https://github.com/niclas-ahden/joy-html/releases/download/0.12.0/YuDkYcO06nJ7XHn3vR0vGETvUp1PGiE8LDJVJV15yZo.tar.br",
+    html: "https://github.com/niclas-ahden/joy-html/releases/download/0.13.0/D8dlKh8s_ZJeGZt5U_aeAx9b3KOBSady2jIGX_9of2Q.tar.br",
     url: "https://github.com/niclas-ahden/roc-url/releases/download/v0.4.0/iznLM3TyHqI5VtPBwGY1rRhyVtW7i6we85HfBVRHKfQ.tar.br",
 }
 
