@@ -2,7 +2,7 @@ app [Model, init!, update!, render] {
     pf: platform "../platform/main.roc",
     # `Attribute.on_visible` needs a joy-html that ships the constructor. Pinned to the
     # local package until that release is published, then re-pin to the release URL.
-    html: "https://github.com/niclas-ahden/joy-html/releases/download/0.13.0/D8dlKh8s_ZJeGZt5U_aeAx9b3KOBSady2jIGX_9of2Q.tar.br",
+    html: "https://github.com/niclas-ahden/joy-html/releases/download/0.14.0/IVK93mBqjterEFSYijs67Dkl1rYfu0qGl4PAhSPGET0.tar.br",
 }
 
 import html.Html exposing [Html, div, text]
