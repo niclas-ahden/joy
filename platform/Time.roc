@@ -1,29 +1,43 @@
-module [
-    after!,
-    every!,
-    debounce!,
-    cancel!,
-    now!,
-]
+## Time. A one-shot timer as an effect (`after`), a recurring timer as a
+## subscription (`every`), and a keyed trailing-edge debounce (`debounce` /
+## `cancel`).
+##
+## There is no clock read: the app is pure and the compiler
+## enforces it, so every observable effect is an `Effect` value. Every timer
+## firing delivers the current time in its msg, so pure code always has a
+## time at hand. An app that needs the clock at boot has the embedder put
+## `Date.now()` in the flags string `init` receives (see examples/time.roc).
+##
+## Each firing calls your function with the current time in ms since the
+## Unix epoch and the resulting msg goes to `update`. `every` is a
+## subscription: return it from `subscriptions` for as long as it should
+## tick, drop it from the list to stop it.
+import Effect exposing [Effect]
+import Sub exposing [Sub]
 
-import Host
+Time := [].{
 
-## Fire an event once after `delay_ms` milliseconds. Returns a timer ID for cancellation.
-after! : U32, Str => I32
-after! = |delay_ms, event| Host.time_after!(delay_ms, event)
+	## Produce a msg once, `ms` milliseconds from now.
+	after : U32, (I64 -> msg) -> Effect(msg)
+	after = |ms, on_fire| Effect.time_after(ms, on_fire)
 
-## Fire an event repeatedly every `interval_ms` milliseconds. Returns a timer ID for cancellation.
-every! : U32, Str => I32
-every! = |interval_ms, event| Host.time_every!(interval_ms, event)
+	## Produce a msg every `ms` milliseconds, while subscribed.
+	every : U32, (I64 -> msg) -> Sub(msg)
+	every = |ms, on_tick| Sub.every(ms, on_tick)
 
-## Debounce an event by `key`: resets the `delay_ms` timer on each call.
-debounce! : Str, U32, Str => {}
-debounce! = |key, delay_ms, event| Host.time_debounce!(key, delay_ms, event)
+	## Produce a msg once, `ms` milliseconds after the LAST `debounce` with
+	## this key: issuing the effect again re-arms the pending timer, so only
+	## the final call of a burst fires. The classic use is search-as-you-type,
+	## where every keystroke returns `Time.debounce("search", 300, ...)` and
+	## the query runs 300ms after typing pauses. Keys are global to the app,
+	## so pick one per debounced action, and prefix it with the component name
+	## when writing reusable components, so two instances cannot swallow each
+	## other's timers.
+	debounce : Str, U32, (I64 -> msg) -> Effect(msg)
+	debounce = |key, ms, on_fire| Effect.time_debounce(key, ms, on_fire)
 
-## Cancel a timer by its ID (returned from `after!` or `every!`).
-cancel! : I32 => {}
-cancel! = |timer_id| Host.time_cancel!(timer_id)
-
-## Current wall-clock time as milliseconds since the Unix epoch (`Date.now()`).
-now! : {} => I64
-now! = |{}| Host.time_now!({})
+	## Discard the pending `debounce` timer with this key, so it never
+	## fires. No-op when nothing is pending.
+	cancel : Str -> Effect(msg)
+	cancel = |key| Effect.time_cancel(key)
+}

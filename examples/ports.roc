@@ -1,55 +1,68 @@
-app [Model, init!, update!, render] {
-    pf: platform "../platform/main.roc",
-    html: "https://github.com/niclas-ahden/joy-html/releases/download/0.14.0/IVK93mBqjterEFSYijs67Dkl1rYfu0qGl4PAhSPGET0.tar.br",
+app [Model, Msg, init, update, render, subscriptions] {
+	pf: platform "../platform/main.roc",
+	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.15.0/5Yoz712P8ed4MBW74eddTEJdZ92ZDCUbVGFkt4XXSuj9.tar.zst",
 }
 
-import html.Html exposing [Html, div, h1, small, p, pre, text]
-import pf.Action exposing [Action]
+import html.Html exposing [Html, div, h1, p, pre, small, text]
+import pf.Effect exposing [Effect]
+import pf.Port
 import pf.Console
+
+# Ports in both directions. Incoming: we subscribe to a named port and
+# JavaScript drives it (here with a setInterval).
+#
+# This example caps its excitement at 3, after which the subscription is
+# omitted and further sends are ignored. Outgoing: each tick sends the
+# new level back out to whatever handler JavaScript registered with
+# app.onPort("level", ...).
 
 Model : I32
 
-Event : [Tick]
+Msg : [Tick]
 
-init! : Str => Model
-init! = |_flags| 0
+subscriptions = |model|
+	if model < 3 [Port.listen("excitement", |_| Tick)] else []
 
-update! : Model, Str, List U8 => Action Model
-update! = |model, raw, _|
-    when decode_event(raw) is
-        Tick ->
-            Console.log!("Time passes slowly now... ${Num.to_str(model)}")
-            Num.add_wrap(model, 1) |> Action.update
+init : Str -> (Model, List(Effect(Msg)))
+init = |_|
+	(0, [Port.send("status", "listening")])
 
-render : Model -> Html Model
+update : Model, Msg -> (Model, List(Effect(Msg)))
+update = |model, msg|
+	match msg {
+		Tick =>
+			(
+				model + 1,
+				[
+					Console.log("Time passes slowly now... ${model.to_str()}"),
+					Port.send("level", (model + 1).to_str()),
+				],
+			)
+		}
+
+render : Model -> Html(Msg)
 render = |model|
-    when model is
-        0 ->
-            div(
-                [],
-                [
-                    p([], [text("Open ./www/index.html and uncomment the line that says:")]),
-                    pre([], [text("setInterval(port, 1000, \"Tick\");")]),
-                    p([], [text("Then refresh the page to see the magic.")]),
-                ],
-            )
+	match model {
+		0 =>
+			div(
+				[],
+				[
+					p([], [text("Open the browser console and run:")]),
+					pre([], [text("setInterval(() => app.sendPort(\"excitement\", \"\"), 1000)")]),
+					p([], [text("(www/index.html exposes the mounted app as `app`.)")]),
+				],
+			)
 
-        _ ->
-            div(
-                [],
-                [
-                    h1([], [text("Your excitement level for Roc: ${Num.to_str(model)}")]),
-                    small([], [text("(you don't ever have to close this page if you don't want to)")]),
-                ],
-            )
-
-# We haven't defined `encodeEvent` here because this example doesn't need it.
-
-# `decodeEvent` takes two arguments in some other examples, but only one here. That's because this
-# example doesn't include an `Event` with a `payload`.
-decode_event : Str -> Event
-decode_event = |raw|
-    when raw is
-        "Tick" -> Tick
-        _ -> crash("Unsupported event type \"${raw}\"")
-
+		_ =>
+			div(
+				[],
+				[
+					h1([], [text("Your excitement level for Roc: ${model.to_str()}")]),
+					if model >= 3 {
+						p([], [text("Whoah, let's calm down! I've stopped the ticker.")])
+					} else {
+						small([], [text("(you don't ever have to close this page if you don't want to)")])
+					},
+				],
+			)
+		}

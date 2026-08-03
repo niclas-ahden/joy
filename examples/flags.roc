@@ -1,120 +1,106 @@
-app [Model, init!, update!, render] {
-    pf: platform "../platform/main.roc",
-    html: "https://github.com/niclas-ahden/joy-html/releases/download/0.14.0/IVK93mBqjterEFSYijs67Dkl1rYfu0qGl4PAhSPGET0.tar.br",
-    json: "https://github.com/lukewilliamboswell/roc-json/releases/download/0.12.0/1trwx8sltQ-e9Y2rOB4LWUWLS_sFVyETK8Twl0i9qpw.tar.gz",
+app [Model, Msg, init, update, render, subscriptions] {
+	pf: platform "../platform/main.roc",
+	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.15.0/5Yoz712P8ed4MBW74eddTEJdZ92ZDCUbVGFkt4XXSuj9.tar.zst",
 }
 
 import html.Html exposing [Html, div, p, pre, text]
-import pf.Action exposing [Action]
-import json.Json
+import pf.Effect exposing [Effect]
 import pf.Console
 
+# Flags are how you pass in initial state to your application.
+# Pass them to `mount` when you're initializing your app and whatever string
+# you provide there will be passed in to `init` as its only argument.
+#
+# Here we'll pass in some JSON and initialize our model based on that:
+
 Model : [
-    Human {
-            name : Str,
-            karma : I32,
-        },
-    FailedToParseFlags {
-            flags : Str,
-            error : [
-                Leftover (List U8),
-                TooShort,
-            ],
-        },
+	Human({ name : Str, karma : I32 }),
+	FailedToParseFlags(Str),
 ]
 
-init! : Str => Model
-init! = |flags|
-    when Decode.from_bytes(Str.to_utf8(flags), Json.utf8) is
-        Ok({ name, karma }) -> Human({ name, karma })
-        Err(e) ->
-            Console.log!("Failed to decode flags into model.\nFlags: ${flags}\n\nCause: ${Inspect.to_str(e)}")
-            FailedToParseFlags(
-                {
-                    flags,
-                    error: e,
-                },
-            )
+Msg : []
 
-update! : Model, Str, List U8 => Action Model
-update! = |_, _, _| Action.none
+# No recurring event sources
+subscriptions = |_model| []
 
-render : Model -> Html Model
+init : Str -> (Model, List(Effect(Msg)))
+init = |flags| {
+	# `Json.parse` is really smart. It'll figure out the shape of the JSON you're expecting based on
+	# how you're using the result of the parse. Here we're constructing a `Human({ name, karma })`
+	# with the parsed result, so Roc figures out that `name` is a `Str` and `karma` is a `I32`.
+	#
+	# If the shape of the JSON doesn't match that, then you'll get a descriptive error. Try it out
+	# yourself by messing up the field names in the flags!
+	match Json.parse(flags) {
+		Ok({ name, karma }) => (Human({ name, karma }), [])
+		Err(e) => (
+			FailedToParseFlags(flags),
+			[Console.log("Failed to decode flags into model.\nFlags: ${flags}\n\nCause: ${Str.inspect(e)}")],
+		)
+	}
+}
+
+update : Model, Msg -> (Model, List(Effect(Msg)))
+update = |model, _msg| (model, [])
+
+render : Model -> Html(Msg)
 render = |model|
-    when model is
-        Human({ name, karma }) -> judgement_view(name, karma)
-        FailedToParseFlags(rec) -> error_view(rec)
+	match model {
+		Human({ name, karma }) => judgement_view(name, karma)
+		FailedToParseFlags(flags) => error_view(flags)
+	}
 
-judgement_view : Str, I32 -> Html Model
-judgement_view = |name, karma|
-    judgement =
-        if karma > 0 then
-            "You're alright!"
-        else
-            "Karma isn't real, anyway! Right?"
+judgement_view : Str, I32 -> Html(Msg)
+judgement_view = |name, karma| {
+	judgement =
+		if karma > 0 {
+			"You're alright!"
+		} else {
+			"Karma isn't real, anyway! Right?"
+		}
 
-    div(
-        [],
-        [
-            p([], [text(judgement)]),
-            p([], [text("Name: ${name}")]),
-            p([], [text("Karma: ${Num.to_str(karma)}")]),
-        ],
-    )
+	div(
+		[],
+		[
+			p([], [text(judgement)]),
+			p([], [text("Name: ${name}")]),
+			p([], [text("Karma: ${karma.to_str()}")]),
+		],
+	)
+}
 
-error_view : { flags : Str, error : _ } -> _
-error_view = |{ flags, error }|
-    when flags is
-        "" ->
-            div(
-                [],
-                [
-                    p([], [text("Let's set some flags! Open up `www/index.html` and find the call to `run(\"\");` and replace it with this:")]),
-                    pre(
-                        [],
-                        [
-                            text(
-                                """
-                                run(`{
-                                  "name": "Brödil",
-                                  "karma": 99
-                                }`);
-                                """,
-                            ),
-                        ],
-                    ),
-                ],
-            )
+error_view : Str -> Html(Msg)
+error_view = |flags|
+	match flags {
+		"" =>
+			div(
+				[],
+				[
+					p([], [text("Let's set some flags! Open `www/index.html` and put some JSON in the `flags` option, like this:")]),
+					pre(
+						[],
+						[
+							text(
+								\\window.app = await mount({
+								\\    wasm: './app.wasm',
+								\\    root: document.getElementById('app'),
+								\\    flags: `{"name": "Brödil", "karma": 99}`,
+								\\});
+								,
+							),
+						],
+					),
+				],
+			)
 
-        _ ->
-            div(
-                [],
-                [
-                    p(
-                        [],
-                        [
-                            text("Oh, no, we couldn't parse the given flags! Open up `www/index.html` and make sure that the argument to `run` is a valid JSON string (not an object). Here's an example that will parse correctly:"),
-                        ],
-                    ),
-                    pre(
-                        [],
-                        [
-                            text(
-                                """
-                                run(`{
-                                  "name": "Brödil",
-                                  "karma": 99
-                                }`);
-                                """,
-                            ),
-                        ],
-                    ),
-                    p([], [text("Here's som info about the error:")]),
-                    pre(
-                        [],
-                        [
-                            text("Failed to decode flags into model.\n\nFlags: ${flags}\n\nError: ${Inspect.to_str(error)}"),
-                        ],
-                    ),
-                ],
-            )
+		_ =>
+			div(
+				[],
+				[
+					p([], [text("Oh, no, we couldn't parse the given flags! Make sure the flags are a valid JSON string (not an object). Here's an example that will parse correctly:")]),
+					pre([], [text("flags: `{\"name\": \"Brödil\", \"karma\": 99}`")]),
+					p([], [text("The flags we received were:")]),
+					pre([], [text(flags)]),
+				],
+			)
+		}

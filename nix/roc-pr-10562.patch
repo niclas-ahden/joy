@@ -1,0 +1,2055 @@
+diff --git c/design.md i/design.md
+index 039deb82ee..32064093bb 100644
+--- c/design.md
++++ i/design.md
+@@ -3405,10 +3405,10 @@ that constrained graph.
+ The long-term invariant is:
+ 
+ ```text
+-one connected open specialization solve group
+-  -> one Monotype instantiation graph
+-  -> one cloned/constrained checked type graph
+-  -> one or more independently identified closed Monotype bodies
++one procedure specialization request
++  -> one complete checked interface-relation closure
++  -> one exact closed specialization key
++  -> one independently owned Monotype body on cache miss
+ ```
+ 
+ This is deliberately different from treating a checked expression id as a
+@@ -3418,22 +3418,33 @@ that checked module. The same checked function template may therefore produce
+ many Monotype bodies, and the same checked nested lambda site may produce many
+ nested Monotype functions, each with a different monomorphic function type.
+ 
+-Each connected solve group owns an instantiation graph: union-find nodes with
+-explicit row-extension links, created by instantiating checked types on first
+-touch. A group begins with one specialization. A procedure request whose
+-complete interface is already resolved remains a separate specialization and
+-receives its own graph after the caller seals. A request whose interface is
+-still open joins the requester's live group, because the callee body can own
+-checked constraints needed to finish that interface. This grouping is the
+-explicit dependency relation between specializations, not a structural guess;
+-it also keeps recursive open dependencies in one fixed-point solve.
++Each specialization owns an instantiation graph: union-find nodes with explicit
++row-extension links, created by instantiating checked types on first touch. A
++context-free callee body never joins the caller's graph. Instead CheckedModule
++stores a complete specialization-interface relation table for every procedure
++template. Its records explicitly name checked equalities,
++procedure/result relations, ordinary call interfaces and direct targets, and
++generalized local-procedure uses. A generalized scope also records its exact
++checked scheme root, so evidence paths are replayed against the same callable
++shape that authored them. Static-dispatch relation records remain the separate
++explicit authority for dispatch constraints.
++The `CheckedBodyStore.contains_diagnostic_error` column excludes rejected
++expression sites from this relation table; an error-containing checked type is
++not a valid specialization constraint and never reaches Monotype instantiation.
++Monotype consumes both relation sources before applying defaults or sealing a
++specialization request. It does not scan a checked body to rediscover them.
++Interface replay materializes local-method evidence from the checked method
++declaration and callable type only. Draft-local capture contexts are Monotype
++BodyDraft data, are intentionally absent from durable specialization evidence, and
++must be attached when the real dispatch call lowers; declaration-only replay
++evidence can never be consumed by body emission.
+ 
+-Within the group, each body instantiation context caches nodes by `(checked
++Within the specialization, each body instantiation context caches nodes by `(checked
+ module id, checked type id)`. The address is the checked identity of the type
+ variable/content in that body specialization. It is not a structural digest,
+ source name, runtime layout, object symbol, or generated procedure id. Nodes
+-begin unresolved. As the group is lowered, explicit evidence from checked data
+-unifies those nodes:
++begin unresolved. As relations are produced, explicit evidence from checked
++data unifies those nodes:
+ 
+ - the requested root function/value type constrains the checked root type;
+ - lambda and closure expected function types constrain the nested function
+@@ -3449,6 +3460,29 @@ unifies those nodes:
+ - pattern lowering constrains checked pattern types to the monomorphic value
+   being matched.
+ 
++Direct calls in the interface program are dependency edges to the callee's
++interface program, not requests to lower that callee's body. Replay first
++applies all relations owned by the current scope, then traverses those explicit
++dependencies. This ordering makes the caller's complete requested interface
++available before any dependency identity is chosen. Transitive replay reaches
++a fixed point across arbitrary wrapper depth and recursive call graphs without
++making source syntax or body-lowering order part of type meaning.
++
++Repeated open dependency requests are memoized by the complete procedure
++family (template, method scope, and checked source-function key), exact evidence
++topology, and an immutable provisional Monotype view of the function request
++after the caller-owned relations have been applied. Digests select an expected
++O(1) bucket only; exact evidence equality and exact structural type equality are
++the collision authorities. The first request computes the transitive relation
++closure. Equivalent requests retain independent graph cells while relations
++are still being produced, then independently consume the representative's
++final interface after the whole closure is known. An active exact memo entry is
++a recursive edge and joins the active representative. Requests with different
++concrete interfaces, checked source identities, method scopes, or evidence can
++never share an entry. Work is therefore proportional to relation sites plus
++unique exact provisional requests, rather than to the number of duplicate call
++paths through the same interface problem.
++
+ Those constraints are not a fallback mechanism and are not best-effort
+ inference after checking. They are the Monotype-stage representation of checked
+ data that are already present in the checked module. If a required relation is
+@@ -3559,18 +3593,24 @@ During active Monotype specialization, unresolved checked variables and row
+ extensions remain instantiation graph nodes. They are not represented by
+ durable Monotype `TypeId`s.
+ 
+-Type-shaped inspection during relation production is allowed only for a fully
+-resolved graph node. It materializes an immutable active snapshot: later graph
+-relations invalidate the snapshot cache and a subsequent inspection allocates
+-a fresh snapshot rather than refilling an observed `TypeId`. The draft retains
+-the graph node, not the snapshot id, and final sealing allocates fresh durable
+-ids. Consequently neither an unresolved variable nor an open row can ever be
+-observed as `tag_union []`, and no `TypeId` can change from that shape to a
+-different type after a consumer has seen it.
++Type-shaped inspection that can escape relation production or become durable
++specialization identity is allowed only for a fully resolved graph node. It
++materializes an immutable active snapshot: later graph relations invalidate the
++snapshot cache and a subsequent inspection allocates a fresh snapshot rather
++than refilling an observed `TypeId`. The draft retains the graph node, not the
++snapshot id, and final sealing allocates fresh durable ids. Consequently no
++durable `TypeId` can change shape after a consumer has seen it.
++
++Interface-replay memo lookup has one narrower inspection operation. It may
++materialize an unresolved request as an immutable provisional scratch view,
++applying defaults in that view only. The digest is only a bucket index; exact
++structural equality is collision authority, the scratch type is never emitted,
++and subsequent relations still act on the original graph node.
+ 
+ The only time an unresolved checked variable with an empty-tag-union row
+ default may become durable `tag_union []` is final graph sealing, after every
+-checked relation and specialization demand for that body has been applied.
++checked interface relation and specialization demand for that body has been
++applied.
+ After sealing, `tag_union []` is closed and uninhabited. Values such as `[]` can
+ still be represented as `List(tag_union [])` because they contain no items,
+ and code that would need an actual item value must have constrained the
+@@ -3611,37 +3651,32 @@ no type id that is visible in Monotype IR is later refilled or changed. This is
+ ordinary type solving inside one stage. Once Monotype IR is output, no
+ unresolved node remains reachable and no later stage may change a type.
+ 
+-A Monotype imported into another solve group's graph is a finished snapshot,
++A Monotype imported into another specialization graph is a finished snapshot,
+ never a refreshable view: a specialization that needs more than its requested
+ type is a unification conflict, not a silent rewrite of another group's final
+-type. A procedure-template request with a fully resolved interface therefore
+-defers until the requesting group is final, when its specialization key is
+-stable. A request with an unresolved interface cannot be deferred across that
+-seal: the callee body may own constraints required to close the request. That
+-callee joins the current live solve group and lowers at the request site, as do
+-nested functions whose bodies pin signature variables used by the remaining
+-group.
++type. Every context-free procedure-template request defers until the requesting
++graph is final, when its specialization key is stable. Constraints formerly
++owned only by an unresolved callee body are present in the checked interface
++program and have already participated in the request's relation closure.
++Lexically context-dependent local procedures still lower in their owning graph
++because that lexical context is an explicit input rather than a context-free
++specialization key.
+ 
+ A deferred procedure-template request has two distinct sources of type
+ evidence. Caller value flow owns the request's function arguments and return;
+ the requested checked template owns explicit type-constructor arguments that
+-may have no value-level occurrence, including phantom nominal arguments. Before
+-the requester seals, Monotype traverses matching request and checked structure
+-without relating ordinary value positions, and constrains only named type
+-arguments and the explicit item arguments of builtin container types.
+-Unifying the two complete function roots here is forbidden: two sibling
+-requests can legitimately carry different concrete value arguments, and a
+-callee checked root must not make those caller-owned cells aliases. The callee
+-later creates its own fresh instantiation graph and constrains its complete
+-checked root against the sealed request in that graph.
++may have no value-level occurrence, including phantom nominal arguments. The
++caller first relates its complete request to one fresh checked root instance,
++then replays the template's interface program through that instance. Each
++sibling request receives a fresh instance, so different concrete value
++arguments never become aliases merely because they call the same checked
++procedure. Exact replay memo hits copy the final interface back into each
++request independently; they do not union sibling request cells.
+ 
+-A resolved deferred request stores only the caller-owned interface and a draft
+-call target. Once the solve-group graph is frozen, the interface is sealed
+-exactly once and the target maps directly to an existing specialization or to a
+-body lowered in a fresh graph. An unresolved request instead adds the callee's
+-body and definition to the current group draft; all bodies in that group seal
+-together, but each procedure retains its own specialization identity, function,
+-definition, and cache record. Generated structural work may retain explicit
++A deferred request stores only the caller-owned interface and a draft call
++target. Once the caller graph is frozen, the interface is sealed exactly once
++and the target maps directly to an existing exact specialization or to a body
++lowered in a fresh graph on miss. Generated structural work may retain explicit
+ lexical context when that context is one of its inputs, but it follows the same
+ procedure-body ownership rule; encoding and decoding do not define a separate
+ specialization path.
+@@ -3878,18 +3913,22 @@ Creating a specialization performs root instantiation before body lowering:
+ ```text
+ create fresh instantiation context
+ constrain checked source function type to requested Monotype function type
++replay the complete checked specialization-interface relation closure
++seal and look up the exact specialization identity
+ lower arguments and body through that context
+ emit a closed Monotype definition
+ ```
+ 
+ Calls do not mutate the callee's checked module. A closed call creates or reuses
+ a callee specialization by constraining a fresh callee instantiation from the
+-caller's instantiated argument and result types. An open call joins the live
+-solve group described above, and its caller and callee contexts communicate
+-through their shared explicit graph relations. This is why generic functions
+-specialize predictably across module boundaries: the checked body remains
+-immutable, and every monomorphic specialization records its own closed
+-instantiation even when several bodies solve in one open group.
++caller's instantiated argument and result types. An open call remains a
++caller-owned request while the checked interface programs communicate all
++callee-owned constraints through explicit graph relations. The request seals
++before any context-free callee body lowers. This is why generic functions
++specialize predictably across module boundaries: checked bodies remain
++immutable, every monomorphic specialization records its own closed
++instantiation, and interface solving never depends on lowering a body into its
++caller.
+ 
+ The specialization store must make this lookup direct. It must not scan all
+ specializations for a callable family and recompute recursive type digests while
+@@ -3993,8 +4032,9 @@ const MonoTypeNode = extern struct {
+ ```
+ 
+ The mutable instantiation graph may use union-find, row-extension links, and
+-work queues while solving one open specialization group. Its final output is
+-an immutable `TypeId` in `MonoTypeStore`. After that point, the type node is never refilled.
++work queues while solving one specialization's interface and body relations.
++Its final output is an immutable `TypeId` in `MonoTypeStore`. After that point,
++the type node is never refilled.
+ Rows are normalized once, with field and tag names in explicit sorted order,
+ and the type digest is stored beside the node when the node is interned. Parent
+ digests are computed from child digests, so structurally growing records and
+@@ -4023,8 +4063,8 @@ after the first request, and growing structural accumulator types add only the
+ new record/function nodes instead of redigesting every previous layer.
+ 
+ Open instantiation graphs do not write directly into final Monotype body
+-sections. While a solve group is active, lowering writes to a `BodyDraft` owned
+-by that graph. A draft mirrors the final
++sections. While a specialization graph is active, lowering writes to a
++`BodyDraft` owned by that graph. A draft mirrors the final
+ Monotype sections enough for lowering to refer to expressions, patterns, locals,
+ definitions, nested definitions, side-pool spans, and function signatures, but
+ all type-bearing fields use a draft type cell:
+diff --git c/src/check/checked_artifact.zig i/src/check/checked_artifact.zig
+index 8dc033d81d..0fab343c88 100644
+--- c/src/check/checked_artifact.zig
++++ i/src/check/checked_artifact.zig
+@@ -14356,6 +14356,9 @@ pub const DispatchRefScope = struct {
+     parent: ?DispatchScopeId,
+     /// The local function's scheme root var (its decl pattern var).
+     scheme_var: Var,
++    /// Published checked root of `scheme_var`; specialization evidence paths
++    /// are authored relative to this exact callable shape.
++    scheme_root: CheckedTypeId,
+     /// Checked local-function expression that owns this scope.
+     checked_expr: CheckedExprId,
+     /// The scope's ordered dispatch requirements in the shared params pool.
+@@ -14380,6 +14383,36 @@ pub const DispatchRelationKind = enum(u8) {
+     conversion,
+ };
+ 
++/// A checker-authored type relation needed to close a procedure interface
++/// before Monotype chooses a specialization identity. These records contain
++/// no executable-body semantics: they preserve checked equalities, procedure
++/// results, ordinary call edges, and generalized local-procedure
++/// instantiations.
++pub const SpecializationInterfaceRelation = struct {
++    scope: DispatchScope,
++    data: Data,
++
++    pub const Data = union(enum) {
++        type_equality: struct {
++            left: CheckedTypeId,
++            right: CheckedTypeId,
++        },
++        procedure: struct {
++            fn_ty: CheckedTypeId,
++            body_ret_ty: CheckedTypeId,
++            owns_scope: bool,
++        },
++        call: struct {
++            callable_ty: CheckedTypeId,
++            callee_ty: CheckedTypeId,
++            ret_ty: CheckedTypeId,
++            args: artifact_serialize.Span,
++            direct_target: ?ResolvedValueRefId,
++        },
++        local_proc_use: ResolvedValueRefId,
++    };
++};
++
+ const CollectedSchemeUseSite = struct {
+     record_idx: u32,
+     checked_expr: CheckedExprId,
+@@ -14437,6 +14470,7 @@ const TemplateIteratorRefs = struct {
+ fn sealCheckedProcedureTemplateRefs(
+     allocator: Allocator,
+     module: TypedCIR.Module,
++    checked_types: *const CheckedTypePublication,
+     checked_bodies: *const CheckedBodyStore,
+     entry_wrappers: *const EntryWrapperTable,
+     templates: *CheckedProcedureTemplateTable,
+@@ -14482,7 +14516,15 @@ fn sealCheckedProcedureTemplateRefs(
+         }
+     }
+ 
+-    var collector = CheckedTemplateRefCollector.init(allocator, checked_bodies, static_dispatch_plans, &local_schemes, &nested_function_uses);
++    var collector = CheckedTemplateRefCollector.init(
++        allocator,
++        module,
++        checked_types,
++        checked_bodies,
++        static_dispatch_plans,
++        &local_schemes,
++        &nested_function_uses,
++    );
+     defer collector.deinit();
+ 
+     // Flatten each template's collected refs into the two shared per-table pools,
+@@ -14509,6 +14551,10 @@ fn sealCheckedProcedureTemplateRefs(
+     errdefer scheme_use_scope_pool.deinit(allocator);
+     var scope_site_pool = std.ArrayList(CollectedScopeConstructionSite).empty;
+     errdefer scope_site_pool.deinit(allocator);
++    var specialization_relation_pool = std.ArrayList(SpecializationInterfaceRelation).empty;
++    errdefer specialization_relation_pool.deinit(allocator);
++    var specialization_type_pool = std.ArrayList(CheckedTypeId).empty;
++    errdefer specialization_type_pool.deinit(allocator);
+     const iterator_spans = try allocator.alloc(artifact_serialize.Span, templates.templates.len);
+     errdefer allocator.free(iterator_spans);
+     const scheme_use_spans = try allocator.alloc(artifact_serialize.Span, templates.templates.len);
+@@ -14522,17 +14568,89 @@ fn sealCheckedProcedureTemplateRefs(
+         switch (template.body) {
+             .checked_body => |body_id| {
+                 const body = checked_bodies.body(body_id);
++                collector.template_root_expr = body.root_expr;
+                 try collector.collectExpr(body.root_expr);
+             },
+             .entry_wrapper => |wrapper_id| {
+                 const wrapper = entry_wrappers.get(wrapper_id);
+                 try collector.collectExpr(wrapper.body_expr);
++                try collector.appendProcedureRelation(
++                    wrapper.body_expr,
++                    template.checked_fn_root,
++                    checked_bodies.expr(wrapper.body_expr).ty,
++                    true,
++                );
+             },
+             .intrinsic_wrapper => {},
+         }
+ 
++        var seen_local_uses = std.AutoHashMap(ResolvedValueRefId, void).init(allocator);
++        defer seen_local_uses.deinit();
++        for (collector.value_refs.items, collector.value_ref_scopes.items) |ref_id, use_scope| {
++            const seen = try seen_local_uses.getOrPut(ref_id);
++            if (seen.found_existing) continue;
++            const record = resolved_value_refs.records[@intFromEnum(ref_id)];
++            if (checked_bodies.exprContainsDiagnosticError(record.expr)) continue;
++            try collector.specialization_relations.append(allocator, .{
++                .scope = use_scope,
++                .data = .{ .type_equality = .{
++                    .left = record.checked_ty,
++                    .right = checked_bodies.expr(record.expr).ty,
++                } },
++            });
++            const local = switch (record.ref) {
++                .local_param,
++                .local_value,
++                .local_mutable_version,
++                .pattern_binder,
++                => |binding| {
++                    const binder_pattern = checked_bodies.patternBinder(binding.binder).pattern;
++                    try collector.specialization_relations.append(allocator, .{
++                        .scope = use_scope,
++                        .data = .{ .type_equality = .{
++                            .left = record.checked_ty,
++                            .right = checked_bodies.pattern(binder_pattern).ty,
++                        } },
++                    });
++                    continue;
++                },
++                .local_proc => |local| local,
++                else => continue,
++            };
++            if (collector.scope_by_checked_expr.get(local.expr) == null) {
++                try collector.specialization_relations.append(allocator, .{
++                    .scope = use_scope,
++                    .data = .{ .type_equality = .{
++                        .left = record.checked_ty,
++                        .right = checked_bodies.expr(local.expr).ty,
++                    } },
++                });
++                continue;
++            }
++            try collector.specialization_relations.append(allocator, .{
++                .scope = use_scope,
++                .data = .{ .local_proc_use = ref_id },
++            });
++        }
++
+         template.resolved_value_refs = try artifact_serialize.appendSpan(ResolvedValueRefTableRef, ResolvedValueRefId, &value_ref_pool, allocator, collector.value_refs.items);
+         template.static_dispatch_plans = try artifact_serialize.appendSpan(@TypeOf(template.static_dispatch_plans), static_dispatch.StaticDispatchPlanId, &dispatch_ref_pool, allocator, collector.dispatch_refs.items);
++        const specialization_type_base: u32 = @intCast(specialization_type_pool.items.len);
++        try specialization_type_pool.appendSlice(allocator, collector.specialization_types.items);
++        const specialization_relation_start: u32 = @intCast(specialization_relation_pool.items.len);
++        try specialization_relation_pool.ensureUnusedCapacity(allocator, collector.specialization_relations.items.len);
++        for (collector.specialization_relations.items) |raw_relation| {
++            var relation = raw_relation;
++            switch (relation.data) {
++                .call => |*call| call.args.start += specialization_type_base,
++                .type_equality, .procedure, .local_proc_use => {},
++            }
++            specialization_relation_pool.appendAssumeCapacity(relation);
++        }
++        template.specialization_interface_relations = .{
++            .start = specialization_relation_start,
++            .len = @intCast(collector.specialization_relations.items.len),
++        };
+         for (collector.dispatch_refs.items) |plan_id| {
+             const plan = static_dispatch_plans.plans[@intFromEnum(plan_id)];
+             var kind: DispatchRelationKind = .callable_result;
+@@ -14556,6 +14674,8 @@ fn sealCheckedProcedureTemplateRefs(
+     templates.dispatch_ref_scopes = try allocator.dupe(DispatchScope, dispatch_ref_scope_pool.items);
+     templates.dispatch_relation_kinds = try dispatch_relation_kind_pool.toOwnedSlice(allocator);
+     templates.dispatch_scopes = try allocator.dupe(DispatchRefScope, collector.scopes.items);
++    templates.specialization_interface_relations = try specialization_relation_pool.toOwnedSlice(allocator);
++    templates.specialization_interface_types = try specialization_type_pool.toOwnedSlice(allocator);
+     publishLocalProcedureDispatchScopes(resolved_value_refs, &collector.scope_by_checked_expr);
+     publishLocalMethodDispatchScopes(method_registry, &collector.scope_by_checked_expr);
+     template_iterator_refs.* = .{
+@@ -16099,6 +16219,8 @@ fn sealConstEvalTemplatesForRoots(
+ 
+ const CheckedTemplateRefCollector = struct {
+     allocator: Allocator,
++    module: TypedCIR.Module,
++    checked_types: *const CheckedTypePublication,
+     checked_bodies: *const CheckedBodyStore,
+     static_dispatch_plans: *const static_dispatch.StaticDispatchPlanTable,
+     /// Generalized-with-obligations local function decls (checked lambda expr
+@@ -16118,6 +16240,9 @@ const CheckedTemplateRefCollector = struct {
+     scheme_use_sites: std.ArrayList(CollectedSchemeUseSite),
+     scheme_use_scopes: std.ArrayList(DispatchScope),
+     scope_sites: std.ArrayList(CollectedScopeConstructionSite),
++    specialization_relations: std.ArrayList(SpecializationInterfaceRelation),
++    specialization_types: std.ArrayList(CheckedTypeId),
++    template_root_expr: ?CheckedExprId = null,
+     /// Pooled across templates (ids are global); the stack resets per template.
+     scopes: std.ArrayList(DispatchRefScope),
+     scope_by_checked_expr: std.AutoHashMap(CheckedExprId, DispatchScopeId),
+@@ -16128,6 +16253,8 @@ const CheckedTemplateRefCollector = struct {
+ 
+     fn init(
+         allocator: Allocator,
++        module: TypedCIR.Module,
++        checked_types: *const CheckedTypePublication,
+         checked_bodies: *const CheckedBodyStore,
+         static_dispatch_plans: *const static_dispatch.StaticDispatchPlanTable,
+         local_schemes: *const std.AutoHashMap(u32, Var),
+@@ -16135,6 +16262,8 @@ const CheckedTemplateRefCollector = struct {
+     ) CheckedTemplateRefCollector {
+         return .{
+             .allocator = allocator,
++            .module = module,
++            .checked_types = checked_types,
+             .checked_bodies = checked_bodies,
+             .static_dispatch_plans = static_dispatch_plans,
+             .local_schemes = local_schemes,
+@@ -16148,6 +16277,8 @@ const CheckedTemplateRefCollector = struct {
+             .scheme_use_sites = .empty,
+             .scheme_use_scopes = .empty,
+             .scope_sites = .empty,
++            .specialization_relations = .empty,
++            .specialization_types = .empty,
+             .scopes = .empty,
+             .scope_by_checked_expr = std.AutoHashMap(CheckedExprId, DispatchScopeId).init(allocator),
+             .scope_stack = .empty,
+@@ -16170,6 +16301,8 @@ const CheckedTemplateRefCollector = struct {
+         self.scheme_use_sites.deinit(self.allocator);
+         self.scheme_use_scopes.deinit(self.allocator);
+         self.scope_sites.deinit(self.allocator);
++        self.specialization_relations.deinit(self.allocator);
++        self.specialization_types.deinit(self.allocator);
+         self.scopes.deinit(self.allocator);
+         self.scope_by_checked_expr.deinit();
+         self.scope_stack.deinit(self.allocator);
+@@ -16185,6 +16318,9 @@ const CheckedTemplateRefCollector = struct {
+         self.scheme_use_sites.clearRetainingCapacity();
+         self.scheme_use_scopes.clearRetainingCapacity();
+         self.scope_sites.clearRetainingCapacity();
++        self.specialization_relations.clearRetainingCapacity();
++        self.specialization_types.clearRetainingCapacity();
++        self.template_root_expr = null;
+         // `scopes` pools across templates; only the stack resets.
+         self.scope_stack.clearRetainingCapacity();
+         self.visited_exprs.clearRetainingCapacity();
+@@ -16211,6 +16347,48 @@ const CheckedTemplateRefCollector = struct {
+         try self.dispatch_ref_scopes.append(self.allocator, self.currentScope());
+     }
+ 
++    fn appendProcedureRelation(
++        self: *CheckedTemplateRefCollector,
++        expr_id: CheckedExprId,
++        fn_ty: CheckedTypeId,
++        body_ret_ty: CheckedTypeId,
++        owns_scope: bool,
++    ) Allocator.Error!void {
++        if (self.checked_bodies.exprContainsDiagnosticError(expr_id)) return;
++        try self.specialization_relations.append(self.allocator, .{
++            .scope = self.currentScope(),
++            .data = .{ .procedure = .{
++                .fn_ty = fn_ty,
++                .body_ret_ty = body_ret_ty,
++                .owns_scope = owns_scope,
++            } },
++        });
++    }
++
++    fn appendCallRelation(
++        self: *CheckedTemplateRefCollector,
++        expr_id: CheckedExprId,
++        expr: CheckedExpr,
++        call: anytype,
++    ) Allocator.Error!void {
++        if (self.checked_bodies.exprContainsDiagnosticError(expr_id)) return;
++        const start: u32 = @intCast(self.specialization_types.items.len);
++        try self.specialization_types.ensureUnusedCapacity(self.allocator, call.args.len);
++        for (call.args) |arg| {
++            self.specialization_types.appendAssumeCapacity(self.checked_bodies.expr(arg).ty);
++        }
++        try self.specialization_relations.append(self.allocator, .{
++            .scope = self.currentScope(),
++            .data = .{ .call = .{
++                .callable_ty = call.source_fn_ty_payload,
++                .callee_ty = self.checked_bodies.expr(call.func).ty,
++                .ret_ty = expr.ty,
++                .args = .{ .start = start, .len = @intCast(call.args.len) },
++                .direct_target = call.direct_target,
++            } },
++        });
++    }
++
+     fn collectExpr(self: *CheckedTemplateRefCollector, expr_id: CheckedExprId) Allocator.Error!void {
+         const entry = try self.visited_exprs.getOrPut(expr_id);
+         if (entry.found_existing) return;
+@@ -16229,10 +16407,12 @@ const CheckedTemplateRefCollector = struct {
+         const local_scheme = self.local_schemes.get(raw_expr);
+         if (local_scheme) |scheme_var| {
+             const parent = self.currentScopeId();
++            const scheme_root = self.checked_types.rootForSourceVar(self.module, scheme_var) orelse
++                checkedArtifactInvariant("generalized local dispatch scope had no published checked scheme root", .{});
+             const scope_entry = try self.scope_by_checked_expr.getOrPut(expr_id);
+             const scope_id = if (scope_entry.found_existing) blk: {
+                 const existing = self.scopes.items[@intFromEnum(scope_entry.value_ptr.*)];
+-                if (existing.parent != parent or existing.scheme_var != scheme_var) {
++                if (existing.parent != parent or existing.scheme_var != scheme_var or existing.scheme_root != scheme_root) {
+                     checkedArtifactInvariant("generalized local dispatch scope has inconsistent checked ownership", .{});
+                 }
+                 break :blk scope_entry.value_ptr.*;
+@@ -16242,6 +16422,7 @@ const CheckedTemplateRefCollector = struct {
+                 try self.scopes.append(self.allocator, .{
+                     .parent = parent,
+                     .scheme_var = scheme_var,
++                    .scheme_root = scheme_root,
+                     .checked_expr = expr_id,
+                 });
+                 break :blk id;
+@@ -16257,6 +16438,27 @@ const CheckedTemplateRefCollector = struct {
+         }
+ 
+         const expr = self.checked_bodies.expr(expr_id);
++        switch (expr.data) {
++            .lambda => |lambda| try self.appendProcedureRelation(
++                expr_id,
++                expr.ty,
++                self.checked_bodies.expr(lambda.body).ty,
++                self.template_root_expr == expr_id or local_scheme != null,
++            ),
++            .closure => |closure| {
++                const lambda = switch (self.checked_bodies.expr(closure.lambda).data) {
++                    .lambda => |lambda| lambda,
++                    else => checkedArtifactInvariant("checked closure specialization relation did not reference a lambda", .{}),
++                };
++                try self.appendProcedureRelation(
++                    expr_id,
++                    expr.ty,
++                    self.checked_bodies.expr(lambda.body).ty,
++                    self.template_root_expr == expr_id or local_scheme != null,
++                );
++            },
++            else => {},
++        }
+         switch (expr.data) {
+             .lookup_local => |lookup| {
+                 if (lookup.resolved) |ref_id| try self.appendValueRef(ref_id);
+@@ -16318,6 +16520,7 @@ const CheckedTemplateRefCollector = struct {
+                 if (call.direct_target) |target| try self.appendValueRef(target);
+                 try self.collectExpr(call.func);
+                 for (call.args) |arg| try self.collectExpr(arg);
++                try self.appendCallRelation(expr_id, expr, call);
+             },
+             .record => |record| {
+                 if (record.ext) |ext| try self.collectExpr(ext);
+@@ -16714,6 +16917,9 @@ pub const CheckedProcedureTemplate = struct {
+     direct_dispatch_plans: StaticDispatchPlanTableRef,
+     /// Range into `StaticDispatchPlanTable.dispatch_relation_refs`.
+     dispatch_relations: StaticDispatchPlanTableRef,
++    /// Range into
++    /// `CheckedProcedureTemplateTable.specialization_interface_relations`.
++    specialization_interface_relations: artifact_serialize.Span = .{},
+     resolved_value_refs: ResolvedValueRefTableRef,
+     top_level_value_uses: TopLevelUseSummaryRef,
+     nested_proc_sites: NestedProcSiteTableRef,
+@@ -16863,6 +17069,11 @@ pub const CheckedProcedureTemplateTable = struct {
+     dispatch_relation_kinds: []DispatchRelationKind = &.{},
+     /// Generalized-local scopes referenced by `dispatch_ref_scopes`.
+     dispatch_scopes: []DispatchRefScope = &.{},
++    /// Flat pool of checker-authored relations that complete callable
++    /// interfaces before specialization keys are sealed.
++    specialization_interface_relations: []SpecializationInterfaceRelation = &.{},
++    /// Checked argument types backing call-relation spans.
++    specialization_interface_types: []CheckedTypeId = &.{},
+ 
+     pub const Serialized = extern struct {
+         templates: SerializedSlice(CheckedProcedureTemplate) = .{},
+@@ -16872,6 +17083,8 @@ pub const CheckedProcedureTemplateTable = struct {
+         dispatch_ref_scopes: SerializedSlice(DispatchScope) = .{},
+         dispatch_relation_kinds: SerializedSlice(DispatchRelationKind) = .{},
+         dispatch_scopes: SerializedSlice(DispatchRefScope) = .{},
++        specialization_interface_relations: SerializedSlice(SpecializationInterfaceRelation) = .{},
++        specialization_interface_types: SerializedSlice(CheckedTypeId) = .{},
+         const Serde = artifact_serialize.SliceStoreSerde(CheckedProcedureTemplateTable, @This());
+         pub const serialize = Serde.serialize;
+         pub const deserialize = Serde.deserialize;
+@@ -17110,6 +17323,8 @@ pub const CheckedProcedureTemplateTable = struct {
+         allocator.free(self.dispatch_ref_scopes);
+         allocator.free(self.dispatch_relation_kinds);
+         allocator.free(self.dispatch_scopes);
++        allocator.free(self.specialization_interface_relations);
++        allocator.free(self.specialization_interface_types);
+         self.* = .{};
+     }
+ 
+@@ -17123,6 +17338,15 @@ pub const CheckedProcedureTemplateTable = struct {
+     pub fn evidenceParamPath(self: *const CheckedProcedureTemplateTable, param: static_dispatch.EvidenceParamRecord) []const static_dispatch.EvidencePathStep {
+         return self.evidence_param_paths[param.path.start .. param.path.start + param.path.len];
+     }
++
++    pub fn specializationRelations(self: *const CheckedProcedureTemplateTable, template: *const CheckedProcedureTemplate) []const SpecializationInterfaceRelation {
++        const span = template.specialization_interface_relations;
++        return self.specialization_interface_relations[span.start .. span.start + span.len];
++    }
++
++    pub fn specializationRelationTypes(self: *const CheckedProcedureTemplateTable, span: artifact_serialize.Span) []const CheckedTypeId {
++        return self.specialization_interface_types[span.start .. span.start + span.len];
++    }
+ };
+ 
+ /// Public `CheckedProcedureTemplateTableView` declaration.
+@@ -25877,7 +26101,18 @@ pub const DispatchEvidenceFailure = struct {
+         template_relation_plan_refs_out_of_bounds,
+         template_dispatch_partition_mismatch,
+         template_relation_metadata_length_mismatch,
++        template_specialization_relations_out_of_bounds,
+         template_evidence_params_out_of_bounds,
++        specialization_scope_parent_invalid,
++        specialization_scope_scheme_root_out_of_bounds,
++        specialization_scope_expr_out_of_bounds,
++        specialization_scope_evidence_params_out_of_bounds,
++        specialization_relation_scope_out_of_bounds,
++        specialization_relation_type_out_of_bounds,
++        specialization_relation_call_args_out_of_bounds,
++        specialization_relation_value_ref_out_of_bounds,
++        specialization_relation_direct_target_invalid,
++        specialization_relation_local_proc_use_invalid,
+         evidence_param_path_out_of_bounds,
+         evidence_param_path_invalid_kind,
+         evidence_param_path_invalid_shape,
+@@ -26121,7 +26356,7 @@ pub const CheckedModuleArtifact = struct {
+             // `proc_bases`; `checked_types` includes its `var_names` interner = 3).
+             // POD inline `key`/`module_identity` contribute 0. Fixed at compile time,
+             // independent of stored data size.
+-            std.debug.assert(artifact_serialize.relocatablePointerCount(Serialized) == 204);
++            std.debug.assert(artifact_serialize.relocatablePointerCount(Serialized) == 206);
+         }
+ 
+         /// Append every sub-store's bytes to `writer` in field order, recording
+@@ -26271,7 +26506,7 @@ pub const CheckedModuleArtifact = struct {
+     /// Manual discriminant for `SERIALIZED_VERSION_HASH`: bump to force a cache /
+     /// baked-blob invalidation for a layout change the structural fingerprint below
+     /// cannot observe (e.g. a semantic change to how a field is interpreted).
+-    const serialized_layout_version: u32 = 52;
++    const serialized_layout_version: u32 = 54;
+ 
+     /// Comptime fingerprint of `Serialized`'s layout, mirroring
+     /// `cache_module.MODULE_ENV_VERSION_HASH`. It is appended to the baked builtin
+@@ -26818,6 +27053,9 @@ pub const CheckedModuleArtifact = struct {
+             if (@as(u64, template.dispatch_relations.start) + template.dispatch_relations.len > table.dispatch_relation_refs.len) {
+                 return .{ .kind = .template_relation_plan_refs_out_of_bounds, .index = @intCast(i) };
+             }
++            if (@as(u64, template.specialization_interface_relations.start) + template.specialization_interface_relations.len > templates.specialization_interface_relations.len) {
++                return .{ .kind = .template_specialization_relations_out_of_bounds, .index = @intCast(i) };
++            }
+             if (template.direct_dispatch_plans.len + template.dispatch_relations.len != template.static_dispatch_plans.len) {
+                 return .{ .kind = .template_dispatch_partition_mismatch, .index = @intCast(i) };
+             }
+@@ -26848,6 +27086,108 @@ pub const CheckedModuleArtifact = struct {
+                 return .{ .kind = .template_evidence_params_out_of_bounds, .index = @intCast(i) };
+             }
+         }
++        for (templates.dispatch_scopes, 0..) |scope, i| {
++            if (scope.parent) |parent| {
++                if (@intFromEnum(parent) >= i) {
++                    return .{ .kind = .specialization_scope_parent_invalid, .index = @intCast(i) };
++                }
++            }
++            if (@intFromEnum(scope.scheme_root) >= self.checked_types.payloadCount()) {
++                return .{ .kind = .specialization_scope_scheme_root_out_of_bounds, .index = @intCast(i) };
++            }
++            if (@intFromEnum(scope.checked_expr) >= self.checked_bodies.exprCount()) {
++                return .{ .kind = .specialization_scope_expr_out_of_bounds, .index = @intCast(i) };
++            }
++            if (@as(u64, scope.evidence_params.start) + scope.evidence_params.len > templates.evidence_params_pool.len) {
++                return .{ .kind = .specialization_scope_evidence_params_out_of_bounds, .index = @intCast(i) };
++            }
++        }
++        for (templates.specialization_interface_relations, 0..) |relation, i| {
++            switch (relation.scope) {
++                .root => {},
++                .generalized => |scope| if (@intFromEnum(scope) >= templates.dispatch_scopes.len) {
++                    return .{ .kind = .specialization_relation_scope_out_of_bounds, .index = @intCast(i) };
++                },
++            }
++            switch (relation.data) {
++                .type_equality => |equality| {
++                    if (@intFromEnum(equality.left) >= self.checked_types.payloadCount() or
++                        @intFromEnum(equality.right) >= self.checked_types.payloadCount())
++                    {
++                        return .{ .kind = .specialization_relation_type_out_of_bounds, .index = @intCast(i) };
++                    }
++                },
++                .procedure => |procedure| {
++                    if (@intFromEnum(procedure.fn_ty) >= self.checked_types.payloadCount() or
++                        @intFromEnum(procedure.body_ret_ty) >= self.checked_types.payloadCount())
++                    {
++                        return .{ .kind = .specialization_relation_type_out_of_bounds, .index = @intCast(i) };
++                    }
++                },
++                .call => |call| {
++                    if (@intFromEnum(call.callable_ty) >= self.checked_types.payloadCount() or
++                        @intFromEnum(call.callee_ty) >= self.checked_types.payloadCount() or
++                        @intFromEnum(call.ret_ty) >= self.checked_types.payloadCount())
++                    {
++                        return .{ .kind = .specialization_relation_type_out_of_bounds, .index = @intCast(i) };
++                    }
++                    if (@as(u64, call.args.start) + call.args.len > templates.specialization_interface_types.len) {
++                        return .{ .kind = .specialization_relation_call_args_out_of_bounds, .index = @intCast(i) };
++                    }
++                    for (templates.specializationRelationTypes(call.args)) |arg_ty| {
++                        if (@intFromEnum(arg_ty) >= self.checked_types.payloadCount()) {
++                            return .{ .kind = .specialization_relation_type_out_of_bounds, .index = @intCast(i) };
++                        }
++                    }
++                    if (call.direct_target) |target| {
++                        const raw_target = @intFromEnum(target);
++                        if (raw_target >= self.resolved_value_refs.records.len) {
++                            return .{ .kind = .specialization_relation_value_ref_out_of_bounds, .index = @intCast(i) };
++                        }
++                        switch (self.resolved_value_refs.records[raw_target].ref) {
++                            .top_level_proc,
++                            .imported_proc,
++                            .hosted_proc,
++                            .promoted_top_level_proc,
++                            .local_proc,
++                            => {},
++                            .platform_required_proc => |required| {
++                                const source_fn_ty = required.procedure.source_fn_ty_payload orelse {
++                                    return .{ .kind = .specialization_relation_direct_target_invalid, .index = @intCast(i) };
++                                };
++                                if (@intFromEnum(source_fn_ty) >= self.checked_types.payloadCount()) {
++                                    return .{ .kind = .specialization_relation_type_out_of_bounds, .index = @intCast(i) };
++                                }
++                            },
++                            else => return .{ .kind = .specialization_relation_direct_target_invalid, .index = @intCast(i) },
++                        }
++                    }
++                },
++                .local_proc_use => |ref_id| {
++                    const raw_ref = @intFromEnum(ref_id);
++                    if (raw_ref >= self.resolved_value_refs.records.len) {
++                        return .{ .kind = .specialization_relation_value_ref_out_of_bounds, .index = @intCast(i) };
++                    }
++                    const record = self.resolved_value_refs.records[raw_ref];
++                    if (@intFromEnum(record.checked_ty) >= self.checked_types.payloadCount()) {
++                        return .{ .kind = .specialization_relation_type_out_of_bounds, .index = @intCast(i) };
++                    }
++                    const local = switch (record.ref) {
++                        .local_proc => |local| local,
++                        else => return .{ .kind = .specialization_relation_local_proc_use_invalid, .index = @intCast(i) },
++                    };
++                    const local_scope = local.dispatch_scope orelse {
++                        return .{ .kind = .specialization_relation_local_proc_use_invalid, .index = @intCast(i) };
++                    };
++                    if (@intFromEnum(local_scope) >= templates.dispatch_scopes.len) {
++                        return .{ .kind = .specialization_relation_local_proc_use_invalid, .index = @intCast(i) };
++                    }
++                    if (templates.dispatch_scopes[@intFromEnum(local_scope)].checked_expr != local.expr) {
++                        return .{ .kind = .specialization_relation_local_proc_use_invalid, .index = @intCast(i) };
++                    }
++                },
++            }
++        }
+         for (templates.evidence_params_pool, 0..) |param, i| {
+             if (@as(u64, param.path.start) + param.path.len > templates.evidence_param_paths.len) {
+                 return .{ .kind = .evidence_param_path_out_of_bounds, .index = @intCast(i), .method = param.method };
+@@ -26871,6 +27211,20 @@ pub const CheckedModuleArtifact = struct {
+                 }
+             }
+         }
++        for (templates.dispatch_scopes) |scope| {
++            const params = templates.evidence_params_pool[scope.evidence_params.start .. scope.evidence_params.start + scope.evidence_params.len];
++            for (params, 0..) |param, param_offset| {
++                const path = templates.evidenceParamPath(param);
++                if (path.len == 0) continue;
++                if (!self.checkedEvidencePathResolves(scope.scheme_root, path)) {
++                    return .{
++                        .kind = .evidence_param_path_diverges_from_checked_type,
++                        .index = scope.evidence_params.start + @as(u32, @intCast(param_offset)),
++                        .method = param.method,
++                    };
++                }
++            }
++        }
+ 
+         return null;
+     }
+@@ -29214,6 +29568,7 @@ pub fn publishFromTypedModule(
+     try sealCheckedProcedureTemplateRefs(
+         allocator,
+         module,
++        &checked_type_publication,
+         checked_bodies,
+         &entry_wrappers,
+         &checked_procedure_templates,
+@@ -29909,6 +30264,7 @@ fn expectProvidedExportKind(
+     try sealCheckedProcedureTemplateRefs(
+         allocator,
+         module,
++        &checked_type_publication,
+         checked_bodies,
+         &entry_wrappers,
+         &checked_procedure_templates,
+@@ -30128,6 +30484,7 @@ test "local procedure uses carry exact producer-recorded dispatch scope ownershi
+     const scopes = [_]DispatchRefScope{.{
+         .parent = null,
+         .scheme_var = @enumFromInt(50),
++        .scheme_root = @enumFromInt(60),
+         .checked_expr = @enumFromInt(30),
+     }};
+     var scope_by_checked_expr = try nestedProcScopeMap(std.testing.allocator, &scopes);
+@@ -30151,11 +30508,13 @@ test "nested procedure sites inherit exact producer-recorded lexical scopes" {
+         .{
+             .parent = null,
+             .scheme_var = @enumFromInt(50),
++            .scheme_root = @enumFromInt(60),
+             .checked_expr = @enumFromInt(30),
+         },
+         .{
+             .parent = testIndexId(DispatchScopeId, 0),
+             .scheme_var = @enumFromInt(51),
++            .scheme_root = @enumFromInt(61),
+             .checked_expr = @enumFromInt(31),
+         },
+     };
+@@ -31608,8 +31967,8 @@ test "SERIALIZED_VERSION_HASH golden value" {
+     // change, bump `serialized_layout_version` and replace the golden bytes below with
+     // the ones this assertion prints.
+     const golden: [32]u8 = .{
+-        0x41, 0x89, 0xC9, 0x6D, 0x55, 0x39, 0x14, 0xA5, 0xDF, 0x1C, 0xC4, 0x71, 0x5A, 0xBB, 0x5D, 0x8C,
+-        0x87, 0x61, 0x7B, 0xAD, 0x7F, 0x86, 0x7E, 0xEF, 0xD4, 0x16, 0xFD, 0x38, 0x1B, 0x25, 0x0C, 0x3B,
++        0x4C, 0x6D, 0xCC, 0x4C, 0x13, 0xA6, 0x0B, 0x10, 0xAF, 0xAC, 0x31, 0xEF, 0xE0, 0x91, 0xC6, 0x39,
++        0x1A, 0x6C, 0x78, 0xFD, 0xF2, 0x88, 0x52, 0x36, 0x1B, 0xC9, 0x8D, 0xBB, 0x2A, 0x31, 0xF6, 0x14,
+     };
+     try std.testing.expectEqualSlices(u8, &golden, &CheckedModuleArtifact.SERIALIZED_VERSION_HASH);
+ }
+diff --git c/src/cli/test/parallel_cli_runner.zig i/src/cli/test/parallel_cli_runner.zig
+index 65cba2b9db..31af0efb10 100644
+--- c/src/cli/test/parallel_cli_runner.zig
++++ i/src/cli/test/parallel_cli_runner.zig
+@@ -1023,6 +1023,7 @@ const subcommand_cases = [_]CliCase{
+     .{ .id = 0, .suite = .subcommands, .name = "I128/U128 to Dec conversion runs on dev backend", .backend = .dev, .body = .{ .command = .{ .args = &.{ "--opt=dev", "--no-cache" }, .roc_file = "test/cli/Int128ToDecTry.roc", .exit = .success } } },
+     .{ .id = 0, .suite = .subcommands, .name = "I128/U128 to Dec conversion runs on interpreter", .backend = .interpreter, .body = .{ .command = .{ .args = &.{ "--opt=interpreter", "--no-cache" }, .roc_file = "test/cli/Int128ToDecTry.roc", .exit = .success } } },
+     .{ .id = 0, .suite = .subcommands, .name = "issue 10022: deep tail recursion with a List runs on LLVM speed backend", .backend = .speed, .body = .{ .custom = .issue_10022_deep_tail_recursion } },
++    .{ .id = 0, .suite = .subcommands, .name = "issue 10529: open Try ? chain builds in dev within the perf guard", .backend = .dev, .timeout_ms = 30_000, .body = .{ .command = .{ .args = &.{ "build", "--opt=dev", "--no-cache" }, .roc_file = "test/cli/Issue10529OpenTryChainBuildTime.roc", .exit = .success, .contains = &.{.{ .stream = .stdout, .text = "successfully building" }}, .not_contains = &.{ .{ .stream = .stderr, .text = "panic" }, .{ .stream = .stderr, .text = "segmentation fault" }, .{ .stream = .stderr, .text = "reached unreachable code" } } } } },
+     .{ .id = 0, .suite = .subcommands, .name = "issue 10015: macOS roc test imported package expect passes on LLVM size backend", .backend = .size, .body = .{ .custom = .issue_10015_url_random_test_size } },
+     .{ .id = 0, .suite = .subcommands, .name = "roc test expect_err reports across linked optimized modules", .backend = .speed, .body = .{ .command = .{ .args = &.{ "test", "--opt=speed", "--no-cache" }, .roc_file = "test/cli/multi_module_expect_err/Main.roc", .exit = .{ .code = 1 }, .contains = &.{ .{ .stream = .stderr, .text = "Ran 2 tests" }, .{ .stream = .stderr, .text = "result = to_positive(-2)?" }, .{ .stream = .stderr, .text = "result = to_positive(-1)?" }, .{ .stream = .stderr, .text = "The value was: Err(IsNegative)" } }, .not_contains = &.{ .{ .stream = .stderr, .text = "roc_expect_err_region" }, .{ .stream = .stderr, .text = "symbol multiply defined" }, .{ .stream = .stderr, .text = "panic" } } } } },
+     .{ .id = 0, .suite = .subcommands, .name = "roc test crash in one optimized root does not pollute the next root", .backend = .speed, .body = .{ .command = .{ .args = &.{ "test", "--opt=speed", "--no-cache" }, .roc_file = "test/cli/MultiRootCrashIsolation.roc", .exit = .{ .code = 1 }, .contains = &.{ .{ .stream = .stderr, .text = "Ran 2 tests" }, .{ .stream = .stderr, .text = "passed" }, .{ .stream = .stderr, .text = "failed" }, .{ .stream = .stderr, .text = "Roc application crashed with this message:" }, .{ .stream = .stderr, .text = "first root crashed" } }, .not_contains = &.{ .{ .stream = .stderr, .text = "Segmentation fault" }, .{ .stream = .stderr, .text = "panic" } } } } },
+diff --git c/src/eval/test/lir_inline_test.zig i/src/eval/test/lir_inline_test.zig
+index b745f176d4..4cb0c8b6b8 100644
+--- c/src/eval/test/lir_inline_test.zig
++++ i/src/eval/test/lir_inline_test.zig
+@@ -1843,6 +1843,72 @@ test "issue 9802 same-type map2 specialization counters are bounded" {
+     });
+ }
+ 
++test "issue 10529 open Try chain with named local callback stays bounded" {
++    const allocator = std.testing.allocator;
++    const source =
++        \\take0 = |b| {
++        \\    to_end = |_| End
++        \\    Ok({ val: b.get(0).map_err(to_end)?, rest: b.drop_first(1) })
++        \\}
++        \\take1 = |b| Ok({ val: take0(b)?.val, rest: take0(b)?.rest })
++        \\take2 = |b| Ok({ val: take1(b)?.val, rest: take1(b)?.rest })
++        \\take3 = |b| Ok({ val: take2(b)?.val, rest: take2(b)?.rest })
++        \\take4 = |b| Ok({ val: take3(b)?.val, rest: take3(b)?.rest })
++        \\take5 = |b| Ok({ val: take4(b)?.val, rest: take4(b)?.rest })
++        \\take6 = |b| Ok({ val: take5(b)?.val, rest: take5(b)?.rest })
++        \\
++        \\main : {} -> Try({ val : U8, rest : List(U8) }, [End, ..])
++        \\main = |_| take6([1, 2, 3])
++    ;
++
++    const counters = try monotypeCountersForModule(allocator, source);
++    try std.testing.expect(counters.template_misses <= 20);
++    try std.testing.expect(counters.nominal_backing_instantiations <= 300);
++}
++
++test "specialization interface replay follows returned local functions through wrappers" {
++    const allocator = std.testing.allocator;
++    const source =
++        \\mk = |f| {
++        \\    show = || f({}).map_err(|_| ShowFailed)
++        \\    show
++        \\}
++        \\
++        \\wrap = |f| mk(f)
++        \\
++        \\main : {} -> Try({}, [ShowFailed])
++        \\main = |_| {
++        \\    f : {} -> Try({}, [Empty])
++        \\    f = |_| Ok({})
++        \\    wrap(f)()
++        \\}
++    ;
++
++    _ = try monotypeCountersForModule(allocator, source);
++}
++
++test "specialization interface replay keeps unequal generic requests through local dependencies distinct" {
++    const allocator = std.testing.allocator;
++    const source =
++        \\id = |value| value
++        \\
++        \\make = |value| {
++        \\    get = || id(value)
++        \\    get
++        \\}
++        \\
++        \\pair = |left, right| {
++        \\    left: make(left)(),
++        \\    right: make(right)(),
++        \\}
++        \\
++        \\main : {} -> { left : U64, right : Str }
++        \\main = |_| pair(1, "one")
++    ;
++
++    _ = try monotypeCountersForModule(allocator, source);
++}
++
+ test "issue 9802 growing-structural map2 specialization counters are bounded" {
+     const allocator = std.testing.allocator;
+     const source =
+@@ -6004,6 +6070,162 @@ test "dispatch evidence boundary validator accepts a published artifact" {
+     try std.testing.expect(resources.checked_artifact.validateDispatchEvidence() == null);
+ }
+ 
++test "dispatch evidence boundary validator rejects malformed specialization interface metadata" {
++    const allocator = std.testing.allocator;
++    const source =
++        \\mk = |f| {
++        \\    show = || f({}).map_err(|_| ShowFailed)
++        \\    show
++        \\}
++        \\
++        \\wrap = |f| mk(f)
++        \\
++        \\main : {} -> Try({}, [ShowFailed])
++        \\main = |_| {
++        \\    f : {} -> Try({}, [Empty])
++        \\    f = |_| Ok({})
++        \\    wrap(f)()
++        \\}
++    ;
++    var resources = try helpers.parseAndCanonicalizeProgramWithBuiltin(allocator, .module, source, &.{}, try sharedPrePublishedBuiltin());
++    defer helpers.cleanupParseAndCanonical(allocator, resources);
++
++    const artifact = &resources.checked_artifact;
++    const templates = &artifact.checked_procedure_templates;
++    try std.testing.expect(artifact.validateDispatchEvidence() == null);
++    try std.testing.expect(templates.dispatch_scopes.len > 0);
++    try std.testing.expect(templates.specialization_interface_relations.len > 0);
++
++    var template_index: ?usize = null;
++    for (templates.templates, 0..) |template, i| {
++        if (template.specialization_interface_relations.len > 0) {
++            template_index = i;
++            break;
++        }
++    }
++    const raw_template = template_index orelse return error.TestUnexpectedResult;
++    const saved_template_span = templates.templates[raw_template].specialization_interface_relations;
++    templates.templates[raw_template].specialization_interface_relations.start = @intCast(templates.specialization_interface_relations.len);
++    templates.templates[raw_template].specialization_interface_relations.len = 1;
++    var failure = artifact.validateDispatchEvidence() orelse return error.TestUnexpectedResult;
++    try std.testing.expectEqual(check.CheckedArtifact.DispatchEvidenceFailure.Kind.template_specialization_relations_out_of_bounds, failure.kind);
++    templates.templates[raw_template].specialization_interface_relations = saved_template_span;
++
++    const saved_parent = templates.dispatch_scopes[0].parent;
++    templates.dispatch_scopes[0].parent = @enumFromInt(templates.dispatch_scopes.len);
++    failure = artifact.validateDispatchEvidence() orelse return error.TestUnexpectedResult;
++    try std.testing.expectEqual(check.CheckedArtifact.DispatchEvidenceFailure.Kind.specialization_scope_parent_invalid, failure.kind);
++    templates.dispatch_scopes[0].parent = saved_parent;
++
++    const saved_scheme_root = templates.dispatch_scopes[0].scheme_root;
++    templates.dispatch_scopes[0].scheme_root = @enumFromInt(artifact.checked_types.payloadCount());
++    failure = artifact.validateDispatchEvidence() orelse return error.TestUnexpectedResult;
++    try std.testing.expectEqual(check.CheckedArtifact.DispatchEvidenceFailure.Kind.specialization_scope_scheme_root_out_of_bounds, failure.kind);
++    templates.dispatch_scopes[0].scheme_root = saved_scheme_root;
++
++    const saved_scope = templates.specialization_interface_relations[0].scope;
++    templates.specialization_interface_relations[0].scope = .{ .generalized = @enumFromInt(templates.dispatch_scopes.len) };
++    failure = artifact.validateDispatchEvidence() orelse return error.TestUnexpectedResult;
++    try std.testing.expectEqual(check.CheckedArtifact.DispatchEvidenceFailure.Kind.specialization_relation_scope_out_of_bounds, failure.kind);
++    templates.specialization_interface_relations[0].scope = saved_scope;
++
++    const saved_relation_data = templates.specialization_interface_relations[0].data;
++    templates.specialization_interface_relations[0].data = .{ .type_equality = .{
++        .left = @enumFromInt(artifact.checked_types.payloadCount()),
++        .right = templates.dispatch_scopes[0].scheme_root,
++    } };
++    failure = artifact.validateDispatchEvidence() orelse return error.TestUnexpectedResult;
++    try std.testing.expectEqual(check.CheckedArtifact.DispatchEvidenceFailure.Kind.specialization_relation_type_out_of_bounds, failure.kind);
++    templates.specialization_interface_relations[0].data = saved_relation_data;
++
++    var call_index: ?usize = null;
++    var direct_call_index: ?usize = null;
++    var local_use_index: ?usize = null;
++    for (templates.specialization_interface_relations, 0..) |relation, i| switch (relation.data) {
++        .call => |call| {
++            if (call_index == null) call_index = i;
++            if (call.direct_target != null and direct_call_index == null) direct_call_index = i;
++        },
++        .local_proc_use => if (local_use_index == null) {
++            local_use_index = i;
++        },
++        .type_equality, .procedure => {},
++    };
++
++    const raw_call = call_index orelse return error.TestUnexpectedResult;
++    const saved_args = templates.specialization_interface_relations[raw_call].data.call.args;
++    templates.specialization_interface_relations[raw_call].data.call.args = .{
++        .start = @intCast(templates.specialization_interface_types.len),
++        .len = 1,
++    };
++    failure = artifact.validateDispatchEvidence() orelse return error.TestUnexpectedResult;
++    try std.testing.expectEqual(check.CheckedArtifact.DispatchEvidenceFailure.Kind.specialization_relation_call_args_out_of_bounds, failure.kind);
++    templates.specialization_interface_relations[raw_call].data.call.args = saved_args;
++
++    const raw_direct_call = direct_call_index orelse return error.TestUnexpectedResult;
++    const saved_direct_target = templates.specialization_interface_relations[raw_direct_call].data.call.direct_target;
++    templates.specialization_interface_relations[raw_direct_call].data.call.direct_target = @enumFromInt(artifact.resolved_value_refs.records.len);
++    failure = artifact.validateDispatchEvidence() orelse return error.TestUnexpectedResult;
++    try std.testing.expectEqual(check.CheckedArtifact.DispatchEvidenceFailure.Kind.specialization_relation_value_ref_out_of_bounds, failure.kind);
++    templates.specialization_interface_relations[raw_direct_call].data.call.direct_target = saved_direct_target;
++
++    var non_procedure_ref: ?check.CheckedArtifact.ResolvedValueRefId = null;
++    for (artifact.resolved_value_refs.records, 0..) |record, i| switch (record.ref) {
++        .local_proc,
++        .top_level_proc,
++        .imported_proc,
++        .hosted_proc,
++        .platform_required_proc,
++        .promoted_top_level_proc,
++        => {},
++        else => {
++            non_procedure_ref = @enumFromInt(i);
++            break;
++        },
++    };
++    const invalid_procedure_ref = non_procedure_ref orelse return error.TestUnexpectedResult;
++    templates.specialization_interface_relations[raw_direct_call].data.call.direct_target = invalid_procedure_ref;
++    failure = artifact.validateDispatchEvidence() orelse return error.TestUnexpectedResult;
++    try std.testing.expectEqual(check.CheckedArtifact.DispatchEvidenceFailure.Kind.specialization_relation_direct_target_invalid, failure.kind);
++    templates.specialization_interface_relations[raw_direct_call].data.call.direct_target = saved_direct_target;
++
++    const raw_local_use = local_use_index orelse return error.TestUnexpectedResult;
++    const saved_local_ref = templates.specialization_interface_relations[raw_local_use].data.local_proc_use;
++    templates.specialization_interface_relations[raw_local_use].data.local_proc_use = invalid_procedure_ref;
++    failure = artifact.validateDispatchEvidence() orelse return error.TestUnexpectedResult;
++    try std.testing.expectEqual(check.CheckedArtifact.DispatchEvidenceFailure.Kind.specialization_relation_local_proc_use_invalid, failure.kind);
++    templates.specialization_interface_relations[raw_local_use].data.local_proc_use = saved_local_ref;
++
++    const local_record = artifact.resolved_value_refs.records[@intFromEnum(saved_local_ref)].ref.local_proc;
++    const local_scope = local_record.dispatch_scope orelse return error.TestUnexpectedResult;
++    const raw_local_scope = @intFromEnum(local_scope);
++    const saved_scope_expr = templates.dispatch_scopes[raw_local_scope].checked_expr;
++    const next_expr = (@intFromEnum(saved_scope_expr) + 1) % artifact.checked_bodies.exprCount();
++    templates.dispatch_scopes[raw_local_scope].checked_expr = @enumFromInt(next_expr);
++    failure = artifact.validateDispatchEvidence() orelse return error.TestUnexpectedResult;
++    try std.testing.expectEqual(check.CheckedArtifact.DispatchEvidenceFailure.Kind.specialization_relation_local_proc_use_invalid, failure.kind);
++    templates.dispatch_scopes[raw_local_scope].checked_expr = saved_scope_expr;
++
++    var path_param_span: ?@TypeOf(templates.templates[0].evidence_params) = null;
++    for (templates.templates) |template| {
++        const params = templates.evidenceParams(&template);
++        for (params) |param| {
++            if (param.path.len > 0) {
++                path_param_span = template.evidence_params;
++                break;
++            }
++        }
++        if (path_param_span != null) break;
++    }
++    const saved_scope_params = templates.dispatch_scopes[raw_local_scope].evidence_params;
++    templates.dispatch_scopes[raw_local_scope].evidence_params = path_param_span orelse return error.TestUnexpectedResult;
++    failure = artifact.validateDispatchEvidence() orelse return error.TestUnexpectedResult;
++    try std.testing.expectEqual(check.CheckedArtifact.DispatchEvidenceFailure.Kind.evidence_param_path_diverges_from_checked_type, failure.kind);
++    templates.dispatch_scopes[raw_local_scope].evidence_params = saved_scope_params;
++
++    try std.testing.expect(artifact.validateDispatchEvidence() == null);
++}
++
+ test "dispatch evidence boundary validator rejects non-normalized and malformed paths" {
+     const allocator = std.testing.allocator;
+     const source =
+diff --git c/src/postcheck/monotype/lower.zig i/src/postcheck/monotype/lower.zig
+index 811a108e6e..8bd3e7f26e 100644
+--- c/src/postcheck/monotype/lower.zig
++++ i/src/postcheck/monotype/lower.zig
+@@ -538,6 +538,16 @@ const NestedSpecEvidence = union(enum) {
+     synthesize,
+ };
+ 
++/// Whether checked evidence is being materialized for Monotype body lowering
++/// or only to close a specialization request's type interface. A local method's
++/// checked declaration is sufficient for specialization-interface relation
++/// replay; Monotype body uses must additionally carry the exact BodyDraft local
++/// capture context.
++const EvidenceMaterializationPurpose = enum {
++    body_lowering,
++    specialization_interface,
++};
++
+ /// The evidence supplied to a callee specialization request.
+ const SpecEvidenceVector = union(enum) {
+     resolved: []const SpecEvidence,
+@@ -2829,18 +2839,6 @@ const Builder = struct {
+         };
+     }
+ 
+-    fn retainStoredConstFnEvidence(
+-        self: *Builder,
+-        evidence: StoredConstFnEvidence,
+-    ) Allocator.Error!StoredConstFnEvidence {
+-        const arena = self.evidence_arena.allocator();
+-        return .{
+-            .nodes = try arena.dupe(check.ConstStore.ConstFnEvidence, evidence.nodes),
+-            .frames = try arena.dupe(check.ConstStore.ConstFnEvidenceFrame, evidence.frames),
+-            .head = evidence.head,
+-        };
+-    }
+-
+     fn appendConstFnEvidence(
+         self: *Builder,
+         nodes: *std.ArrayList(check.ConstStore.ConstFnEvidence),
+@@ -2883,6 +2881,23 @@ const Builder = struct {
+         template_ref: names.ProcTemplate,
+         template: checked.CheckedProcedureTemplate,
+         partial: []const SpecEvidence,
++    ) Allocator.Error![]const SpecEvidence {
++        return self.completeRootTemplateEvidenceForPurpose(
++            view,
++            template_ref,
++            template,
++            partial,
++            .body_lowering,
++        );
++    }
++
++    fn completeRootTemplateEvidenceForPurpose(
++        self: *Builder,
++        view: ModuleView,
++        template_ref: names.ProcTemplate,
++        template: checked.CheckedProcedureTemplate,
++        partial: []const SpecEvidence,
++        purpose: EvidenceMaterializationPurpose,
+     ) Allocator.Error![]const SpecEvidence {
+         var timing_scope = ProcedureTimingScope.begin(self.timing, .dispatch_evidence);
+         defer timing_scope.end();
+@@ -2894,7 +2909,7 @@ const Builder = struct {
+         var ctx = try BodyContext.init(self.allocator, self, view, template_ref, graph, &draft);
+         defer ctx.deinit();
+         ctx.evidence = rootEvidence(template_ref, partial);
+-        return (try ctx.rootEdgeEvidence(view, template)) orelse
++        return (try ctx.rootEdgeEvidenceForPurpose(view, template, purpose)) orelse
+             Common.invariant("procedure specialization did not receive its complete checked evidence vector");
+     }
+ 
+@@ -3306,34 +3321,15 @@ const Builder = struct {
+             try source_ctx.activeTypeFromNode(request_fn_node)
+         else
+             null;
+-        // An unresolved procedure interface is not yet a durable
+-        // specialization key. Its callee body must contribute all of its
+-        // checked constraints before this graph applies row defaults, so the
+-        // entire connected open dependency group lowers in this graph and
+-        // seals together. The initial open shape is still an explicit
+-        // graph-local identity for reusing a completed member of that group.
+-        const open_group_member = resolved_request_ty == null and
+-            !local_context_dependent and
+-            template.target != .hosted;
+-        const open_request_shape: ?solve.OpenFunctionInterfaceShape = if (open_group_member)
+-            try source_ctx.graph.openFunctionInterfaceShape(request_fn_node)
+-        else
+-            null;
+         // Resolved requests key directly on their structural type digest, so a
+-        // repeat of an already-answered resolved request skips both scans
+-        // below.
++        // repeat of an already-answered resolved request skips the graph-native
++        // recursive lookup below.
+         const resolved_lookup_address: ?DraftTemplateLookupAddress = if (resolved_request_ty) |request_fn_ty| .{
+             .family = family,
+             .evidence_digest = evidence_digest.bytes,
+             .request_kind = 0,
+             .request_fn_key = self.specializationTypeDigest(request_fn_ty).bytes,
+         } else null;
+-        const open_shape_lookup_address: ?DraftTemplateLookupAddress = if (open_request_shape) |shape| .{
+-            .family = family,
+-            .evidence_digest = evidence_digest.bytes,
+-            .request_kind = 2,
+-            .request_fn_key = shape.digest.bytes,
+-        } else null;
+         if (resolved_lookup_address) |address| {
+             if (source_ctx.draft.template_spec_lookup.get(address)) |candidates| {
+                 for (candidates.items) |raw_spec| {
+@@ -3347,22 +3343,6 @@ const Builder = struct {
+                 }
+             }
+         }
+-        if (selection.selected() == null) {
+-            if (open_shape_lookup_address) |address| {
+-                if (source_ctx.draft.template_spec_lookup.get(address)) |candidates| {
+-                    for (candidates.items) |raw_spec| {
+-                        const spec = &source_ctx.draft.template_specs.items[raw_spec];
+-                        if (spec.state != .lowered) continue;
+-                        if (!spec.open_group_member) continue;
+-                        if (!specEvidenceVectorEql(spec.evidence, evidence)) continue;
+-                        if (!optionalTypeDigestEql(spec.lexical_context_key, lexical_context_key)) continue;
+-                        const spec_shape = spec.open_request_shape orelse continue;
+-                        if (!std.mem.eql(u8, spec_shape, open_request_shape.?.bytes)) continue;
+-                        if (!selection.add(raw_spec, true)) unreachable;
+-                    }
+-                }
+-            }
+-        }
+         if (selection.selected() == null) {
+             var seen_specs = std.AutoHashMap(u32, void).init(self.allocator);
+             defer seen_specs.deinit();
+@@ -3418,9 +3398,8 @@ const Builder = struct {
+             // graph cells with the specialization currently being lowered. Once
+             // both requests are fully resolved, exact structural type equality is
+             // the durable proof that they are the same specialization request.
+-            // Completed unresolved requests already had their alpha-normalized
+-            // open shapes checked above; this scan retains graph-interface
+-            // identity for active recursive and partially overlapping requests.
++            // This scan retains graph-interface identity for active recursive
++            // and partially overlapping requests.
+             if (resolved_request_ty) |request_fn_ty| {
+                 for (source_ctx.draft.template_specs.items, 0..) |*spec, raw_spec_usize| {
+                     const raw_spec: u32 = @intCast(raw_spec_usize);
+@@ -3445,8 +3424,7 @@ const Builder = struct {
+             // its new body instance are not joined until that edge is related,
+             // so join the complete request before returning the in-progress
+             // definition. Completed specializations reach here through exact
+-            // resolved identity or a complete alpha-normalized open shape, never
+-            // through a partial interface overlap.
++            // resolved identity, never through a partial interface overlap.
+             const spec = &source_ctx.draft.template_specs.items[raw_spec];
+             self.count("template_hits");
+             const active_recursive_edge = spec.state == .lowering and
+@@ -3478,9 +3456,6 @@ const Builder = struct {
+             if (resolved_lookup_address) |address| {
+                 try registerTemplateSpecLookup(source_ctx.draft, self.allocator, address, raw_spec);
+             }
+-            if (open_shape_lookup_address) |address| {
+-                try registerTemplateSpecLookup(source_ctx.draft, self.allocator, address, raw_spec);
+-            }
+             return .{ .local = .{ .draft = spec.fn_id } };
+         }
+         const is_local = moduleBytesEqual(view.key.bytes, names.procTemplateModuleDigest(template_ref).bytes);
+@@ -3526,7 +3501,7 @@ const Builder = struct {
+         };
+         const demand_boundary: u32 = @intCast(source_ctx.draft.runtime_value_demands.items.len);
+         try source_ctx.draft.template_specs.append(self.allocator, .{
+-            .state = if (local_context_dependent or open_group_member) .lowering else .deferred,
++            .state = if (local_context_dependent) .lowering else .deferred,
+             .template_ref = template_ref,
+             .method_scope = source_ctx.method_scope.key,
+             .source_fn_ty = source_fn_ty,
+@@ -3544,8 +3519,6 @@ const Builder = struct {
+             .lexical = lexical,
+             .lexical_context_key = lexical_context_key,
+             .fn_id = fn_id,
+-            .open_group_member = open_group_member,
+-            .open_request_shape = if (open_request_shape) |shape| shape.bytes else null,
+         });
+         try source_ctx.draft.template_spec_by_fn.put(fn_id, @intCast(spec_index));
+         lexical_needs_cleanup = false;
+@@ -3568,10 +3541,6 @@ const Builder = struct {
+         if (resolved_lookup_address) |address| {
+             try registerTemplateSpecLookup(source_ctx.draft, self.allocator, address, @intCast(spec_index));
+         }
+-        if (open_shape_lookup_address) |address| {
+-            try registerTemplateSpecLookup(source_ctx.draft, self.allocator, address, @intCast(spec_index));
+-        }
+-
+         const owner_scope = try source_ctx.draft.enterOwner(.{ .draft_fn = fn_id });
+         defer owner_scope.leave();
+         try self.registerDraftProcDebugNameForTemplate(source_ctx.draft, symbol, view, template_ref);
+@@ -3586,7 +3555,6 @@ const Builder = struct {
+         if (lexical) |captured| try body_ctx.restoreCodecLexicalContext(captured);
+         const root_node = try body_ctx.instNode(template.checked_fn_root);
+         if (!local_context_dependent and
+-            !open_group_member and
+             signature_relation == .independent_roots and
+             template.target != .hosted)
+         {
+@@ -3609,8 +3577,12 @@ const Builder = struct {
+                 try source_ctx.graph.unify(root_node, request_fn_node);
+             }
+         }
++        if (!local_context_dependent and template.target != .hosted) {
++            try relateFunctionRequestInterface(source_ctx.graph, root_node, request_fn_node);
++        }
+         try body_ctx.instantiateTemplateDispatchRelations(template, null);
+-        if (!local_context_dependent and !open_group_member) {
++        try body_ctx.applyCheckedTemplateInterfaceRelations(template, root_node);
++        if (!local_context_dependent) {
+             return .{ .local = .{ .draft = fn_id } };
+         }
+         if (template.target == .hosted) {
+@@ -3638,27 +3610,14 @@ const Builder = struct {
+ 
+         var completed_template = source_ctx.draft.fns.items[@intFromEnum(fn_id)].source;
+         completed_template.mono_fn_ty = DraftTypeCell.fromGraphNode(completed_fn_node);
+-        if (open_group_member) {
+-            const def_id = try source_ctx.draft.reserveDef(.{ .draft_fn = fn_id });
+-            source_ctx.draft.setDef(def_id, .{
+-                .symbol = symbol,
+-                .fn_def = completed_template,
+-                .fn_id = .{ .draft = fn_id },
+-                .args = lowered.args,
+-                .body = .{ .roc = lowered.body },
+-                .ret = completed_ret_cell,
+-            });
+-            source_ctx.draft.template_specs.items[spec_index].root_def = def_id;
+-        } else {
+-            _ = try source_ctx.draft.addNestedDef(.{
+-                .symbol = symbol,
+-                .fn_def = completed_template,
+-                .fn_id = .{ .draft = fn_id },
+-                .args = lowered.args,
+-                .body = lowered.body,
+-                .ret = completed_ret_cell,
+-            });
+-        }
++        _ = try source_ctx.draft.addNestedDef(.{
++            .symbol = symbol,
++            .fn_def = completed_template,
++            .fn_id = .{ .draft = fn_id },
++            .args = lowered.args,
++            .body = lowered.body,
++            .ret = completed_ret_cell,
++        });
+         source_ctx.draft.fns.items[@intFromEnum(fn_id)].source = completed_template;
+         source_ctx.draft.template_specs.items[spec_index].request_fn_node = completed_fn_node;
+         try registerTemplateSpecInterfaceLookups(
+@@ -6527,7 +6486,6 @@ const Builder = struct {
+             try graph.assertTypeHasNoActiveSnapshots(sealed);
+             break :blk sealed;
+         } else null;
+-        try self.finalizeDraftTemplateSpecs(body_draft, body_ids);
+         try self.markDraftNestedReady(body_draft, body_ids);
+         verifyDraftTemplateSpecsResolved(body_draft);
+         try self.finalizeDraftNestedSpecs(body_draft, body_ids);
+@@ -6607,63 +6565,11 @@ const Builder = struct {
+         }
+     }
+ 
+-    fn finalizeDraftTemplateSpecs(
+-        self: *Builder,
+-        body_draft: *const BodyDraftStore,
+-        ids: FinalIdOffsets,
+-    ) Allocator.Error!void {
+-        for (body_draft.template_specs.items) |spec| {
+-            if (spec.state != .lowered or spec.local_context_dependent) continue;
+-            if (!spec.open_group_member) {
+-                Common.invariant("context-free procedure body was lowered outside its open specialization group");
+-            }
+-            const root_def = spec.root_def orelse
+-                Common.invariant("root-owned procedure specialization had no definition");
+-            const fn_id = switch (ids.fnSlot(spec.fn_id)) {
+-                .imported => continue,
+-                .local => |local| local,
+-            };
+-            const fn_template = self.program.fnSource(fn_id);
+-            const fn_ty = fn_template.mono_fn_ty;
+-            const digest = self.specializationTypeDigest(fn_ty);
+-            const evidence = programViewFnEvidence(self.program.view(), fn_template);
+-            const identity = templateSpecIdentity(
+-                spec.template_ref,
+-                spec.method_scope,
+-                spec.source_fn_key,
+-                fn_template.evidence_digest,
+-                fn_ty,
+-                digest,
+-            );
+-            const existing = try self.spec_store.findLocal(identity, specializationEvidenceView(evidence));
+-            if (existing != null) continue;
+-            const def_id = ids.def(root_def);
+-            const retained_evidence = try self.retainStoredConstFnEvidence(evidence);
+-            const spec_id = try self.addTemplateSpecRecord(
+-                spec.template_ref,
+-                spec.method_scope,
+-                spec.source_fn_key,
+-                evidence,
+-                fn_ty,
+-                digest,
+-                fn_id,
+-                .lowering,
+-            );
+-            try self.lowered_templates.put(fn_id, .{
+-                .def = def_id,
+-                .spec = spec_id,
+-                .evidence = spec.evidence,
+-                .topology = retained_evidence,
+-            });
+-            try self.markTemplateReady(fn_id, fn_ty);
+-        }
+-    }
+-
+     fn verifyDraftTemplateSpecsResolved(body_draft: *const BodyDraftStore) void {
+         for (body_draft.template_specs.items) |spec| {
+             switch (spec.state) {
+                 .resolved => {},
+-                .lowered => if (!spec.local_context_dependent and !spec.open_group_member)
++                .lowered => if (!spec.local_context_dependent)
+                     Common.invariant("context-free procedure body was lowered into its caller's draft"),
+                 .deferred => Common.invariant("deferred template specialization reached commit before resolution"),
+                 .lowering => Common.invariant("caller-owned template specialization reached commit before its body lowered"),
+@@ -9689,14 +9595,6 @@ const DraftTemplateSpec = struct {
+     lexical: ?DraftCodecLexicalContext = null,
+     lexical_context_key: ?names.TypeDigest = null,
+     fn_id: DraftFnId,
+-    /// This context-free specialization joined its requester's live solve
+-    /// group because its interface was not closed enough to be a durable key.
+-    open_group_member: bool,
+-    /// Exact alpha-normalized shape of the unresolved request before this
+-    /// specialization body contributed its relations. This graph-local snapshot
+-    /// is the collision authority and never becomes durable specialization identity.
+-    open_request_shape: ?[]const u8 = null,
+-    root_def: ?DraftDefId = null,
+     resolved_slot: ?Ast.FnSlot = null,
+ };
+ 
+@@ -11954,6 +11852,42 @@ const ActiveConstBindingScope = struct {
+     entered: bool = false,
+ };
+ 
++const InterfaceReplayStatus = enum { expanding, ready };
++
++const InterfaceReplayAddress = struct {
++    family: DraftTemplateFamilyAddress,
++    evidence_digest: [32]u8,
++    provisional_digest: [32]u8,
++};
++
++const InterfaceReplayEntry = struct {
++    evidence: StoredConstFnEvidence,
++    provisional_ty: Type.TypeId,
++    representative: NodeId,
++    duplicates: std.ArrayList(NodeId) = .empty,
++    status: InterfaceReplayStatus = .expanding,
++};
++
++const InterfaceReplayState = struct {
++    entries: std.ArrayList(InterfaceReplayEntry),
++    buckets: std.AutoHashMap(InterfaceReplayAddress, std.ArrayList(u32)),
++
++    fn init(allocator: Allocator) InterfaceReplayState {
++        return .{
++            .entries = .empty,
++            .buckets = std.AutoHashMap(InterfaceReplayAddress, std.ArrayList(u32)).init(allocator),
++        };
++    }
++
++    fn deinit(self: *InterfaceReplayState, allocator: Allocator) void {
++        for (self.entries.items) |*entry| entry.duplicates.deinit(allocator);
++        self.entries.deinit(allocator);
++        var buckets = self.buckets.valueIterator();
++        while (buckets.next()) |bucket| bucket.deinit(allocator);
++        self.buckets.deinit();
++    }
++};
++
+ const BodyContext = struct {
+     allocator: Allocator,
+     builder: *Builder,
+@@ -15239,6 +15173,310 @@ const BodyContext = struct {
+         };
+     }
+ 
++    fn applyCheckedTemplateInterfaceRelations(
++        self: *BodyContext,
++        template: checked.CheckedProcedureTemplate,
++        root_node: NodeId,
++    ) Allocator.Error!void {
++        var replay_state = InterfaceReplayState.init(self.allocator);
++        defer replay_state.deinit(self.allocator);
++        var active_local_scopes = std.AutoHashMap(checked.DispatchScopeId, NodeId).init(self.allocator);
++        defer active_local_scopes.deinit();
++        try self.applyCheckedTemplateInterfaceScopeRelations(
++            template,
++            null,
++            root_node,
++            &active_local_scopes,
++            &replay_state,
++        );
++        try self.finishCheckedTemplateInterfaceReplay(&replay_state);
++    }
++
++    fn applyCheckedTemplateInterfaceScopeRelations(
++        self: *BodyContext,
++        template: checked.CheckedProcedureTemplate,
++        scope_id: ?checked.DispatchScopeId,
++        scope_root_node: NodeId,
++        active_local_scopes: *std.AutoHashMap(checked.DispatchScopeId, NodeId),
++        replay_state: *InterfaceReplayState,
++    ) Allocator.Error!void {
++        const PendingDependency = struct {
++            target: checked.ResolvedValueId,
++            source_fn_ty: checked.CheckedTypeId,
++            request_fn_node: NodeId,
++            provisional_ty: Type.TypeId,
++        };
++        var pending_dependencies = std.ArrayList(PendingDependency).empty;
++        defer pending_dependencies.deinit(self.allocator);
++
++        const relations = self.view.templates.specializationRelations(&template);
++        for (relations) |relation| {
++            if (!dispatchRefBelongsToScope(relation.scope, scope_id)) continue;
++            switch (relation.data) {
++                .type_equality => |equality| try relateRequestComponent(
++                    self.graph,
++                    try self.instNode(equality.left),
++                    try self.instNode(equality.right),
++                ),
++                .procedure => |procedure| {
++                    const fn_node = try self.instNode(procedure.fn_ty);
++                    if (procedure.owns_scope) {
++                        try relateFunctionRequestInterface(self.graph, fn_node, scope_root_node);
++                    }
++                    const function = try self.graph.functionNodes(fn_node);
++                    try relateRequestComponent(
++                        self.graph,
++                        function.ret,
++                        try self.instNode(procedure.body_ret_ty),
++                    );
++                },
++                .call => |call| {
++                    const source_fn_ty = if (call.direct_target) |target|
++                        self.directCallInstantiationSourceFnType(target, call.callable_ty)
++                    else
++                        call.callable_ty;
++                    const fn_node = try self.instNode(source_fn_ty);
++                    try relateRequestComponent(self.graph, fn_node, try self.instNode(call.callee_ty));
++                    const function = try self.graph.functionNodes(fn_node);
++                    const arg_tys = self.view.templates.specializationRelationTypes(call.args);
++                    if (function.args.len != arg_tys.len) {
++                        Common.invariant("checked specialization call relation changed arity");
++                    }
++                    for (function.args, arg_tys) |arg_node, arg_ty| {
++                        try relateRequestComponent(self.graph, arg_node, try self.instNode(arg_ty));
++                    }
++                    try relateRequestComponent(self.graph, function.ret, try self.instNode(call.ret_ty));
++                    if (call.direct_target) |target| {
++                        try pending_dependencies.append(self.allocator, .{
++                            .target = target,
++                            .source_fn_ty = source_fn_ty,
++                            .request_fn_node = fn_node,
++                            .provisional_ty = undefined,
++                        });
++                    }
++                },
++                .local_proc_use => |ref_id| {
++                    const record = self.view.resolved_refs.records[@intFromEnum(ref_id)];
++                    const local = switch (record.ref) {
++                        .local_proc => |local| local,
++                        else => Common.invariant("checked local specialization relation targeted a non-local procedure"),
++                    };
++                    const local_scope = local.dispatch_scope orelse
++                        Common.invariant("generalized local specialization relation had no checked scope");
++                    const request_node = try self.instNode(record.checked_ty);
++                    if (active_local_scopes.get(local_scope)) |active_root| {
++                        try relateFunctionRequestInterface(self.graph, active_root, request_node);
++                        continue;
++                    }
++                    var local_ctx = try BodyContext.initWithMethodScope(
++                        self.allocator,
++                        self.builder,
++                        self.view,
++                        self.method_scope,
++                        self.owner_template,
++                        self.graph,
++                        self.draft,
++                    );
++                    defer local_ctx.deinit();
++                    local_ctx.owner_context_fn_key = self.owner_context_fn_key;
++                    local_ctx.current_fn_key = self.current_fn_key;
++                    const local_root_node = try local_ctx.checkedTemplateInterfaceScopeRootNode(local_scope);
++                    try relateFunctionRequestInterface(self.graph, local_root_node, request_node);
++                    try active_local_scopes.put(local_scope, local_root_node);
++                    defer _ = active_local_scopes.remove(local_scope);
++
++                    const use_evidence = try self.evidenceForUseSiteForPurpose(
++                        record.expr,
++                        .specialization_interface,
++                    );
++                    local_ctx.evidence = try enterEvidenceScope(
++                        self.builder,
++                        self.evidence,
++                        local_scope,
++                        local.expr,
++                        use_evidence,
++                    );
++                    try local_ctx.instantiateTemplateDispatchRelations(template, local_scope);
++                    try local_ctx.applyCheckedTemplateInterfaceScopeRelations(
++                        template,
++                        local_scope,
++                        local_root_node,
++                        active_local_scopes,
++                        replay_state,
++                    );
++                },
++            }
++        }
++
++        for (pending_dependencies.items) |*pending| {
++            pending.provisional_ty = try self.graph.provisionalTypeViewForNode(pending.request_fn_node);
++        }
++        for (pending_dependencies.items) |pending| {
++            try self.applyDirectCalleeInterfaceRelations(
++                pending.target,
++                pending.source_fn_ty,
++                pending.request_fn_node,
++                pending.provisional_ty,
++                replay_state,
++            );
++        }
++    }
++
++    fn checkedTemplateInterfaceScopeRootNode(
++        self: *BodyContext,
++        scope_id: checked.DispatchScopeId,
++    ) Allocator.Error!NodeId {
++        const raw_scope = @intFromEnum(scope_id);
++        if (raw_scope >= self.view.templates.dispatch_scopes.len) {
++            Common.invariant("checked specialization relation named an unknown local scope");
++        }
++        const scheme_root = self.view.templates.dispatch_scopes[raw_scope].scheme_root;
++        return try self.instNode(scheme_root);
++    }
++
++    fn applyDirectCalleeInterfaceRelations(
++        self: *BodyContext,
++        target: checked.ResolvedValueId,
++        source_fn_ty: checked.CheckedTypeId,
++        request_fn_node: NodeId,
++        provisional_ty: Type.TypeId,
++        replay_state: *InterfaceReplayState,
++    ) Allocator.Error!void {
++        const record = self.view.resolved_refs.records[@intFromEnum(target)];
++        const procedure, const root_evidence = switch (record.ref) {
++            .top_level_proc,
++            .imported_proc,
++            .hosted_proc,
++            .promoted_top_level_proc,
++            => |procedure| .{ procedure, @as(?checked.CheckedEvidenceSpan, null) },
++            .platform_required_proc => |required| .{ required.procedure, required.root_evidence },
++            .local_proc => return,
++            else => Common.invariant("checked specialization call relation targeted a non-procedure"),
++        };
++        const template_ref = self.builder.templateRefForProcedureUse(procedure);
++        const callee_view = self.builder.moduleForDigest(names.procTemplateModuleDigest(template_ref));
++        const template = callee_view.templates.get(template_ref.template);
++        const partial_evidence = if (root_evidence) |producer_evidence|
++            try self.builder.materializeCheckedProcedureEvidence(template_ref, producer_evidence)
++        else
++            try self.evidenceForUseSiteForPurpose(record.expr, .specialization_interface);
++        const evidence = if (partial_evidence.len == template.evidence_params.len)
++            partial_evidence
++        else
++            try self.builder.completeRootTemplateEvidenceForPurpose(
++                callee_view,
++                template_ref,
++                template,
++                partial_evidence,
++                .specialization_interface,
++            );
++        const stored_evidence = try self.builder.constFnEvidence(rootEvidence(template_ref, evidence));
++        const evidence_digest = Ast.fnEvidenceDigest(
++            stored_evidence.nodes,
++            stored_evidence.frames,
++            stored_evidence.head,
++        );
++        const source_fn_key = self.view.types.rootKey(source_fn_ty);
++        const provisional_digest = self.builder.specializationTypeDigest(provisional_ty);
++        const address = InterfaceReplayAddress{
++            .family = DraftTemplateFamilyAddress.init(template_ref, self.method_scope.key, source_fn_key),
++            .evidence_digest = evidence_digest.bytes,
++            .provisional_digest = provisional_digest.bytes,
++        };
++
++        if (replay_state.buckets.get(address)) |candidates| for (candidates.items) |raw_entry| {
++            const entry = &replay_state.entries.items[raw_entry];
++            if (!storedConstFnEvidenceEql(entry.evidence, stored_evidence) or
++                !try self.builder.program.types.typeEql(
++                    &self.builder.program.names,
++                    entry.provisional_ty,
++                    provisional_ty,
++                ))
++            {
++                continue;
++            }
++            switch (entry.status) {
++                .expanding => try relateFunctionRequestInterface(
++                    self.graph,
++                    entry.representative,
++                    request_fn_node,
++                ),
++                .ready => try entry.duplicates.append(self.allocator, request_fn_node),
++            }
++            return;
++        };
++
++        const replay_index = replay_state.entries.items.len;
++        try replay_state.entries.append(self.allocator, .{
++            .evidence = stored_evidence,
++            .provisional_ty = provisional_ty,
++            .representative = request_fn_node,
++        });
++        const bucket = try replay_state.buckets.getOrPut(address);
++        if (!bucket.found_existing) bucket.value_ptr.* = .empty;
++        try bucket.value_ptr.append(self.allocator, @intCast(replay_index));
++
++        var callee_ctx = try BodyContext.initWithMethodScope(
++            self.allocator,
++            self.builder,
++            callee_view,
++            self.method_scope,
++            template_ref,
++            self.graph,
++            self.draft,
++        );
++        defer callee_ctx.deinit();
++        callee_ctx.owner_context_fn_key = self.owner_context_fn_key;
++        callee_ctx.current_fn_key = self.current_fn_key;
++        callee_ctx.evidence = rootEvidence(template_ref, evidence);
++        const root_node = try callee_ctx.instNode(template.checked_fn_root);
++        if (template.target == .hosted) {
++            try relateHostedFunctionRequestInterface(
++                self.graph,
++                try self.builder.hostedTryAdapterCapability(callee_view, template.hosted_try_adapter),
++                root_node,
++                request_fn_node,
++            );
++        } else {
++            try relateFunctionRequestInterface(self.graph, root_node, request_fn_node);
++        }
++        try callee_ctx.instantiateTemplateDispatchRelations(template, null);
++
++        var active_local_scopes = std.AutoHashMap(checked.DispatchScopeId, NodeId).init(self.allocator);
++        defer active_local_scopes.deinit();
++        try callee_ctx.applyCheckedTemplateInterfaceScopeRelations(
++            template,
++            null,
++            root_node,
++            &active_local_scopes,
++            replay_state,
++        );
++        replay_state.entries.items[replay_index].status = .ready;
++    }
++
++    fn finishCheckedTemplateInterfaceReplay(
++        self: *BodyContext,
++        replay_state: *InterfaceReplayState,
++    ) Allocator.Error!void {
++        const final_types = try self.allocator.alloc(Type.TypeId, replay_state.entries.items.len);
++        defer self.allocator.free(final_types);
++        for (replay_state.entries.items, final_types) |entry, *final_ty| {
++            if (entry.status != .ready) {
++                Common.invariant("checked specialization interface replay did not finish");
++            }
++            final_ty.* = try self.graph.provisionalTypeViewForNode(entry.representative);
++        }
++        for (replay_state.entries.items, final_types) |entry, final_ty| {
++            for (entry.duplicates.items) |duplicate| {
++                try relateFunctionRequestInterface(
++                    self.graph,
++                    try self.graph.importMono(final_ty),
++                    duplicate,
++                );
++            }
++        }
++    }
++
+     fn lowerEntryWrapperAtCell(
+         self: *BodyContext,
+         wrapper_id: anytype,
+@@ -26782,28 +27020,41 @@ const BodyContext = struct {
+         view: ModuleView,
+         root_expr: checked.CheckedExprId,
+         template: checked.CheckedProcedureTemplate,
++    ) Allocator.Error!?[]const SpecEvidence {
++        return self.rootEdgeEvidenceByExprForPurpose(
++            view,
++            root_expr,
++            template,
++            .body_lowering,
++        );
++    }
++
++    fn rootEdgeEvidenceByExprForPurpose(
++        self: *BodyContext,
++        view: ModuleView,
++        root_expr: checked.CheckedExprId,
++        template: checked.CheckedProcedureTemplate,
++        purpose: EvidenceMaterializationPurpose,
+     ) Allocator.Error!?[]const SpecEvidence {
+         const refs = view.static_dispatch_plans.siteEvidence(root_expr) orelse return null;
+         if (refs.len != template.evidence_params.len) {
+             Common.invariant("compile-time root evidence length differed from its procedure template");
+         }
+-        return try self.materializeEvidence(refs);
++        return try self.materializeEvidenceForPurpose(refs, purpose);
+     }
+ 
+-    /// Root-edge evidence for a template that is (or evaluates) a
+-    /// compile-time root: an entry wrapper, or a checked body whose root
+-    /// expression is a root's body (the root drain requests those directly).
+-    fn rootEdgeEvidence(
++    fn rootEdgeEvidenceForPurpose(
+         self: *BodyContext,
+         view: ModuleView,
+         template: checked.CheckedProcedureTemplate,
++        purpose: EvidenceMaterializationPurpose,
+     ) Allocator.Error!?[]const SpecEvidence {
+         const root_expr = switch (template.body) {
+             .entry_wrapper => |wrapper_id| view.compile_time_roots.root(view.entry_wrappers.get(wrapper_id).root).expr,
+             .checked_body => |body_id| view.bodies.body(body_id).root_expr,
+             .intrinsic_wrapper => return null,
+         };
+-        return try self.rootEdgeEvidenceByExpr(view, root_expr, template);
++        return try self.rootEdgeEvidenceByExprForPurpose(view, root_expr, template, purpose);
+     }
+ 
+     fn lowerConstEvalTemplateUse(
+@@ -32084,11 +32335,19 @@ const BodyContext = struct {
+     /// substituting `constraint(k)` refs from this context's own chain. The
+     /// result feeds a callee specialization's vector.
+     fn materializeEvidence(self: *BodyContext, refs: []const static_dispatch.CheckedEvidence) Allocator.Error![]const SpecEvidence {
++        return self.materializeEvidenceForPurpose(refs, .body_lowering);
++    }
++
++    fn materializeEvidenceForPurpose(
++        self: *BodyContext,
++        refs: []const static_dispatch.CheckedEvidence,
++        purpose: EvidenceMaterializationPurpose,
++    ) Allocator.Error![]const SpecEvidence {
+         if (refs.len == 0) return &.{};
+         const arena = self.builder.evidence_arena.allocator();
+         const out = try arena.alloc(SpecEvidence, refs.len);
+         for (refs, 0..) |ref, i| {
+-            out[i] = try self.materializeEvidenceRef(ref);
++            out[i] = try self.materializeEvidenceRef(ref, purpose);
+         }
+         return out;
+     }
+@@ -32126,17 +32385,21 @@ const BodyContext = struct {
+                         component_node,
+                     );
+                 },
+-                else => try self.materializeEvidenceRef(ref),
++                else => try self.materializeEvidenceRef(ref, .body_lowering),
+             };
+         }
+         return out;
+     }
+ 
+-    fn materializeEvidenceRef(self: *BodyContext, ref: static_dispatch.CheckedEvidence) Allocator.Error!SpecEvidence {
++    fn materializeEvidenceRef(
++        self: *BodyContext,
++        ref: static_dispatch.CheckedEvidence,
++        purpose: EvidenceMaterializationPurpose,
++    ) Allocator.Error!SpecEvidence {
+         switch (ref) {
+             .direct => |node_id| {
+                 const node = self.view.static_dispatch_plans.evidenceNode(node_id);
+-                return .{ .target = try self.materializeEvidenceTarget(node) };
++                return .{ .target = try self.materializeEvidenceTarget(node, purpose) };
+             },
+             .constraint => |constraint_ref| {
+                 const entry = self.evidence.at(constraint_ref) orelse
+@@ -32150,10 +32413,17 @@ const BodyContext = struct {
+         }
+     }
+ 
+-    fn materializeEvidenceTarget(self: *BodyContext, node: static_dispatch.EvidenceNode) Allocator.Error!*const SpecEvidenceTarget {
++    fn materializeEvidenceTarget(
++        self: *BodyContext,
++        node: static_dispatch.EvidenceNode,
++        purpose: EvidenceMaterializationPurpose,
++    ) Allocator.Error!*const SpecEvidenceTarget {
+         const arena = self.builder.evidence_arena.allocator();
+         const out = try arena.create(SpecEvidenceTarget);
+-        const lookup = try self.withLocalProcContext(self.methodLookupForResolvedTarget(node.target));
++        const lookup = try self.methodLookupForEvidencePurpose(
++            self.methodLookupForResolvedTarget(node.target),
++            purpose,
++        );
+         out.* = .{
+             .view = lookup.view,
+             .target = node.target,
+@@ -32163,7 +32433,10 @@ const BodyContext = struct {
+             },
+             .local_proc_context = lookup.local_proc_context,
+             .nested = switch (node.nested) {
+-                .resolved => .{ .resolved = try self.materializeEvidence(self.view.static_dispatch_plans.nestedEvidence(node)) },
++                .resolved => .{ .resolved = try self.materializeEvidenceForPurpose(
++                    self.view.static_dispatch_plans.nestedEvidence(node),
++                    purpose,
++                ) },
+                 .from_callable => .synthesize,
+             },
+         };
+@@ -32310,8 +32583,16 @@ const BodyContext = struct {
+     /// value use resolved in this context's module), or empty when the use
+     /// carries no requirements.
+     fn evidenceForUseSite(self: *BodyContext, expr: checked.CheckedExprId) Allocator.Error![]const SpecEvidence {
++        return self.evidenceForUseSiteForPurpose(expr, .body_lowering);
++    }
++
++    fn evidenceForUseSiteForPurpose(
++        self: *BodyContext,
++        expr: checked.CheckedExprId,
++        purpose: EvidenceMaterializationPurpose,
++    ) Allocator.Error![]const SpecEvidence {
+         const refs = self.view.static_dispatch_plans.siteEvidence(expr) orelse return &.{};
+-        return self.materializeEvidence(refs);
++        return self.materializeEvidenceForPurpose(refs, purpose);
+     }
+ 
+     /// Evidence vector for a dispatch plan's chosen target (the target's own
+@@ -32716,6 +32997,22 @@ const BodyContext = struct {
+         return contextual;
+     }
+ 
++    fn methodLookupForEvidencePurpose(
++        self: *BodyContext,
++        lookup: MethodLookup,
++        purpose: EvidenceMaterializationPurpose,
++    ) Allocator.Error!MethodLookup {
++        return switch (purpose) {
++            .body_lowering => try self.withLocalProcContext(lookup),
++            .specialization_interface => blk: {
++                if (lookup.local_proc_context != null) {
++                    Common.invariant("checked specialization-interface evidence unexpectedly carried a draft-local context");
++                }
++                break :blk lookup;
++            },
++        };
++    }
++
+     fn validateLocalProcContext(
+         self: *BodyContext,
+         context_id: DraftLocalProcContextId,
+diff --git c/src/postcheck/monotype/solve.zig i/src/postcheck/monotype/solve.zig
+index 540fcf87cf..eea04e340a 100644
+--- c/src/postcheck/monotype/solve.zig
++++ i/src/postcheck/monotype/solve.zig
+@@ -1015,12 +1015,12 @@ pub const InstGraph = struct {
+                 if (named.args.len != 1) {
+                     Common.invariant("forced-dynamic iterator identity did not have exactly one item argument");
+                 }
+-                const item = try self.finalTypeViewForNode(named.args[0]);
++                const item = try self.provisionalTypeViewForNode(named.args[0]);
+                 const item_digest = self.types.typeDigest(self.name_store, item);
+                 hasher.update("roc.generated_iterator.forced_dynamic_identity");
+                 hasher.update(&item_digest.bytes);
+             } else {
+-                const final = try self.finalTypeViewForNode(node);
++                const final = try self.provisionalTypeViewForNode(node);
+                 const shape = self.types.typeDigest(self.name_store, final);
+                 hasher.update("roc.generated_iterator.final_identity");
+                 hasher.update(&shape.bytes);
+@@ -3641,12 +3641,12 @@ pub const InstGraph = struct {
+         return out;
+     }
+ 
+-    /// Materialize a read-only Monotype-shaped view of a node's FINAL shape,
+-    /// applying recorded defaults to any still-unresolved leaves. Valid only
+-    /// inside final graph sealing, after every relation has been applied and
+-    /// only defaults remain; the returned TypeId is graph-owned scratch state
+-    /// and must not be written to completed Monotype output.
+-    fn finalTypeViewForNode(self: *InstGraph, node: NodeId) Allocator.Error!Type.TypeId {
++    /// Materialize an immutable Monotype-shaped view of a node under the
++    /// relations produced so far, applying defaults to unresolved leaves in
++    /// the view only. The live graph is unchanged. This is collision authority
++    /// for provisional relation-replay memos and finalization probes; the
++    /// returned graph-owned scratch TypeId must not be emitted as output.
++    pub fn provisionalTypeViewForNode(self: *InstGraph, node: NodeId) Allocator.Error!Type.TypeId {
+         self.requireRelationProduction();
+         if (self.imported_monos.get(node)) |imported| return imported;
+         if (try self.typeIsResolved(node)) return try self.monoFor(node);
+diff --git c/test/cli/Issue10529OpenTryChainBuildTime.roc i/test/cli/Issue10529OpenTryChainBuildTime.roc
+new file mode 100644
+index 0000000000..548c2a4508
+--- /dev/null
++++ i/test/cli/Issue10529OpenTryChainBuildTime.roc
+@@ -0,0 +1,20 @@
++app [main!] { pf: platform "../fx-open/platform/main.roc" }
++
++# Repro for https://github.com/roc-lang/roc/issues/10529
++
++take0 = |b| Ok({ val: b.get(0).map_err(|_| End)?, rest: b.drop_first(1) })
++take1 = |b| Ok({ val: take0(b)?.val, rest: take0(b)?.rest })
++take2 = |b| Ok({ val: take1(b)?.val, rest: take1(b)?.rest })
++take3 = |b| Ok({ val: take2(b)?.val, rest: take2(b)?.rest })
++take4 = |b| Ok({ val: take3(b)?.val, rest: take3(b)?.rest })
++take5 = |b| Ok({ val: take4(b)?.val, rest: take4(b)?.rest })
++take6 = |b| Ok({ val: take5(b)?.val, rest: take5(b)?.rest })
++take7 = |b| Ok({ val: take6(b)?.val, rest: take6(b)?.rest })
++take8 = |b| Ok({ val: take7(b)?.val, rest: take7(b)?.rest })
++take9 = |b| Ok({ val: take8(b)?.val, rest: take8(b)?.rest })
++
++main! : List(Str) => Try({}, [Exit(I32), ..])
++main! = |_args| {
++	_ = take9([1, 2, 3])
++	Ok({})
++}

@@ -1,58 +1,67 @@
-app [Model, init!, update!, render] {
-    pf: platform "../platform/main.roc",
-    html: "https://github.com/niclas-ahden/joy-html/releases/download/0.14.0/IVK93mBqjterEFSYijs67Dkl1rYfu0qGl4PAhSPGET0.tar.br",
+app [Model, Msg, init, update, render, subscriptions] {
+	pf: platform "../platform/main.roc",
+	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.15.0/5Yoz712P8ed4MBW74eddTEJdZ92ZDCUbVGFkt4XXSuj9.tar.zst",
 }
 
-import html.Html exposing [Html, div, textarea, p, h1, text]
-import html.Attribute exposing [rows, cols]
-import html.Event
-import pf.Action exposing [Action]
+import html.Html exposing [Html, div, form, textarea, label, input, button, p, h1, text]
+import html.Attribute exposing [rows, cols, type, checked, on_input, on_submit, on_check]
+import pf.Effect exposing [Effect]
 import pf.Console
 
-Model : Str
+Model : { draft : Str, saved : Str, secret : Bool }
 
-Event : [
-    UserTypedSomething Str,
+Msg : [
+	UserTypedSomething(Str),
+	UserSavedEntry,
+	UserToggledSecret(Bool),
 ]
 
-init! : Str => Model
-init! = |_flags| ""
+subscriptions = |_model| []
 
-update! : Model, Str, List U8 => Action Model
-update! = |_model, raw, payload|
-    when decode_event(raw, payload) is
-        UserTypedSomething(message) ->
-            Console.log!("User typed: ${message}")
-            message |> Action.update
+init : Str -> (Model, List(Effect(Msg)))
+init = |_| ({ draft: "", saved: "", secret: Bool.False }, [])
 
-render : Model -> Html Model
-render = |model|
-    div(
-        [],
-        [
-            h1([], [text("Dear diary")]),
-            textarea(
-                [rows("10"), cols("30"), Event.on_input(encode_event(UserTypedSomething))],
-                [],
-            ),
-            p([], [text(model)]),
-        ],
-    )
+update : Model, Msg -> (Model, List(Effect(Msg)))
+update = |model, msg|
+	match msg {
+		UserTypedSomething(message) =>
+			({ ..model, draft: message }, [Console.log("User typed: ${message}")])
 
-## `encodeEvent` does not take an `Event` because `Event`s may have payloads that don't make sense
-## to pass in when encoding. In this example we want the event `UserTypedSomething` to trigger
-## on input in the textarea. The event will be triggered with the content of the texarea as its
-## payload. If `encodeEvent` took `Event` we would have to pass in some nonsense payload above.
-##
-## Regrettably, this means that the tag `UserTypedSomething` _looks_ like an `Event` but it's
-## not. It's just a tag that happens to look similar to the `Event` `UserTypedSomething Str`.
-## Therefore, Roc cannot guarantee that we have written a decoder for every tag that we have an
-## encoder for.
-encode_event : _ -> Str
-encode_event = |event| Inspect.to_str(event)
+		UserSavedEntry => ({ ..model, saved: model.draft }, [])
 
-decode_event : Str, List U8 -> Event
-decode_event = |raw, payload|
-    when raw is
-        "UserTypedSomething" -> UserTypedSomething(Str.from_utf8_lossy(payload))
-        _ -> crash("Unsupported event type \"${raw}\", payload \"${Inspect.to_str(payload)}\"")
+		UserToggledSecret(secret) => ({ ..model, secret }, [])
+	}
+
+render : Model -> Html(Msg)
+render = |model| {
+	secret_status = if model.secret "on" else "off"
+	div(
+		[],
+		[
+			h1([], [text("Dear diary")]),
+			# Submitting (Enter or the button) never reloads the page:
+			# on_submit prevents the browser default and sends the msg.
+			form(
+				[on_submit(UserSavedEntry)],
+				[
+					textarea(
+						# `|s| UserTypedSomething(s)` rather than a bare `UserTypedSomething`:
+						# tag constructors aren't first-class functions in Roc.
+						[rows(10), cols(30), on_input(|s| UserTypedSomething(s))],
+						[],
+					),
+					button([type("submit")], [text("Save entry")]),
+				],
+			),
+			label(
+				[],
+				[
+					input([type("checkbox"), checked(model.secret), on_check(|s| UserToggledSecret(s))]),
+					text("Secret (${secret_status})"),
+				],
+			),
+			p([], [text(model.draft)]),
+			p([], [text("Saved: ${model.saved}")]),
+		],
+	)
+}

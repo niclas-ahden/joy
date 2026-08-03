@@ -4,21 +4,21 @@ A framework for building full-stack web apps in Roc!
 
 Joy is a jolt of happiness for those who want a fast, productive, fun, and statically-typed environment for full-stack development.
 
-It's a fork of Luke Boswell's awesome [Roc Experiment JS DOM](https://github.com/lukewilliamboswell/roc-experiment-js-dom) which opened up the avenue for me to use Roc on the front-end. Thank you Luke!
-
 ## Goals
 
 Joy should provide:
-* A convenient way of writing apps that run on the server and client (sometimes called "isomorphic" apps)
-* A convenient way of communicating between the front- and back-end (perhaps [Server Functions](https://book.leptos.dev/server/25_server_functions.html), or message-passing over websockets, or ...)
-* Geat developer experience (feedback, iteration time, tooling, etc.)
-* Great performance for the vast majority of apps, but not at any cost (in line with Roc's philosophy of aiming for Go's performance rather than Rust's)
+* A convenient way of writing full-stack apps all in Roc (sometimes called "isomorphic" apps).
+* A convenient way of communicating between the front- and back-end (think [Server Functions](https://book.leptos.dev/server/25_server_functions.html) or a protocol for message-passing over Server-Sent Events, websockets, and/or plain old requests).
+* Great developer experience (feedback, iteration time, tooling, etc.)
+* Great performance for the vast majority of apps, but not at any cost.
 
 ## Status
 
-Joy is fun to play with, but it's in early development, not production-ready, is missing most of its intended features, and will change a lot. Even the underpinning technologies are not production-ready ([Roc](https://www.roc-lang.org), [`percy-dom`](https://github.com/chinedufn/percy)). Here be dragons!
+Joy is fun to play with, but it's in early development, not production-ready. Here be dragons!
 
-You can already build full-stack or single-page applications in it but the functionality is severely limited. Have a look at the [examples](https://github.com/niclas-ahden/joy/tree/main/examples) to get a grasp on what's currently supported.
+You can already build single-page applications in it but the functionality is limited. Have a look at the [examples](https://github.com/niclas-ahden/joy/tree/main/examples) to get a grasp on what's currently supported. See [Joy TodoMVC](https://www.github.com/niclas-ahden/joy-todomvc) for a complete front-end example.
+
+A full-stack example will follow! In the meantime you can use [`roc-lang/basic-webserver`](https://www.github.com/roc-lang/basic-webserver) and [`joy-html`](https://www.github.com/niclas-ahden/joy-html) to serve Joy HTML from the back-end.
 
 Have fun and expect breaking changes!
 
@@ -27,56 +27,74 @@ Have fun and expect breaking changes!
 A client-side counter:
 
 ```roc
-app [Model, init!, update!, render] {
+app [Model, Msg, init, update, render, subscriptions] {
     pf: platform "../platform/main.roc",
-    html: "https://github.com/niclas-ahden/joy-html/releases/download/0.14.0/IVK93mBqjterEFSYijs67Dkl1rYfu0qGl4PAhSPGET0.tar.br",
+    html: "https://github.com/niclas-ahden/joy-html/releases/download/0.15.0/5Yoz712P8ed4MBW74eddTEJdZ92ZDCUbVGFkt4XXSuj9.tar.zst",
 }
 
 import html.Html exposing [Html, div, button, text]
-import html.Event
-import pf.Action exposing [Action]
+import html.Attribute exposing [on_click]
+import pf.Effect exposing [Effect]
 
-Model : I64
+Model : { count : I64 }
 
-init! : Str => Model
-init! = |_flags| 0
+Msg : [Increment, Decrement]
 
-Event : [
-    UserClickedDecrement,
-    UserClickedIncrement,
-]
+# No recurring event sources.
+subscriptions = |_model| []
 
-update! : Model, Str, List U8 => Action Model
-update! = |model, raw, _payload|
-    when decode_event(raw) is
-        UserClickedDecrement -> Num.sub_wrap(model, 1) |> Action.update
-        UserClickedIncrement -> Num.add_wrap(model, 1) |> Action.update
+init : Str -> (Model, List(Effect(Msg)))
+init = |_| ({ count: 0 }, [])
 
-render : Model -> Html Model
+update : Model, Msg -> (Model, List(Effect(Msg)))
+update = |model, msg|
+    match msg {
+        Increment => ({ count: model.count + 1 }, [])
+        Decrement => ({ count: model.count - 1 }, [])
+    }
+
+render : Model -> Html(Msg)
 render = |model|
     div(
         [],
         [
-            button([Event.on_click(encode_event(UserClickedIncrement))], [text("+")]),
-            text(Inspect.to_str(model)),
-            button([Event.on_click(encode_event(UserClickedDecrement))], [text("-")]),
+            button([on_click(Increment)], [text("+")]),
+            text(model.count.to_str()),
+            button([on_click(Decrement)], [text("-")]),
         ],
     )
-
-encode_event : Event -> Str
-encode_event = |event| Inspect.to_str(event)
-
-decode_event : Str -> Event
-decode_event = |raw|
-    when raw is
-        "UserClickedIncrement" -> UserClickedIncrement
-        "UserClickedDecrement" -> UserClickedDecrement
-        _ -> crash("Unsupported event type \"${raw}\"")
 ```
 
-[See more examples](https://github.com/niclas-ahden/joy/tree/main/examples)
+[See more examples](https://github.com/niclas-ahden/joy/tree/main/examples) | [TodoMVC](https://www.github.com/niclas-ahden/joy-todomvc)
 
-## Try it out
+### Run an example
+
+Pick an [example](https://github.com/niclas-ahden/joy/tree/main/examples) and run it like so:
+
+```sh
+$ ./watch.roc examples/hello.roc
+```
+
+The application should now be available at: [`http://localhost:8000`](http://localhost:8000)
+
+Start modifying the example to get a feel for it. Refresh the browser to see your changes (the app is recompiled on change but there's no browser hot-reloading yet).
+
+## Performance
+
+Joy is tracked against the [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark), with one keyed and one non-keyed entry. Numbers below are from a local run and gives you a rough idea of our relative performance:
+
+| | Joy (keyed) | Joy (non-keyed) | Elm (keyed) | Elm (non-keyed) | React | vanilla JS |
+|---|---|---|---|---|---|---|
+| CPU geomean (ms) | 40.7 | 36.4 | 32.5 | 30.4 | 41.9 | 23.9 |
+| Slowdown vs best | 1.83× | 1.64× | 1.46× | 1.37× | 1.88× | 1.07× |
+| Memory (MB) | 7.7 | 7.7 | 1.3 | 1.3 | 2.2 | 0.8 |
+| Bundle, compressed (KB) | 45.3 | 45.3 | 7.9 | 8.2 | 51.4 | 2.4 |
+
+## Contributing
+
+Contributions are very welcome, including feature requests, design discussion, etc.
+
+## Development setup
 
 Clone the repo and use the included Nix flake to set up your development environment:
 
@@ -86,88 +104,12 @@ $ nix develop # Oh, lord, have mercy! This is great!
 
 If you don't want to use Nix then please install:
 
-* [`roc`](https://www.roc-lang.org/install) (see [Roc compiler and roc_std versions](#roc-compiler-and-roc_std-versions) below)
-* `zig 13`
-* `rustc`
-* `cargo`
-* `lld`
-* [`wasm-pack`](https://rustwasm.github.io/wasm-pack/installer/)
-* `simple-http-server`
-* `inotify-tools` (on Linux)
+* [`roc`](https://www.roc-lang.org/install)
+* `rustc` (v1.94 + `wasm32-unknown-unknown`)
+* `node` (v22)
 * `watchexec`
 
-### Run an example
-
-Pick an [example](https://github.com/niclas-ahden/joy/tree/main/examples) and run it like so:
-
-```sh
-$ ./watch.sh examples/hello.roc
-```
-
-The application should now be available at: [`http://localhost:3000`](http://localhost:3000)
-
-Start modifying the example to get a feel for it. Refresh the browser to see your changes (the app is recompiled on change but there's no browser hot-reloading yet).
-
-### Deploying an app
-
-#### Full-stack apps
-
-TBD
-
-#### SPA / Client-side apps
-
-Delete existing assets then build for release:
-
-```sh
-$ rm -rf ./www/pkg
-$ ./build.sh --release examples/hello.roc
-```
-
-You'll end up with a complete front-end app in the `www` directory. You can deploy that anywhere as you see fit.
-
-## Contributing
-
-Contributions are very welcome, including feature requests, design discussion, etc.
-
-If you're working on performance, see [BENCHMARK.md](./BENCHMARK.md) for how Joy's
-performance is measured and tracked over time.
-
-## Development setup
-
-Do everything under "Try it out" and you're golden.
-
-The `./watch.sh` script will recompile your Roc application and the client-side platform on change.
-
-### CLI
-
-Using WASI to debug the Roc FFI without the complications of `wasm-pack` and the browser.
-
-Install [`bytecodealliance/cargo-wasi`](https://github.com/bytecodealliance/cargo-wasi), then:
-
-```sh
-$ ./run-cli.sh examples/hello.roc
-```
-
-### Roc compiler and `roc_std` versions
-
-The Joy client-side platform is written in Rust and depends on the crate `roc_std` from the Roc project. You must ensure that your Roc compiler version is the same as the `roc_std` version that Joy uses.
-
-#### Using Nix flake (recommended)
-
-This is taken care of for you if you use the Nix flake. We ensure that the Roc compiler version in `flake.lock` and the `roc_std` version in `Cargo.lock` are the same.
-
-If you want to change which versions are used you can specify the version or commit in `flake.nix` and `Cargo.toml`.
-
-You can also just update to the latest commit of both like so:
-
-```sh
-$ nix flake update roc
-$ cargo update roc_std
-```
-
-#### Not using Nix flake
-
-If you're not using the Nix flake you'll need to ensure that the versions line up yourself. It's probably easiest to install the version of Roc that you'd like and then specify that version of `roc_std` in `Cargo.toml`.
+The `./watch.roc` script will recompile your Roc application and the client-side platform on change.
 
 ## Sponsors
 

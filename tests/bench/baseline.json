@@ -1,7 +1,1 @@
-{
-  "render": 1.2,
-  "convert": 2.8,
-  "diff_patch": 3.1,
-  "total": 7.1,
-  "samples": 200
-}
+{"update": 0, "render": 0, "diff": 0.19999998807907104, "paint": 0.09999996423721313, "busy": 0.3999999761581421}

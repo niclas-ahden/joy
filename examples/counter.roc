@@ -1,46 +1,36 @@
-app [Model, init!, update!, render] {
-    pf: platform "../platform/main.roc",
-    html: "https://github.com/niclas-ahden/joy-html/releases/download/0.14.0/IVK93mBqjterEFSYijs67Dkl1rYfu0qGl4PAhSPGET0.tar.br",
+app [Model, Msg, init, update, render, subscriptions] {
+	pf: platform "../platform/main.roc",
+	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.15.0/5Yoz712P8ed4MBW74eddTEJdZ92ZDCUbVGFkt4XXSuj9.tar.zst",
 }
 
 import html.Html exposing [Html, div, button, text]
-import html.Event
-import pf.Action exposing [Action]
+import html.Attribute exposing [on_click]
+import pf.Effect exposing [Effect]
 
-Model : I64
+Model : { count : I64 }
 
-init! : Str => Model
-init! = |_flags| 0
+Msg : [Increment, Decrement]
 
-Event : [
-    UserClickedDecrement,
-    UserClickedIncrement,
-]
+# No recurring event sources.
+subscriptions = |_model| []
 
-update! : Model, Str, List U8 => Action Model
-update! = |model, raw, _payload|
-    when decode_event(raw) is
-        UserClickedDecrement -> Num.sub_wrap(model, 1) |> Action.update
-        UserClickedIncrement -> Num.add_wrap(model, 1) |> Action.update
+init : Str -> (Model, List(Effect(Msg)))
+init = |_| ({ count: 0 }, [])
 
-render : Model -> Html Model
+update : Model, Msg -> (Model, List(Effect(Msg)))
+update = |model, msg|
+	match msg {
+		Increment => ({ count: model.count + 1 }, [])
+		Decrement => ({ count: model.count - 1 }, [])
+	}
+
+render : Model -> Html(Msg)
 render = |model|
-    div(
-        [],
-        [
-            button([Event.on_click(encode_event(UserClickedIncrement))], [text("+")]),
-            text(Inspect.to_str(model)),
-            button([Event.on_click(encode_event(UserClickedDecrement))], [text("-")]),
-        ],
-    )
-
-encode_event : Event -> Str
-encode_event = |event| Inspect.to_str(event)
-
-decode_event : Str -> Event
-decode_event = |raw|
-    when raw is
-        "UserClickedIncrement" -> UserClickedIncrement
-        "UserClickedDecrement" -> UserClickedDecrement
-        _ -> crash("Unsupported event type \"${raw}\"")
-
+	div(
+		[],
+		[
+			button([on_click(Increment)], [text("+")]),
+			text(model.count.to_str()),
+			button([on_click(Decrement)], [text("-")]),
+		],
+	)

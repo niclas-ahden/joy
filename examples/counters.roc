@@ -1,145 +1,113 @@
-app [Model, init!, update!, render] {
-    pf: platform "../platform/main.roc",
-    html: "https://github.com/niclas-ahden/joy-html/releases/download/0.14.0/IVK93mBqjterEFSYijs67Dkl1rYfu0qGl4PAhSPGET0.tar.br",
+app [Model, Msg, init, update, render, subscriptions] {
+	pf: platform "../platform/main.roc",
+	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.15.0/5Yoz712P8ed4MBW74eddTEJdZ92ZDCUbVGFkt4XXSuj9.tar.zst",
 }
 
-import pf.Action exposing [Action]
 import html.Html exposing [Html, div, button, ul, li, text]
-import html.Attribute exposing [style]
-import html.Event
+import html.Attribute exposing [style, on_click]
+import pf.Effect exposing [Effect]
+
+# Three independent counters. Exercises messages with payloads
+# (`UserClickedIncrement(Left)`) crossing the boundary as real values.
 
 Model : {
-    left : I64,
-    middle : I64,
-    right : I64,
+	left : I64,
+	middle : I64,
+	right : I64,
 }
 
-init! : _ => Model
-init! = |_flags| {
-    left: -10,
-    middle: 0,
-    right: 10,
-}
-
-Event : [
-    UserClickedDecrement [Left, Middle, Right],
-    UserClickedIncrement [Left, Middle, Right],
+Msg : [
+	UserClickedDecrement([Left, Middle, Right]),
+	UserClickedIncrement([Left, Middle, Right]),
 ]
 
-update! : Model, Str, List U8 => Action Model
-update! = |model, raw, _payload|
-    when decode_event(raw) is
-        UserClickedDecrement(Left) -> model |> &left(Num.sub_wrap(model.left, 1)) |> Action.update
-        UserClickedDecrement(Middle) -> model |> &middle(Num.sub_wrap(model.middle, 1)) |> Action.update
-        UserClickedDecrement(Right) -> model |> &right(Num.sub_wrap(model.right, 1)) |> Action.update
-        UserClickedIncrement(Left) -> model |> &left(Num.add_wrap(model.left, 1)) |> Action.update
-        UserClickedIncrement(Middle) -> model |> &middle(Num.add_wrap(model.middle, 1)) |> Action.update
-        UserClickedIncrement(Right) -> model |> &right(Num.add_wrap(model.right, 1)) |> Action.update
+# No recurring event sources.
+subscriptions = |_model| []
 
-render : Model -> Html Model
+init : Str -> (Model, List(Effect(Msg)))
+init = |_| (
+	{
+		left: -10,
+		middle: 0,
+		right: 10,
+	},
+	[],
+)
+
+update : Model, Msg -> (Model, List(Effect(Msg)))
+update = |model, msg|
+	match msg {
+		UserClickedDecrement(Left) => ({ ..model, left: model.left - 1 }, [])
+		UserClickedDecrement(Middle) => ({ ..model, middle: model.middle - 1 }, [])
+		UserClickedDecrement(Right) => ({ ..model, right: model.right - 1 }, [])
+		UserClickedIncrement(Left) => ({ ..model, left: model.left + 1 }, [])
+		UserClickedIncrement(Middle) => ({ ..model, middle: model.middle + 1 }, [])
+		UserClickedIncrement(Right) => ({ ..model, right: model.right + 1 }, [])
+	}
+
+render : Model -> Html(Msg)
 render = |model|
-    div(
-        [
-            style(
-                [
-                    ("display", "flex"),
-                    ("justify-content", "space-around"),
-                    ("padding", "20px"),
-                ],
-            ),
-        ],
-        [
-            counter(Left, model.left),
-            counter(Middle, model.middle),
-            counter(Right, model.right),
-        ],
-    )
+	div(
+		[
+			style([
+				("display", "flex"),
+				("justify-content", "space-around"),
+				("padding", "20px"),
+			]),
+		],
+		[
+			counter(Left, model.left),
+			counter(Middle, model.middle),
+			counter(Right, model.right),
+		],
+	)
 
-counter : [Left, Middle, Right], I64 -> _
+counter : [Left, Middle, Right], I64 -> Html(Msg)
 counter = |variant, value|
-    ul(
-        [
-            style(
-                [
-                    ("list-style", "none"),
-                    ("padding", "0"),
-                    ("text-align", "center"),
-                ],
-            ),
-        ],
-        [
-            li(
-                [],
-                [
-                    button(
-                        [
-                            style(
-                                [
-                                    ("background-color", "red"),
-                                    ("color", "white"),
-                                    ("padding", "10px 20px"),
-                                    ("border", "none"),
-                                    ("border-radius", "5px"),
-                                    ("cursor", "pointer"),
-                                    ("margin", "5px"),
-                                    ("font-size", "16px"),
-                                ],
-                            ),
-                            Event.on_click(encode_event(UserClickedDecrement(variant))),
-                        ],
-                        [text("-")],
-                    ),
-                ],
-            ),
-            li(
-                [
-                    style(
-                        [
-                            ("font-size", "24px"),
-                            ("margin", "15px 0"),
-                            ("font-weight", "bold"),
-                        ],
-                    ),
-                ],
-                [text(Inspect.to_str(value))],
-            ),
-            li(
-                [],
-                [
-                    button(
-                        [
-                            style(
-                                [
-                                    ("background-color", "blue"),
-                                    ("color", "white"),
-                                    ("padding", "10px 20px"),
-                                    ("border", "none"),
-                                    ("border-radius", "5px"),
-                                    ("cursor", "pointer"),
-                                    ("margin", "5px"),
-                                    ("font-size", "16px"),
-                                ],
-                            ),
-                            Event.on_click(encode_event(UserClickedIncrement(variant))),
-                        ],
-                        [text("+")],
-                    ),
-                ],
-            ),
-        ],
-    )
-
-encode_event : Event -> Str
-encode_event = |event| Inspect.to_str(event)
-
-decode_event : Str -> Event
-decode_event = |raw|
-    when raw is
-        "(UserClickedIncrement Left)" -> UserClickedIncrement(Left)
-        "(UserClickedIncrement Right)" -> UserClickedIncrement(Right)
-        "(UserClickedIncrement Middle)" -> UserClickedIncrement(Middle)
-        "(UserClickedDecrement Left)" -> UserClickedDecrement(Left)
-        "(UserClickedDecrement Right)" -> UserClickedDecrement(Right)
-        "(UserClickedDecrement Middle)" -> UserClickedDecrement(Middle)
-        _ -> crash("Unsupported event type \"${raw}\"")
-
+	ul(
+		[
+			style([
+				("list-style", "none"),
+				("padding", "0"),
+				("text-align", "center"),
+			]),
+		],
+		[
+			li(
+				[],
+				[
+					button(
+						[
+							style([
+								("background-color", "red"),
+								("color", "white"),
+								("padding", "10px 20px"),
+							]),
+							on_click(UserClickedDecrement(variant)),
+						],
+						[text("-")],
+					),
+				],
+			),
+			li(
+				[style([("font-size", "24px"), ("font-weight", "bold")])],
+				[text(value.to_str())],
+			),
+			li(
+				[],
+				[
+					button(
+						[
+							style([
+								("background-color", "blue"),
+								("color", "white"),
+								("padding", "10px 20px"),
+							]),
+							on_click(UserClickedIncrement(variant)),
+						],
+						[text("+")],
+					),
+				],
+			),
+		],
+	)

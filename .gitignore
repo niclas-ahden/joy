@@ -2,12 +2,10 @@
 *
 !*.*
 !*/
-!Caddyfile
 
 # Build artifacts
 target/
 generated-docs/
-asdf/
 *.a
 *.o
 *.ll
@@ -15,11 +13,15 @@ asdf/
 .envrc
 watch_output.log
 
-# Test build artifacts
-tests/apps/*/www/
-
-# Raw benchmark run snapshots (trend line lives in benchmarks/jsframework/history.jsonl)
-benchmarks/jsframework/runs/
+# Generated build outputs (new-compiler platform)
+build/
+platform/targets/
 
 # Local working notes
 notes/
+
+# Platform bundles from ./bundle.roc
+dist/
+
+# The devShell profile ./cache.roc --shell builds to push
+.cachix-profile*

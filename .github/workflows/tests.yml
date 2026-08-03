@@ -19,16 +19,34 @@ jobs:
       - uses: cachix/install-nix-action@02a151ada4993995686f9ed4f1be7cfbb229e56f # v31
         with:
           nix_path: nixpkgs=channel:nixos-unstable
-          # Trust magic-nix-cache-action's local cache server and accept its unsigned paths
+          # Signature checking stays on for the public caches. Only
+          # magic-nix-cache-action's local server is trusted unsigned
+          # (?trusted=1) because it merely replays this repo's own CI builds.
           extra_nix_config: |
-            substituters = https://cache.nixos.org http://127.0.0.1:37515
-            trusted-substituters = https://cache.nixos.org http://127.0.0.1:37515
-            require-sigs = false
+            substituters = https://cache.nixos.org https://niclas-ahden.cachix.org http://127.0.0.1:37515?trusted=1
+            trusted-substituters = https://cache.nixos.org https://niclas-ahden.cachix.org http://127.0.0.1:37515?trusted=1
+            accept-flake-config = true
+            extra-trusted-public-keys = niclas-ahden.cachix.org-1:FdGli1vBk0cTuVJV27Tau/JvlbW+Ly3pRwFByyqdke0=
 
       - uses: DeterminateSystems/magic-nix-cache-action@v13
+
+      # --max-jobs 0 forbids local builds, so a compiler that is missing from
+      # the binary cache shows up here as a warning naming the fix, instead of
+      # as half an hour of silent compiling inside the next step.
+      - name: Substitute the Roc compiler
+        run: |
+          nix build .#roc --no-link --max-jobs 0 \
+            || echo "::warning::The pinned Roc compiler is not in the binary cache, so this run builds it from source. Run ./cache.roc to push it."
 
       - name: Fetch Nix dependencies
         run: nix develop --command true
 
-      - name: Run tests
-        run: nix develop -c sh -c './tests.sh'
+      # tests.roc builds via build.roc (host object + every example) and runs
+      # the node harnesses.
+      - name: Build host + examples and run checks
+        run: nix develop -c ./tests.roc
+
+      # Second pass with tiny initial outbound buffers so every render
+      # exercises the buffer growth path.
+      - name: Re-run checks with small buffers
+        run: nix develop -c env SMALL_BUFFERS=1 ./tests.roc
