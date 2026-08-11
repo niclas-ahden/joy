@@ -73,6 +73,15 @@
 
           buildPhase = ''
             export HOME=$TMPDIR
+          '' + lib.optionalString pkgs.stdenv.hostPlatform.isDarwin ''
+            # Zig finds macOS frameworks by running xcrun, which no nix build
+            # has on its PATH, so linking CoreFoundation/CoreServices for the
+            # watch module fails. Zig does read these two nixpkgs variables, so
+            # point them at the SDK the darwin stdenv already provides. Don't
+            # reach for --sysroot instead, it turns this detection off.
+            export NIX_CFLAGS_COMPILE="''${NIX_CFLAGS_COMPILE:-} -iframework $SDKROOT/System/Library/Frameworks"
+            export NIX_LDFLAGS="''${NIX_LDFLAGS:-} -L$SDKROOT/usr/lib"
+          '' + ''
 
             # `--system` points Zig at the prevendored package set (looked up by
             # bare hash), so the build never touches the network. Zig still
@@ -86,6 +95,11 @@
           installPhase = ''
             mkdir -p $out/bin
             cp zig-out/bin/roc $out/bin/
+          '' + lib.optionalString pkgs.stdenv.hostPlatform.isDarwin ''
+            # roc links the apps it builds against a libSystem.tbd stub it ships
+            # itself, and looks for it next to the binary. Same layout as the
+            # official nightlies.
+            cp -R src/cli/darwin $out/bin/darwin
           '';
 
           meta = {

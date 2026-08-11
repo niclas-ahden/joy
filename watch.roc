@@ -28,7 +28,7 @@ main! = |args| {
 	server =
 		Cmd.new_str("node")
 			.args_str(["www/serve.mjs", port, name])
-			.spawn_grouped!()?
+			.spawn!()?
 
 	Stdout.line!("=> Serving '${full_name}' at http://localhost:${port}")?
 
