@@ -28,7 +28,7 @@ A client-side counter:
 
 ```roc
 app [Model, Msg, init, update, render, subscriptions] {
-    pf: platform "../platform/main.roc",
+    pf: platform "https://github.com/niclas-ahden/joy/releases/download/0.32.1/BBEFdA1VAk1WZvQWKs3yNfN2RMdZZP5DsM8j7gyNoFta.tar.zst",
     html: "https://github.com/niclas-ahden/joy-html/releases/download/0.15.0/5Yoz712P8ed4MBW74eddTEJdZ92ZDCUbVGFkt4XXSuj9.tar.zst",
 }
 
