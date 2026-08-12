@@ -1104,6 +1104,7 @@ unsafe fn lazy_force(cb: usize) -> usize {
         buf as *mut u8,
         &raw const unit,
         (cb + abi::ROC_ERASED_CALLABLE_CAPTURE_OFFSET) as *mut u8,
+        core::ptr::null_mut(), // no allocation handed over for reuse
     );
     let my = LAZY_LEN;
     lazy_insert(cb, buf);
@@ -2829,9 +2830,10 @@ pub extern "C" fn dispatch(msg_box: usize) -> u32 {
 // is a refcounted allocation whose data starts with `RocErasedCallablePayload
 // { callable_fn_ptr, on_drop }`; the closure's capture bytes live inline at
 // the generated `ROC_ERASED_CALLABLE_CAPTURE_OFFSET`. The function pointer has
-// the uniform shape `fn(host, ret, args, capture)`; compiled Roc code carries
-// no host context under the symbol ABI and passes null, so the host does the
-// same.
+// the uniform shape `fn(host, ret, args, capture, reuse)`. Compiled Roc code
+// carries no host context under the symbol ABI and passes null, so the host
+// does the same. `reuse` is null for the same reason. It would hand the callee
+// an owned reference to reuse in place, and the host has none to give.
 
 /// Call the boxed callable with an args buffer, returning the produced
 /// `Box(Msg)` pointer.
@@ -2843,6 +2845,7 @@ unsafe fn call_callable(callable: usize, args: *const u8) -> usize {
         &raw mut msg_box as *mut u8,
         args,
         (callable + abi::ROC_ERASED_CALLABLE_CAPTURE_OFFSET) as *mut u8,
+        core::ptr::null_mut(), // no allocation handed over for reuse
     );
     msg_box
 }

@@ -11,7 +11,7 @@
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     roc-src = {
-      url = "github:roc-lang/roc/94cbed386c51a8739ced3be76e7ab7b84dd22852";
+      url = "github:roc-lang/roc/b6e8667de9c006384e9bfb46618cdc92f7ab871b";
       flake = false;
     };
   };
@@ -58,14 +58,9 @@
           version = roc-src.shortRev or "dirty";
           src = roc-src;
 
-          # roc-lang/roc#10562, rebased onto the pin (the PR branches off an
-          # older main and conflicts there, but the only conflicts were the
-          # serialized-layout version bump and its golden hash, both taken
-          # from the PR). It fixes the exponential specialization of open Try
-          # chains (#10529), which otherwise makes our examples take minutes
-          # to build. Drop this once the PR is merged and the pin moves past
-          # it.
-          patches = [ ./nix/roc-pr-10562.patch ];
+          # To patch the compiler, drop a diff in nix/ and list it here, e.g.
+          #
+          #   patches = [ ./nix/roc-pr-12345.patch ];
 
           nativeBuildInputs = [ zig ];
 
