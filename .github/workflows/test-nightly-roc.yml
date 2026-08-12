@@ -1,0 +1,155 @@
+name: Test on latest nightly Roc
+
+# Test the latest Joy release against the latest Roc nightly, every morning.
+# A red run means we have some work to do! Either we need to adapt to a change
+# in Roc or we should isolate and report a bug :)
+
+on:
+  schedule:
+    # Nightlies publish between 10:00 and 13:30 UTC.
+    - cron: '0 15 * * *'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-roc
+  cancel-in-progress: true
+
+jobs:
+  nightly:
+    name: Test latest Roc nightly
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # names the passing nightly in the README
+    steps:
+      - name: Resolve the latest nightly and the latest Joy release
+        id: versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          tag=$(gh release view --repo roc-lang/nightlies --json tagName -q .tagName)
+          url=$(gh release view --repo roc-lang/nightlies --json assets \
+                  -q '.assets[] | select(.name | test("linux_x86_64")) | .url')
+          # Tag spellings have changed before, but both end in the short sha
+          prev=$(gh release list --repo roc-lang/nightlies --limit 2 --json tagName -q '.[1].tagName')
+
+          joy_tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+          bundle=$(gh release view --repo "$GITHUB_REPOSITORY" --json assets \
+                     -q '.assets[] | select(.name | endswith(".tar.zst")) | .url')
+
+          [ -n "$url" ] || { echo "error: no linux_x86_64 asset on $tag" >&2; exit 1; }
+          [ -n "$bundle" ] || { echo "error: no platform bundle on Joy $joy_tag" >&2; exit 1; }
+
+          {
+            echo "nightly=$tag"
+            echo "nightly_url=$url"
+            echo "sha=${tag##*-}"
+            echo "prev_sha=${prev##*-}"
+            echo "joy=$joy_tag"
+            echo "bundle=$bundle"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Roc $tag against Joy $joy_tag"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.versions.outputs.joy }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # We need `rustc` because `build.roc` always builds the platform. We don't
+      # need to build the platform in this workflow, but we'll let it happen and
+      # perhaps catch bugs there as well.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.94.0'
+          targets: wasm32-unknown-unknown
+
+      - name: Install the Roc nightly
+        run: |
+          set -euo pipefail
+          curl -sSL -o roc_nightly.tar.gz "${{ steps.versions.outputs.nightly_url }}"
+          mkdir -p "$RUNNER_TEMP/roc"
+          tar -xzf roc_nightly.tar.gz --strip-components=1 -C "$RUNNER_TEMP/roc"
+          echo "$RUNNER_TEMP/roc" >> "$GITHUB_PATH"
+
+      - run: roc --version
+
+      # Point every test app at the published bundle URL. We want to test the
+      # released bundle (rather than a locally rebuilt version) so that we catch
+      # any potential issues with the bundle format changing between Roc versions
+      # etc.
+      - name: Point every app at the released platform bundle
+        run: |
+          set -euo pipefail
+          apps=(examples/*.roc tests/apps/*.roc)
+          for src in "${apps[@]}"; do
+            sed -i \
+              -e 's|"\.\./\.\./platform/main\.roc"|"${{ steps.versions.outputs.bundle }}"|' \
+              -e 's|"\.\./platform/main\.roc"|"${{ steps.versions.outputs.bundle }}"|' \
+              "$src"
+          done
+          leftover=$(grep -l 'platform "\.\.' "${apps[@]}" || true)
+          [ -z "$leftover" ] || {
+            echo "error: these apps still name this checkout's platform" >&2
+            echo "$leftover" >&2
+            exit 1
+          }
+          echo "rewrote ${#apps[@]} apps"
+
+      - name: Build and run the checks
+        run: ./tests.roc
+
+      # If the tests pass, then let's update the README to recommend this new nightly!
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main
+
+      - name: Name this nightly in the README
+        working-directory: main
+        env:
+          NIGHTLY: ${{ steps.versions.outputs.nightly }}
+        run: |
+          set -euo pipefail
+
+          # Find the currently recommended nightly in the README
+          current=$(sed -n 's|.*/roc-lang/nightlies/releases/tag/\(nightly-[^)]*\)).*|\1|p' README.md | head -1)
+          [ -n "$current" ] || {
+            echo "error: no roc nightly link in README.md to update" >&2
+            exit 1
+          }
+          if [ "$current" = "$NIGHTLY" ]; then
+            echo "README already names $NIGHTLY"
+            exit 0
+          fi
+
+          # The tag is both the link text and the URL, so replace it wherever
+          # it appears and any wording around it survives.
+          sed -i "s|$current|$NIGHTLY|g" README.md
+          if git diff --quiet README.md; then
+            echo "error: README rewrite changed nothing" >&2
+            exit 1
+          fi
+
+          git config user.name 'GitHub Actions'
+          git config user.email ''
+          git add README.md
+          git commit -m "README: Update recommended Roc to $NIGHTLY"
+          git push
+          echo "README now recommends $NIGHTLY (was $current)"
+
+      - name: Name the commit range
+        if: failure()
+        run: |
+          echo "::error::Joy ${{ steps.versions.outputs.joy }} fails on roc ${{ steps.versions.outputs.nightly }}"
+          echo "  https://github.com/roc-lang/roc/compare/${{ steps.versions.outputs.prev_sha }}...${{ steps.versions.outputs.sha }}"

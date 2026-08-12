@@ -67,17 +67,9 @@ render = |model|
 
 [See more examples](https://github.com/niclas-ahden/joy/tree/main/examples) | [TodoMVC](https://www.github.com/niclas-ahden/joy-todomvc)
 
-### Run an example
+## Getting started
 
-Pick an [example](https://github.com/niclas-ahden/joy/tree/main/examples) and run it like so:
-
-```sh
-$ ./watch.roc examples/hello.roc
-```
-
-The application should now be available at: [`http://localhost:8000`](http://localhost:8000)
-
-Start modifying the example to get a feel for it. Refresh the browser to see your changes (the app is recompiled on change but there's no browser hot-reloading yet).
+Start with the [Joy TodoMVC](https://www.github.com/niclas-ahden/joy-todomvc) example, and you'll have a complete front-end app setup in no time!
 
 ## Performance
 
@@ -96,6 +88,8 @@ Contributions are very welcome, including feature requests, design discussion, e
 
 ## Development setup
 
+### Dependencies
+
 Clone the repo and use the included Nix flake to set up your development environment:
 
 ```sh
@@ -104,12 +98,22 @@ $ nix develop # Oh, lord, have mercy! This is great!
 
 If you don't want to use Nix then please install:
 
-* [`roc`](https://www.roc-lang.org/install)
+* [`roc nightly-2026-08-09-19f8823`](https://github.com/roc-lang/nightlies/releases/tag/nightly-2026-08-09-19f8823)
 * `rustc` (v1.94 + `wasm32-unknown-unknown`)
 * `node` (v22)
 * `watchexec`
 
-The `./watch.roc` script will recompile your Roc application and the client-side platform on change.
+### Running an example
+
+Pick an [example](https://github.com/niclas-ahden/joy/tree/main/examples) and run it like so:
+
+```sh
+$ ./watch.roc examples/hello.roc
+```
+
+The application should now be available at: [`http://localhost:8000`](http://localhost:8000)
+
+Start modifying the example to get a feel for it. Refresh the browser to see your changes (the app is recompiled on change but there's no browser hot-reloading yet).
 
 ## Sponsors
 
