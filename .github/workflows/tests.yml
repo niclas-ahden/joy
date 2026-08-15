@@ -12,6 +12,7 @@ concurrency:
 
 jobs:
   test:
+    name: Test on the flake pinned Roc
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -50,3 +51,65 @@ jobs:
       # exercises the buffer growth path.
       - name: Re-run checks with small buffers
         run: nix develop -c env SMALL_BUFFERS=1 ./tests.roc
+
+      # Browser E2E: the tests/e2e/ suite drives the built examples in a real
+      # Chromium (the devShell carries playwright and its browsers). The build
+      # is a no-op here, tests.roc already did it.
+      - name: Run browser E2E tests
+        run: nix develop -c ./e2e.roc
+
+  # The job above uses the Roc version from flake.nix. The following job runs
+  # the same against the nightly Roc version which our README recommends.
+  nightly:
+    name: Test on the Roc nightly named in the README
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve the nightly named in the README
+        id: nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          tag=$(sed -n 's|.*/roc-lang/nightlies/releases/tag/\(nightly-[^)]*\)).*|\1|p' README.md | head -1)
+          [ -n "$tag" ] || { echo "error: no roc nightly link in README.md" >&2; exit 1; }
+
+          url=$(gh release view "$tag" --repo roc-lang/nightlies --json assets \
+                  -q '.assets[] | select(.name | test("linux_x86_64")) | .url')
+          [ -n "$url" ] || { echo "error: no linux_x86_64 asset on $tag" >&2; exit 1; }
+
+          {
+            echo "tag=$tag"
+            echo "url=$url"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "README names $tag"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.94.0'
+          targets: wasm32-unknown-unknown
+
+      - name: Install the Roc nightly
+        run: |
+          set -euo pipefail
+          curl -sSL -o roc_nightly.tar.gz "${{ steps.nightly.outputs.url }}"
+          mkdir -p "$RUNNER_TEMP/roc"
+          tar -xzf roc_nightly.tar.gz --strip-components=1 -C "$RUNNER_TEMP/roc"
+          echo "$RUNNER_TEMP/roc" >> "$GITHUB_PATH"
+
+      - run: roc --version
+
+      - name: Build host + examples and run checks
+        run: ./tests.roc
+
+      - name: Name the nightly
+        if: failure()
+        run: |
+          echo "::error::This branch fails on ${{ steps.nightly.outputs.tag }}, the nightly the README tells users to install"
