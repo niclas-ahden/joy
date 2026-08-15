@@ -129,6 +129,10 @@ build_host! = || {
 # examples/logging.roc keeps a `dbg` on purpose to demonstrate the console.debug
 # stream, and `dbg` in an optimized build warns by design. Any other warning, an
 # error, or a module that never got written fails the build.
+#
+# The expected warning is recognised by its title, matched with the case folded
+# away: roc titled its diagnostics in capitals until 2026-08, and a compiler
+# from either side of that change must build this repo.
 build_example! = |path| {
 	src = Path.display(path)
 	out = wasm_path(path)
@@ -148,7 +152,8 @@ build_example! = |path| {
 	clean = match lines.keep_oks(summary_counts).last() {
 		Ok(counts) =>
 			counts.errors == 0
-				and counts.warnings == lines.count_if(|line| line.contains("IN OPTIMIZED BUILD"))
+				and counts.warnings
+					== lines.count_if(|line| line.with_ascii_lowercased().contains("in optimized build"))
 
 		Err(_) => Bool.False
 	}

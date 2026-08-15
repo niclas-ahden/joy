@@ -11,7 +11,7 @@
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     roc-src = {
-      url = "github:roc-lang/roc/b6e8667de9c006384e9bfb46618cdc92f7ab871b";
+      url = "github:roc-lang/roc/f70f90af362d751f409ea99af31579399d1ca224";
       flake = false;
     };
   };

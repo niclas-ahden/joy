@@ -81,11 +81,22 @@ impl RocHost {
 
 /// Uniform ABI function pointer stored in `RocErasedCallablePayload`.
 ///
-/// The last argument is a reuse channel. A caller can hand over one owned
+/// The reuse argument is a reuse channel. A caller can hand over one owned
 /// reference to the allocation holding the borrowed capture bytes, and the
 /// callee consumes it exactly once. The host has none to give, so it passes
 /// null.
-pub type RocErasedCallableFn = extern "C" fn(*mut RocHost, *mut u8, *const u8, *mut u8, *mut u8);
+///
+/// The last argument is an out parameter: the callee writes the descriptor of
+/// the bytes it returned there, or null when the result is descriptor-free.
+/// Every callee writes it, so it must point at four writable bytes even though
+/// the host has no use for the value: Joy's return layouts are static and
+/// spelled out in this file. It is part of the wasm function type, so a call
+/// that omits it traps as a signature mismatch rather than passing garbage.
+pub type RocErasedCallableFn =
+    extern "C" fn(*mut RocHost, *mut u8, *const u8, *mut u8, *mut u8, *mut RocBoxyDescriptor);
+
+/// Descriptor of a returned value, opaque to the host.
+pub type RocBoxyDescriptor = *const u8;
 
 /// Final-drop callback for inline erased-callable captures.
 pub type RocErasedCallableOnDrop = extern "C" fn(*mut u8, *mut RocHost);

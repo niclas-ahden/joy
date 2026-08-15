@@ -1099,12 +1099,14 @@ unsafe fn lazy_force(cb: usize) -> usize {
     }
     let payload = &*(cb as *const abi::RocErasedCallablePayload);
     let unit: u8 = 0;
+    let mut ret_desc: abi::RocBoxyDescriptor = core::ptr::null();
     (payload.callable_fn_ptr)(
         core::ptr::null_mut(),
         buf as *mut u8,
         &raw const unit,
         (cb + abi::ROC_ERASED_CALLABLE_CAPTURE_OFFSET) as *mut u8,
         core::ptr::null_mut(), // no allocation handed over for reuse
+        &raw mut ret_desc,     // written and ignored: the Html layout is static
     );
     let my = LAZY_LEN;
     lazy_insert(cb, buf);
@@ -2830,7 +2832,7 @@ pub extern "C" fn dispatch(msg_box: usize) -> u32 {
 // is a refcounted allocation whose data starts with `RocErasedCallablePayload
 // { callable_fn_ptr, on_drop }`; the closure's capture bytes live inline at
 // the generated `ROC_ERASED_CALLABLE_CAPTURE_OFFSET`. The function pointer has
-// the uniform shape `fn(host, ret, args, capture, reuse)`. Compiled Roc code
+// the uniform shape `fn(host, ret, args, capture, reuse, out_desc)`. Compiled Roc code
 // carries no host context under the symbol ABI and passes null, so the host
 // does the same. `reuse` is null for the same reason. It would hand the callee
 // an owned reference to reuse in place, and the host has none to give.
@@ -2840,12 +2842,14 @@ pub extern "C" fn dispatch(msg_box: usize) -> u32 {
 unsafe fn call_callable(callable: usize, args: *const u8) -> usize {
     let payload = &*(callable as *const abi::RocErasedCallablePayload);
     let mut msg_box: usize = 0;
+    let mut ret_desc: abi::RocBoxyDescriptor = core::ptr::null();
     (payload.callable_fn_ptr)(
         core::ptr::null_mut(), // null host context, exactly as compiled Roc code passes
         &raw mut msg_box as *mut u8,
         args,
         (callable + abi::ROC_ERASED_CALLABLE_CAPTURE_OFFSET) as *mut u8,
         core::ptr::null_mut(), // no allocation handed over for reuse
+        &raw mut ret_desc,     // written and ignored: Box(Msg) is a bare pointer
     );
     msg_box
 }
