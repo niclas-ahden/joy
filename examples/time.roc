@@ -4,7 +4,7 @@ app [Model, Msg, init, update, render, subscriptions] {
 }
 
 import html.Html exposing [Html, div, h1, p, small, button, text]
-import html.Attribute exposing [on_click, style]
+import html.Attribute exposing [id, on_click, style]
 import pf.Effect exposing [Effect]
 import pf.Sub exposing [Sub]
 import pf.Time
@@ -79,12 +79,12 @@ render = |model| {
 	div(
 		[],
 		[
-			h1([], [text("Your excitement level for Roc: ${model.level.to_str()}")]),
+			h1([id("level")], [text("Your excitement level for Roc: ${model.level.to_str()}")]),
 			p([], [text("(you don't ever have to close this page if you don't want to)")]),
-			button([on_click(UserRememberedMoment)], [text("Remember this moment")]),
-			button([on_click(UserToggledPause)], [text(pause_label)]),
+			button([id("remember"), on_click(UserRememberedMoment)], [text("Remember this moment")]),
+			button([id("pause"), on_click(UserToggledPause)], [text(pause_label)]),
 			div(
-				[],
+				[id("moments")],
 				model.remembered.map(
 					|moment| p(
 						[],

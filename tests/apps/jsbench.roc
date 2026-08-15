@@ -84,7 +84,7 @@ create = |model, count|
 
 build : U64, U64 -> List(Row)
 build = |count, start_id|
-	Iter.exclusive_range(0, count, Unknown)
+	(0..<count).iter()
 		.map(|i| make_row(start_id + i))
 		.collect()
 

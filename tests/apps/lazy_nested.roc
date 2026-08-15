@@ -52,7 +52,7 @@ deep = |rows|
 section : I64, Str -> Html(Msg)
 section = |rows, label| {
 	items =
-		Iter.exclusive_range(1, rows + 1, Unknown)
+		(1..=rows).iter()
 			.map(|n| li([], [text("item ${n.to_str()}")]))
 			.collect()
 	div(

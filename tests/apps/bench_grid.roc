@@ -32,7 +32,7 @@ subscriptions = |_model| []
 
 make_listings : U64 -> List(Listing)
 make_listings = |n|
-	Iter.exclusive_range(1, n + 1, Unknown)
+	(1..=n).iter()
 		.map(
 			|id| {
 				id,

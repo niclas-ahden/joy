@@ -4,7 +4,7 @@ app [Model, Msg, init, update, render, subscriptions] {
 }
 
 import html.Html exposing [Html, div, p, button, input, text]
-import html.Attribute exposing [on_click, on_key, on_keydown, placeholder]
+import html.Attribute exposing [id, on_click, on_key, on_keydown, placeholder]
 import pf.Effect exposing [Effect]
 import pf.Sub exposing [Sub]
 import pf.Keyboard
@@ -103,14 +103,14 @@ render = |model| {
 	div(
 		[],
 		[
-			p([], [text("Last key: ${model.last_key}")]),
-			p([], [text("Keys seen: ${model.keys_seen.to_str()}")]),
-			p([], [text("Escapes: ${model.escapes.to_str()}")]),
-			p([], [text("Input key: ${model.input_key}")]),
-			p([], [text("Submits: ${model.submits.to_str()}")]),
-			input([placeholder("Type here"), on_keydown(|e| UserTypedInInput(e))]),
-			input([placeholder("Enter submits"), on_key("keydown", ["Enter"], |_| UserSubmitted).prevent_default()]),
-			button([on_click(UserToggledListening)], [text(listen_label)]),
+			p([id("last-key")], [text("Last key: ${model.last_key}")]),
+			p([id("keys-seen")], [text("Keys seen: ${model.keys_seen.to_str()}")]),
+			p([id("escapes")], [text("Escapes: ${model.escapes.to_str()}")]),
+			p([id("input-key")], [text("Input key: ${model.input_key}")]),
+			p([id("submits")], [text("Submits: ${model.submits.to_str()}")]),
+			input([id("typing"), placeholder("Type here"), on_keydown(|e| UserTypedInInput(e))]),
+			input([id("submitting"), placeholder("Enter submits"), on_key("keydown", ["Enter"], |_| UserSubmitted).prevent_default()]),
+			button([id("listen"), on_click(UserToggledListening)], [text(listen_label)]),
 		],
 	)
 }

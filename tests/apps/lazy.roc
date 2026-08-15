@@ -146,7 +146,7 @@ grid = |rows|
 		[class("grid")],
 		[
 			button([class("grid-btn"), on_click(CardClicked)], [text("a button inside the grid")]),
-			div([class("grid-cards")], Iter.exclusive_range(1, rows + 1, Unknown).map(card).collect()),
+			div([class("grid-cards")], (1..=rows).iter().map(card).collect()),
 		],
 	)
 

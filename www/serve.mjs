@@ -32,7 +32,7 @@ const headers = (type) => ({ 'content-type': type, 'cache-control': 'no-store' }
 
 // App names come from the URL in prefix mode and reach a file path below, so
 // they are checked against what build.roc can actually produce. That, plus a
-// route table of four literals, means no request can name a file of its own.
+// route table of literals, means no request can name a file of its own.
 const isAppName = (app) => /^[a-z0-9_]+$/i.test(app);
 
 // The whole URL space, relative to an app's root.
@@ -69,6 +69,31 @@ function resolve(pathname) {
 http
   .createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
+
+    // What tests/apps/fetch.roc requests, shaped like the JSON array the API
+    // in examples/http.roc answers with. Absolute, so it lands here in both
+    // modes. The app's other button asks for /missing/quote, which no route
+    // claims and the 404 below answers, so both branches are reachable.
+    if (req.method === 'GET' && url.pathname === '/quote') {
+      res.writeHead(200, headers('application/json'));
+      res.end(JSON.stringify(['A real fetch, answered by the dev server.']));
+      return;
+    }
+
+    // The one non-file route: the upload example streams its picked file to
+    // POST /upload (an absolute path, so it lands here in both modes). The
+    // body is drained and dropped, the example only shows the status. Without
+    // this the demo dead-ends in a 404, and a POST must never hit the
+    // redirect below, which would turn it into a GET for index.html.
+    if (req.method === 'POST' && url.pathname === '/upload') {
+      req.resume();
+      req.on('end', () => {
+        res.writeHead(200, headers('text/plain'));
+        res.end('ok');
+      });
+      return;
+    }
+
     const { app, rest, redirect } = resolve(decodeURIComponent(url.pathname));
 
     if (redirect) {

@@ -49,7 +49,7 @@ render : Model -> Html(Msg)
 render = |model| {
 	items : List(Html(Msg))
 	items =
-		Iter.exclusive_range(1, model.shown + 1, Unknown)
+		(1..=model.shown).iter()
 			.map(
 				|n|
 					div(

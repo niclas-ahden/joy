@@ -4,7 +4,7 @@ app [Model, Msg, init, update, render, subscriptions] {
 }
 
 import html.Html exposing [Html, div, button, text]
-import html.Attribute exposing [on_click]
+import html.Attribute exposing [id, on_click]
 import pf.Effect exposing [Effect]
 
 Model : { count : I64 }
@@ -29,8 +29,8 @@ render = |model|
 	div(
 		[],
 		[
-			button([on_click(Increment)], [text("+")]),
+			button([id("increment"), on_click(Increment)], [text("+")]),
 			text(model.count.to_str()),
-			button([on_click(Decrement)], [text("-")]),
+			button([id("decrement"), on_click(Decrement)], [text("-")]),
 		],
 	)

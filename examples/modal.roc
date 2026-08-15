@@ -44,14 +44,14 @@ render = |model|
 	div(
 		[],
 		[
-			button([on_click(UserOpened)], [text("Delete everything")]),
-			p([], [text("opened ${model.opened.to_str()}, confirmed ${model.confirmed.to_str()}")]),
+			button([id("open"), on_click(UserOpened)], [text("Delete everything")]),
+			p([id("counts")], [text("opened ${model.opened.to_str()}, confirmed ${model.confirmed.to_str()}")]),
 			dialog(
 				[id("confirm")],
 				[
-					p([], [text("Really delete everything?")]),
-					button([on_click(UserConfirmed)], [text("Yes, delete")]),
-					button([on_click(UserDismissed)], [text("Keep it")]),
+					p([id("prompt")], [text("Really delete everything?")]),
+					button([id("yes"), on_click(UserConfirmed)], [text("Yes, delete")]),
+					button([id("keep"), on_click(UserDismissed)], [text("Keep it")]),
 				],
 			),
 		],

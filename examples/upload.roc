@@ -4,7 +4,7 @@ app [Model, Msg, init, update, render, subscriptions] {
 }
 
 import html.Html exposing [Html, div, p, input, button, text]
-import html.Attribute exposing [type, on_file, on_click]
+import html.Attribute exposing [id, type, on_file, on_click]
 import pf.Effect exposing [Effect]
 import pf.Http
 import pf.WebCrypto
@@ -88,11 +88,11 @@ render = |model| {
 	div(
 		[],
 		[
-			input([type("file"), on_file(|f| UserPickedFile(f))]),
-			p([], [text("picked: ${picked}")]),
-			p([], [text("sha256: ${model.hash}")]),
-			button([on_click(UserClickedUpload)], [text("Upload")]),
-			p([], [text(model.upload)]),
+			input([id("file"), type("file"), on_file(|f| UserPickedFile(f))]),
+			p([id("picked")], [text("picked: ${picked}")]),
+			p([id("hash")], [text("sha256: ${model.hash}")]),
+			button([id("upload"), on_click(UserClickedUpload)], [text("Upload")]),
+			p([id("status")], [text(model.upload)]),
 		],
 	)
 }

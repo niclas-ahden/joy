@@ -78,9 +78,9 @@ render = |model| {
 				],
 				[text("Draw here")],
 			),
-			p([], [text("At ${model.x.to_str()}, ${model.y.to_str()} (${dragging_status})")]),
-			p([], [text("Moves: ${model.moves.to_str()}")]),
-			p([], [text("Shift-clicks: ${model.shift_clicks.to_str()}")]),
+			p([id("position")], [text("At ${model.x.to_str()}, ${model.y.to_str()} (${dragging_status})")]),
+			p([id("moves")], [text("Moves: ${model.moves.to_str()}")]),
+			p([id("shift-clicks")], [text("Shift-clicks: ${model.shift_clicks.to_str()}")]),
 		],
 	)
 }

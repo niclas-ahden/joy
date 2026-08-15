@@ -4,7 +4,7 @@ app [Model, Msg, init, update, render, subscriptions] {
 }
 
 import html.Html exposing [Html, div, p, input, button, text]
-import html.Attribute exposing [on_input, on_click, placeholder]
+import html.Attribute exposing [id, on_input, on_click, placeholder]
 import pf.Effect exposing [Effect]
 import pf.Time
 
@@ -46,9 +46,9 @@ render = |model|
 	div(
 		[],
 		[
-			input([placeholder("Search..."), on_input(|s| UserTyped(s))]),
-			button([on_click(UserCanceled)], [text("Cancel")]),
-			p([], [text("searched for: ${model.searched}")]),
-			p([], [text("searches: ${model.searches.to_str()}")]),
+			input([id("search"), placeholder("Search..."), on_input(|s| UserTyped(s))]),
+			button([id("cancel"), on_click(UserCanceled)], [text("Cancel")]),
+			p([id("searched")], [text("searched for: ${model.searched}")]),
+			p([id("searches")], [text("searches: ${model.searches.to_str()}")]),
 		],
 	)

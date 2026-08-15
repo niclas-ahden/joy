@@ -115,6 +115,15 @@ The application should now be available at: [`http://localhost:8000`](http://loc
 
 Start modifying the example to get a feel for it. Refresh the browser to see your changes (the app is recompiled on change but there's no browser hot-reloading yet).
 
+### Running the tests
+
+```sh
+$ ./tests.roc # Roc unit tests + the fake-DOM harnesses in tests/
+$ ./e2e.roc   # tests/e2e/ in a real headless Chromium
+```
+
+The harnesses in `tests/` mount the built apps on a fake DOM and cover the app and runtime logic. The browser suite in `tests/e2e/` is built on [roc-spec](https://github.com/niclas-ahden/roc-spec) and [roc-playwright](https://github.com/niclas-ahden/roc-playwright) and covers what only a real browser can prove: real event dispatch and bubbling, `<dialog>` semantics, the History API, WebCrypto, fetch, real timers, and real keyboard and mouse input. CI runs both.
+
 ## Sponsors
 
 Joy is sponsored by the real estate agency [BOSTHLM Fastighetsmäklare](https://www.bosthlm.se) which thrives by using technology to bolster its agents and business. Thank you!

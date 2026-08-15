@@ -4,7 +4,7 @@ app [Model, Msg, init, update, render, subscriptions] {
 }
 
 import html.Html exposing [Html, div, form, textarea, label, input, button, p, h1, text]
-import html.Attribute exposing [rows, cols, type, checked, on_input, on_submit, on_check]
+import html.Attribute exposing [id, rows, cols, type, checked, on_input, on_submit, on_check]
 import pf.Effect exposing [Effect]
 import pf.Console
 
@@ -60,8 +60,8 @@ render = |model| {
 					text("Secret (${secret_status})"),
 				],
 			),
-			p([], [text(model.draft)]),
-			p([], [text("Saved: ${model.saved}")]),
+			p([id("draft")], [text(model.draft)]),
+			p([id("saved")], [text("Saved: ${model.saved}")]),
 		],
 	)
 }

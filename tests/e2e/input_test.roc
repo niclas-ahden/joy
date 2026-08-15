@@ -3,41 +3,20 @@
 # must echo the value into its <p> (typed value events, big-string path).
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.23.0/7NpDhuqoqGFedmVLvmm1zjq37GCmaFGzwr5sz4ch9wTK.tar.zst",
-	# A path dep until roc-playwright is released: needs a ../roc-playwright
-	# checkout next to this repo (see e2e.roc).
-	playwright: "../../../roc-playwright/package/main.roc",
+	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.7.0/BW5do1pddeCsifMZcgwV4fjYH5mdy9sNA4moigRTvQNg.tar.zst",
+	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.3.0/2v2CV8CLXRJmQRvfoHtPngAUGgE8jL6DDgXbugZhFVf5.tar.zst",
 }
 
-import pf.Cmd
-import pf.Env
-import pf.OsStr
 import playwright.Playwright
-
-hooks = {
-	new: Cmd.new_str,
-	args: Cmd.args_str,
-	spawn_grouped!: Cmd.spawn_grouped!,
-	write_stdin!: Cmd.Child.write_stdin!,
-	read_stdout!: Cmd.Child.read_stdout!,
-	kill!: Cmd.Child.kill!,
-}
+import Support
 
 main! = |_args| {
-	base = Env.var_str!(OsStr.from_str("JOY_E2E_URL")).ok_or("http://127.0.0.1:8787")
-	{ browser, page } = Playwright.launch_page!(hooks, Chromium(DefaultChannel))?
-
-	Playwright.navigate!(page, "${base}/events_input/")?
-	Playwright.wait_for!(page, "#app textarea", Visible)?
+	{ browser, page } = Support.open!("events_input", "#app textarea")?
 
 	typed = "hello from a real browser ✓"
 	Playwright.fill!(page, "#app textarea", typed)?
-	echoed = Playwright.text_content!(page, "#app p")?
+	Support.expect_text!(page, "#draft", typed, |got| InputNotEchoed(got))?
 
 	Playwright.close!(browser)?
-
-	if echoed == typed {
-		Ok({})
-	} else {
-		Err(InputNotEchoed(echoed))
-	}
+	Ok({})
 }

@@ -5,12 +5,11 @@
 #
 # To build the examples, serve the repo root, then let roc-spec run
 # tests/e2e/*_test.roc. Each one drives a Joy example in a real Chromium via
-# roc-playwright. Run from the repo root.
-#
-# Needs the nix devShell (playwright + browsers) and a local checkout of
-# ../roc-playwright, a path dep until it is released (roc-spec and basic-cli
-# come in by release URL). Not part of tests.roc/CI yet for exactly that
-# reason.
+# roc-playwright. Run from the repo root, inside the nix devShell (it carries
+# playwright and its browsers). CI runs this next to ./tests.roc: the fake-DOM
+# harnesses there own the app logic, these tests own what only a real browser
+# can prove (event dispatch and bubbling, <dialog>, History, WebCrypto, fetch,
+# timers, real keyboard/mouse input).
 #
 # Set the environment variable `JOY_E2E_PORT` to change the port (default 8787).
 app [main!] {
@@ -26,9 +25,8 @@ import spec.Wait
 import Util exposing [fail!, run!]
 
 main! = |_args| {
-	match Cmd.new_str("playwright").args_str(["--version"]).exec_output_bytes!() {
-		Ok(_) => {}
-		Err(_) => fail!("playwright not found, run inside the nix devShell")?
+	if !(on_path!("playwright")) {
+		fail!("playwright not found, run inside the nix devShell")?
 	}
 
 	run!("./build.roc", [])?
@@ -75,3 +73,12 @@ main! = |_args| {
 		Err(Exit(code))
 	}
 }
+
+# Whether `program --version` runs at all. The program is a parameter rather
+# than a literal because a command built from literals and matched in place is
+# read as a compile-time constant, and the run warns "unconditional condition".
+# A warning makes roc exit non-zero, which would fail this script for CI even
+# when every test passed.
+on_path! : Str => Bool
+on_path! = |program|
+	Cmd.new_str(program).args_str(["--version"]).exec_output_bytes!().is_ok()

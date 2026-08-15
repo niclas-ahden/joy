@@ -1,4 +1,4 @@
-# roc-spec runner for the browser E2E tests: discovers tests/e2e/test_*.roc
+# roc-spec runner for the browser E2E tests: discovers tests/e2e/*_test.roc
 # and runs each as a standalone app (each launches its own Chromium via
 # roc-playwright). Invoked by e2e.roc, which builds the examples, serves the
 # repo root and exports JOY_E2E_URL first.

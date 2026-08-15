@@ -4,50 +4,32 @@
 # by the browser itself.
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.23.0/7NpDhuqoqGFedmVLvmm1zjq37GCmaFGzwr5sz4ch9wTK.tar.zst",
-	# A path dep until roc-playwright is released: needs a ../roc-playwright
-	# checkout next to this repo (see e2e.roc).
-	playwright: "../../../roc-playwright/package/main.roc",
+	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.7.0/BW5do1pddeCsifMZcgwV4fjYH5mdy9sNA4moigRTvQNg.tar.zst",
+	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.3.0/2v2CV8CLXRJmQRvfoHtPngAUGgE8jL6DDgXbugZhFVf5.tar.zst",
 }
 
-import pf.Cmd
-import pf.Env
-import pf.OsStr
 import playwright.Playwright
-
-hooks = {
-	new: Cmd.new_str,
-	args: Cmd.args_str,
-	spawn_grouped!: Cmd.spawn_grouped!,
-	write_stdin!: Cmd.Child.write_stdin!,
-	read_stdout!: Cmd.Child.read_stdout!,
-	kill!: Cmd.Child.kill!,
-}
+import Support
 
 main! = |_args| {
-	base = Env.var_str!(OsStr.from_str("JOY_E2E_URL")).ok_or("http://127.0.0.1:8787")
-	{ browser, page } = Playwright.launch_page!(hooks, Chromium(DefaultChannel))?
-
-	Playwright.navigate!(page, "${base}/modal/")?
-	Playwright.wait_for!(page, "#app button", Visible)?
+	{ browser, page } = Support.open!("modal", "#open")?
 
 	# The dialog starts closed: its contents must not be visible.
-	before = Playwright.is_visible!(page, "#confirm p")?
+	before = Playwright.is_visible!(page, "#prompt")?
+	if before {
+		Err(DialogOpenBeforeClick)?
+	}
 
 	# "Delete everything" -> update! calls DOM.show_modal!("#confirm").
-	Playwright.click!(page, "#app div > button")?
-	Playwright.wait_for!(page, "#confirm p", Visible)?
+	Playwright.click!(page, "#open")?
+	Playwright.wait_for!(page, "#prompt", Visible)?
 
 	# "Yes, delete" -> update! closes the dialog and counts the confirm.
-	Playwright.click!(page, "#confirm button:first-of-type")?
-	Playwright.wait_for!(page, "#confirm p", Hidden)?
+	Playwright.click!(page, "#yes")?
+	Playwright.wait_for!(page, "#prompt", Hidden)?
 
-	counts = Playwright.text_content!(page, "#app > div > p")?
+	Support.expect_text!(page, "#counts", "opened 1, confirmed 1", |got| ModalFlowWrong(got))?
 
 	Playwright.close!(browser)?
-
-	if before == Bool.False and counts == "opened 1, confirmed 1" {
-		Ok({})
-	} else {
-		Err(ModalFlowWrong(before, counts))
-	}
+	Ok({})
 }

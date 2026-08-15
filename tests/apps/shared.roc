@@ -31,7 +31,7 @@ subscriptions = |_model| []
 build_chunk : I64 -> Html(Msg)
 build_chunk = |rows| {
 	items =
-		Iter.exclusive_range(1, rows + 1, Unknown)
+		(1..=rows).iter()
 			.map(|n| li([], [text("row ${n.to_str()}")]))
 			.collect()
 	div(

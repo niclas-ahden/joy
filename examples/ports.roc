@@ -4,6 +4,7 @@ app [Model, Msg, init, update, render, subscriptions] {
 }
 
 import html.Html exposing [Html, div, h1, p, pre, small, text]
+import html.Attribute exposing [id]
 import pf.Effect exposing [Effect]
 import pf.Port
 import pf.Console
@@ -57,9 +58,9 @@ render = |model|
 			div(
 				[],
 				[
-					h1([], [text("Your excitement level for Roc: ${model.to_str()}")]),
+					h1([id("level")], [text("Your excitement level for Roc: ${model.to_str()}")]),
 					if model >= 3 {
-						p([], [text("Whoah, let's calm down! I've stopped the ticker.")])
+						p([id("capped")], [text("Whoah, let's calm down! I've stopped the ticker.")])
 					} else {
 						small([], [text("(you don't ever have to close this page if you don't want to)")])
 					},

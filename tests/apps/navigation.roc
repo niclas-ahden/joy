@@ -5,7 +5,7 @@ app [Model, Msg, init, update, render, subscriptions] {
 }
 
 import html.Html exposing [Html, div, h1, h2, p, input, button, text]
-import html.Attribute exposing [placeholder, on_input, on_click]
+import html.Attribute exposing [id, placeholder, on_input, on_click]
 import pf.Effect exposing [Effect]
 import pf.DOM
 import url.Uri
@@ -93,14 +93,14 @@ render = |model|
 		[
 			h1([], [text("Navigation")]),
 			h2([], [text("replace_url: search as you type")]),
-			input([placeholder("Search..."), on_input(|q| UserTypedQuery(q))]),
-			p([], [text("Current query: ${model}")]),
+			input([id("search"), placeholder("Search..."), on_input(|q| UserTypedQuery(q))]),
+			p([id("query")], [text("Current query: ${model}")]),
 			p([], [text("The address bar shows ?q=... as you type, but Back does not record every keystroke.")]),
 			h2([], [text("push_url: adds a history entry")]),
-			button([on_click(UserClickedPush)], [text("Push ?demo=push")]),
+			button([id("push"), on_click(UserClickedPush)], [text("Push ?demo=push")]),
 			p([], [text("Changes the URL without reloading and lets Back return here. DOM.on_url_change keeps the view in sync when you do.")]),
 			h2([], [text("navigate: full page load")]),
-			button([on_click(UserClickedReload)], [text("Reload with ?reloaded=1")]),
+			button([id("reload"), on_click(UserClickedReload)], [text("Reload with ?reloaded=1")]),
 			p([], [text("Leaves the current page. Notice the query above resets, because the app re-initialises.")]),
 		],
 	)
