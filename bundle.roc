@@ -10,8 +10,8 @@
 # self-contained and needs no base URL at bundle time: wherever it ends up
 # served, the app's `pf` is that URL and nothing inside has to change.
 #
-# The Bundle Platform workflow does this on a published release. Running it
-# by hand is for checking the archive before tagging one.
+# The Release workflow does this when a release tag is pushed. Running it by
+# hand is for checking the archive before tagging one.
 #
 # Archive names are the blake3 hash of their contents, so re-bundling
 # unchanged sources yields the same name.
@@ -27,7 +27,7 @@ import Util exposing [fail!, run!]
 main! = |_args| {
 	# The host ships inside the platform bundle, so it must be fresh.
 	# Naming an example is the cheapest way through build.roc.
-	run!("./build.roc", ["hello"])?
+	run!("./build.roc", ["--opt=speed", "hello"])?
 
 	# Start from an empty dist/ so it holds exactly one archive. A leftover
 	# from an earlier run would make `dist/*.tar.zst` ambiguous, and the

@@ -5,9 +5,9 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, html, find } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
-const bytes = readFileSync('build/counter.wasm');
+const bytes = readFileSync(wasmPath('counter'));
 
 const root = new El('#root');
 await mount({ wasm: bytes, root, flags: '', dom: fakeDom });

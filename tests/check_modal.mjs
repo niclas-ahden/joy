@@ -5,9 +5,9 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, find, htmlBare, dialogs, modalCalls } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
-const bytes = readFileSync('build/modal.wasm');
+const bytes = readFileSync(wasmPath('modal'));
 
 const root = new El('#root');
 await mount({ wasm: bytes, root, flags: '', dom: fakeDom });

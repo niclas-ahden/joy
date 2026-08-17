@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, find, findTag, htmlBare } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
 // All elements matching pred, pre-order.
 const collect = (node, pred, out = []) => {
@@ -21,7 +21,7 @@ const realLog = console.log;
 console.log = (...args) => { logged.push(args.join(' ')); };
 
 const root = new El('#root');
-await mount({ wasm: readFileSync('build/events_input.wasm'), root, flags: '', dom: fakeDom });
+await mount({ wasm: readFileSync(wasmPath('events_input')), root, flags: '', dom: fakeDom });
 console.log = realLog;
 
 expect('heading rendered', find(root, 'Dear diary') !== null, true);

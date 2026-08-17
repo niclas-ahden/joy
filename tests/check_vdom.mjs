@@ -7,10 +7,10 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, html, htmlBare, find } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
 const root = new El('#root');
-const app = await mount({ wasm: readFileSync('build/vdom.wasm'), root, flags: '', dom: fakeDom });
+const app = await mount({ wasm: readFileSync(wasmPath('vdom')), root, flags: '', dom: fakeDom });
 
 // All elements matching pred, pre-order.
 const collect = (node, pred, out = []) => {

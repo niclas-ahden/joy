@@ -1,11 +1,20 @@
-#!/usr/bin/env roc
+#!/usr/bin/env -S sh -c 'exec roc "$0" -- "$@"'
 # Run:
 #
-#   ./build.roc                       every app, what tests.roc and CI want
-#   ./build.roc examples/counter.roc  just that one, what watch.roc wants
+#   ./build.roc --opt=speed                       every app, what tests.roc and CI want
+#   ./build.roc --opt=speed examples/counter.roc  just that one, what watch.roc wants
 #
-# To build the Rust host and link each app into `build/<name>.wasm`. Run from
-# the repo root.
+# To build the Rust host and link each app into `build/<opt>/<name>.wasm`.
+# Run from the repo root.
+#
+# The shebang trampolines through sh to place roc's `--` separator between
+# the script and its args. Without it roc claims --opt and --help for itself
+# instead of passing them through.
+#
+# `--opt` mirrors roc's own flag and is passed straight to `roc build`. It is
+# required, there is no default: every caller says which level it wants, and
+# each level builds into its own tree, `build/<opt>/<name>.wasm`, so a dev
+# pass and a speed pass can never hand each other stale output.
 #
 # Set the environment variable `RUSTC` to pick another rustc, `SMALL_BUFFERS`
 # to shrink the host's outbound buffers to a few words so every render
@@ -13,27 +22,33 @@
 # instrumentation (see tests/bench/).
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.23.0/7NpDhuqoqGFedmVLvmm1zjq37GCmaFGzwr5sz4ch9wTK.tar.zst",
+	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.7.0/9PiT7ffE9m8BJyVv3LwE4rWWdcbpxEMUADMpiLBfY8jJ.tar.zst",
 }
 
 import pf.Cmd
 import pf.Env
-import pf.OsStr
 import pf.Path
 import pf.Stderr
+import weaver.Cli
+import weaver.Param
+import Args
 import Util exposing [example_name, fail!, run!]
 
 main! = |args| {
+	config = Args.parse!(parser, args)?
+	opt = Args.check_opt!(config.opt)?
+
 	Path.utf8("platform/targets/wasm32").create_all!()?
-	Path.utf8("build").create_all!()?
+	Path.utf8("build/${opt}").create_all!()?
 
 	build_host!()?
 
 	# One app when named, every app otherwise. watch.roc names one: rebuilding
 	# two dozen modules for an edit that touches a single app costs seconds on
 	# every save. tests.roc and CI name none and get all.
-	sources = match args.get(1) {
-		Ok(arg) => [find_source!(example_name(OsStr.display(arg)))?]
-		Err(_) => list_sources!()?
+	sources = match config.app_name {
+		Ok(name) => [find_source!(example_name(name))?]
+		Err(NoValue) => list_sources!()?
 	}
 
 	# roc can exit 0 without writing anything, so drop each module up front and
@@ -42,7 +57,7 @@ main! = |args| {
 	# working on one example leaves an earlier full build intact.
 	_ = sources.map_try!(
 		|src| {
-			out = Path.utf8(wasm_path(src))
+			out = Path.utf8(wasm_path(src, opt))
 			if out.is_file!()? {
 				out.delete!()
 			} else {
@@ -51,23 +66,24 @@ main! = |args| {
 		},
 	)?
 
-	_ = sources.map_try!(build_example!)?
+	_ = sources.map_try!(|src| build_example!(src, opt))?
 
 	Ok({})
 }
 
 # Apps live in two directories, both built the same way into
-# build/<name>.wasm: examples/ holds the user-facing ones the README points at,
+# build/<opt>/<name>.wasm: examples/ holds the user-facing ones the README
+# points at,
 # tests/apps/ the fixtures the harnesses in tests/ drive. Those fixtures assert
 # on internals (which nodes the diff reused, how many listeners are bound,
 # render cost as a grid grows) instead of demonstrating anything, so they are
 # not examples. Names must stay unique across both, since the output is flat.
 app_dirs = ["examples", "tests/apps"]
 
-# The named app, in whichever directory holds it. `./build.roc counter`,
-# `./build.roc examples/counter.roc` and `./build.roc tests/apps/vdom.roc` all
-# work: the argument's directory is dropped and only the name is looked up, so
-# watch.roc can pass whatever the user typed.
+# The named app, in whichever directory holds it. `counter`,
+# `examples/counter.roc` and `tests/apps/vdom.roc` all work: the argument's
+# directory is dropped and only the name is looked up, so watch.roc can pass
+# whatever the user typed.
 find_source! = |name| {
 	found = app_dirs
 		.map(|dir| Path.utf8("${dir}/${name}.roc"))
@@ -90,9 +106,9 @@ list_sources! = ||
 		)
 		.map_ok(|per_dir| per_dir.join())
 
-# build/<name>.wasm for examples/<name>.roc or tests/apps/<name>.roc.
-wasm_path : Path.Path -> Str
-wasm_path = |src| "build/${example_name(Path.display(src))}.wasm"
+# build/<opt>/<name>.wasm for examples/<name>.roc or tests/apps/<name>.roc.
+wasm_path : Path.Path, Str -> Str
+wasm_path = |src, opt| "build/${opt}/${example_name(Path.display(src))}.wasm"
 
 # The Rust host becomes one relocatable wasm object (staticlib crate-type plus
 # --emit obj). no_std and panic=abort keep it import-free. It defines the six
@@ -133,9 +149,9 @@ build_host! = || {
 # The expected warning is recognised by its title, matched with the case folded
 # away: roc titled its diagnostics in capitals until 2026-08, and a compiler
 # from either side of that change must build this repo.
-build_example! = |path| {
+build_example! = |path, opt| {
 	src = Path.display(path)
-	out = wasm_path(path)
+	out = wasm_path(path, opt)
 
 	# The linker defaults to 64 MB of initial linear memory, which every page
 	# then carries as its memory floor before the first render (the host heap
@@ -146,7 +162,7 @@ build_example! = |path| {
 	# corrupts memory on deeply nested views, raise the stack first.
 	output = capture!(
 		Cmd.new_str("roc")
-			.args_str(["build", "--target=wasm32", "--wasm-memory=4194304", "--wasm-stack-size=2097152", "--no-cache", "--output=${out}", src]),
+			.args_str(["build", "--opt=${opt}", "--target=wasm32", "--wasm-memory=4194304", "--wasm-stack-size=2097152", "--no-cache", "--output=${out}", src]),
 	)?
 	lines = output.split_on("\n")
 	clean = match lines.keep_oks(summary_counts).last() {
@@ -165,6 +181,26 @@ build_example! = |path| {
 		fail!("roc build failed for ${src}")
 	}
 }
+
+parser : Cli.CliParser({ opt : Str, app_name : Try(Str, [NoValue]) })
+parser = Cli.assert_valid(
+	Cli.finish(
+		{
+			opt: Args.opt_option,
+			app_name: Param.maybe_str({
+				name: "app",
+				help: "Build only this app, e.g. counter or examples/counter.roc. Builds every app when omitted.",
+			}),
+		}.Cli,
+		{
+			name: "build",
+			version: "",
+			authors: [],
+			description: "Build the Rust host and link each Joy app into build/<opt>/<name>.wasm.",
+			text_style: Plain,
+		},
+	),
+)
 
 # Read the counts out of a line like "0 errors and 1 warning found in 704ms".
 # Lines that are not a summary fail to parse and are skipped by the caller.

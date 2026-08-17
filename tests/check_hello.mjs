@@ -3,9 +3,9 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, html } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
 const root = new El('#root');
-await mount({ wasm: readFileSync('build/hello.wasm'), root, flags: '', dom: fakeDom });
+await mount({ wasm: readFileSync(wasmPath('hello')), root, flags: '', dom: fakeDom });
 
 expect('hello renders', html(root), '<div>Hello, Roc!</div>');

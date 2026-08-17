@@ -5,10 +5,10 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, find, htmlBare, activeObservers } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
 const root = new El('#root');
-await mount({ wasm: readFileSync('build/infinite_scroll.wasm'), root, flags: '', dom: fakeDom });
+await mount({ wasm: readFileSync(wasmPath('infinite_scroll')), root, flags: '', dom: fakeDom });
 const itemCount = () => (htmlBare(root).match(/Item \d+/g) ?? []).length;
 
 expect('first batch rendered', itemCount(), 20);

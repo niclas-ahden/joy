@@ -6,9 +6,9 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, find, htmlBare } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
-const bytes = readFileSync('build/http.wasm');
+const bytes = readFileSync(wasmPath('http'));
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 // --- Success path ---

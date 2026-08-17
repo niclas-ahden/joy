@@ -4,9 +4,9 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, find, findTag, htmlBare, navigations, popstate, activeUrlListeners } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
-const bytes = readFileSync('build/navigation.wasm');
+const bytes = readFileSync(wasmPath('navigation'));
 
 const root = new El('#root');
 const app = await mount({ wasm: bytes, root, flags: '?q=hats%20on', dom: fakeDom });

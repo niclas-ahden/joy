@@ -12,8 +12,23 @@ concurrency:
 
 jobs:
   test:
-    name: Test on the flake pinned Roc
+    name: Flake pinned Roc (${{ matrix.name }})
     runs-on: ubuntu-24.04
+    strategy:
+      # One leg failing must not cancel the others
+      fail-fast: false
+      matrix:
+        # tests.roc builds via build.roc (host object + every app) and runs
+        # the node harnesses. e2e.roc drives the built examples in a real
+        # Chromium (the devShell carries playwright and its browsers).
+        # SMALL_BUFFERS shrinks the host's initial outbound buffers so every
+        # render exercises the buffer growth path.
+        include:
+          - { name: speed,         cmd: "./tests.roc --opt=speed" }
+          - { name: dev,           cmd: "./tests.roc --opt=dev" }
+          - { name: small-buffers, cmd: "env SMALL_BUFFERS=1 ./tests.roc --opt=speed" }
+          - { name: e2e-speed,     cmd: "./e2e.roc --opt=speed" }
+          - { name: e2e-dev,       cmd: "./e2e.roc --opt=dev" }
     steps:
       - uses: actions/checkout@v4
 
@@ -42,27 +57,19 @@ jobs:
       - name: Fetch Nix dependencies
         run: nix develop --command true
 
-      # tests.roc builds via build.roc (host object + every example) and runs
-      # the node harnesses.
-      - name: Build host + examples and run checks
-        run: nix develop -c ./tests.roc
-
-      # Second pass with tiny initial outbound buffers so every render
-      # exercises the buffer growth path.
-      - name: Re-run checks with small buffers
-        run: nix develop -c env SMALL_BUFFERS=1 ./tests.roc
-
-      # Browser E2E: the tests/e2e/ suite drives the built examples in a real
-      # Chromium (the devShell carries playwright and its browsers). The build
-      # is a no-op here, tests.roc already did it.
-      - name: Run browser E2E tests
-        run: nix develop -c ./e2e.roc
+      - name: Build and test
+        run: nix develop -c ${{ matrix.cmd }}
 
   # The job above uses the Roc version from flake.nix. The following job runs
-  # the same against the nightly Roc version which our README recommends.
+  # the harness suite against the nightly Roc version which our README
+  # recommends, once per optimization level.
   nightly:
-    name: Test on the Roc nightly named in the README
+    name: README nightly (${{ matrix.opt }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        opt: [speed, dev]
     steps:
       - uses: actions/checkout@v4
 
@@ -107,9 +114,9 @@ jobs:
       - run: roc --version
 
       - name: Build host + examples and run checks
-        run: ./tests.roc
+        run: ./tests.roc --opt=${{ matrix.opt }}
 
       - name: Name the nightly
         if: failure()
         run: |
-          echo "::error::This branch fails on ${{ steps.nightly.outputs.tag }}, the nightly the README tells users to install"
+          echo "::error::This branch fails on ${{ steps.nightly.outputs.tag }} (--opt=${{ matrix.opt }}), the nightly the README tells users to install"

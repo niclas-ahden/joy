@@ -7,9 +7,9 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, find, findTag, htmlBare } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
-const bytes = readFileSync('build/debounce.wasm');
+const bytes = readFileSync(wasmPath('debounce'));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const root = new El('#root');

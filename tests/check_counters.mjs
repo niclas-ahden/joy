@@ -4,10 +4,10 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, htmlBare, find } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
 const root = new El('#root');
-await mount({ wasm: readFileSync('build/counters.wasm'), root, flags: '', dom: fakeDom });
+await mount({ wasm: readFileSync(wasmPath('counters')), root, flags: '', dom: fakeDom });
 
 // Structure: div > ul(left) ul(middle) ul(right); each ul > li(-) li(value) li(+)
 const outer = root.children[0];

@@ -1,5 +1,5 @@
 // Render micro-benchmark, not part of tests.roc (no check_ prefix). Mounts
-// build/bench_grid.wasm at several grid sizes and times header-only
+// the built bench_grid app at several grid sizes and times header-only
 // messages: each dispatch runs update + render + diff + paint synchronously,
 // so the wall time per dispatch is the cost of re-rendering a page whose
 // large card grid did not change. Run from the repo root:
@@ -9,9 +9,10 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, find } from './fakedom.mjs';
+import { wasmPath } from './harness.mjs';
 
 const lazy = process.argv.includes('--lazy');
-const bytes = readFileSync('build/bench_grid.wasm');
+const bytes = readFileSync(wasmPath('bench_grid'));
 
 const WARMUP = 30;
 const RUNS = 200;

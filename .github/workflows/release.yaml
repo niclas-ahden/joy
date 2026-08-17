@@ -1,0 +1,205 @@
+name: Release
+
+# Tag-driven release flow:
+#
+#   git tag 0.33.0 && git push origin 0.33.0
+#
+# The tag push runs the full test matrix against the tagged commit, bundles
+# and verifies the platform, then creates a DRAFT release for the tag with
+# the bundle and docs already attached and generated notes to start from.
+# Nothing is public and nobody is notified yet: edit the notes in the GitHub
+# UI and press Publish to release. Publishing fires `release: published`,
+# which deploy-docs and test-nightly-roc listen for, and by then every asset
+# they need is already on the release.
+#
+# If a gate leg fails, no draft is created. Fix things, move the tag, and
+# push it again (or re-run the failed run from the Actions tab). The draft
+# job is idempotent: re-running it reuses an existing draft and re-uploads
+# the assets.
+#
+# The run summary links the draft when it is ready. To also get a
+# notification, enable success notifications for Actions in your GitHub
+# notification settings (failures notify by default).
+
+on:
+  push:
+    tags:
+      - '[0-9]*'
+  # Re-run for an existing tag: pick the tag as the ref when dispatching.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  # The release gate: the exact suite a push to main runs (see tests.yml).
+  # Harnesses and browser E2E, each at both optimization levels, plus the
+  # small-buffers pass. Nothing is bundled or drafted unless every leg is
+  # green.
+  test:
+    name: Release gate (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    strategy:
+      # One red leg must not hide the other legs' results.
+      fail-fast: false
+      matrix:
+        include:
+          - { name: speed,         cmd: "./tests.roc --opt=speed" }
+          - { name: dev,           cmd: "./tests.roc --opt=dev" }
+          - { name: small-buffers, cmd: "env SMALL_BUFFERS=1 ./tests.roc --opt=speed" }
+          - { name: e2e-speed,     cmd: "./e2e.roc --opt=speed" }
+          - { name: e2e-dev,       cmd: "./e2e.roc --opt=dev" }
+    steps:
+      - name: Require a tag
+        run: |
+          [[ "$GITHUB_REF" == refs/tags/* ]] || {
+            echo "error: this workflow releases a tag, run it from one (push a tag, or pick it as the ref when dispatching)" >&2
+            exit 1
+          }
+
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@02a151ada4993995686f9ed4f1be7cfbb229e56f # v31
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          # Signature checking stays on for the public caches. Only
+          # magic-nix-cache-action's local server is trusted unsigned
+          # (?trusted=1) because it merely replays this repo's own CI builds.
+          extra_nix_config: |
+            substituters = https://cache.nixos.org https://niclas-ahden.cachix.org http://127.0.0.1:37515?trusted=1
+            trusted-substituters = https://cache.nixos.org https://niclas-ahden.cachix.org http://127.0.0.1:37515?trusted=1
+            accept-flake-config = true
+            extra-trusted-public-keys = niclas-ahden.cachix.org-1:FdGli1vBk0cTuVJV27Tau/JvlbW+Ly3pRwFByyqdke0=
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
+
+      # --max-jobs 0 forbids local builds, so a compiler that is missing from
+      # the binary cache shows up here as a warning naming the fix, instead of
+      # as half an hour of silent compiling inside the next step.
+      - name: Substitute the Roc compiler
+        run: |
+          nix build .#roc --no-link --max-jobs 0 \
+            || echo "::warning::The pinned Roc compiler is not in the binary cache, so this run builds it from source. Run ./cache.roc to push it."
+
+      - name: Fetch Nix dependencies
+        run: nix develop --command true
+
+      - name: Build and test
+        run: nix develop -c ${{ matrix.cmd }}
+
+  draft:
+    name: Bundle, verify and draft the release
+    needs: test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@02a151ada4993995686f9ed4f1be7cfbb229e56f # v31
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          # Signature checking stays on for the public caches. Only
+          # magic-nix-cache-action's local server is trusted unsigned
+          # (?trusted=1) because it merely replays this repo's own CI builds.
+          extra_nix_config: |
+            substituters = https://cache.nixos.org https://niclas-ahden.cachix.org http://127.0.0.1:37515?trusted=1
+            trusted-substituters = https://cache.nixos.org https://niclas-ahden.cachix.org http://127.0.0.1:37515?trusted=1
+            accept-flake-config = true
+            extra-trusted-public-keys = niclas-ahden.cachix.org-1:FdGli1vBk0cTuVJV27Tau/JvlbW+Ly3pRwFByyqdke0=
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
+
+      # --max-jobs 0 forbids local builds, so a compiler that is missing from
+      # the binary cache shows up here as a warning naming the fix, instead of
+      # as half an hour of silent compiling inside the next step.
+      - name: Substitute the Roc compiler
+        run: |
+          nix build .#roc --no-link --max-jobs 0 \
+            || echo "::warning::The pinned Roc compiler is not in the binary cache, so this run builds it from source. Run ./cache.roc to push it."
+
+      - name: Fetch Nix dependencies
+        run: nix develop --command true
+
+      - name: Bundle the platform
+        id: bundle
+        run: |
+          nix develop -c ./bundle.roc
+          echo "archive=$(basename dist/*.tar.zst)" >> "$GITHUB_OUTPUT"
+
+      # Prove the artifact itself works before publishing it: extract it and
+      # build + run an example against the extracted platform, exactly like a
+      # consumer's compiler will after downloading.
+      - name: Verify the bundle end to end
+        run: |
+          mkdir -p verify
+          cp dist/*.tar.zst verify/
+          nix develop -c bash -c 'cd verify && roc unbundle'
+          extracted=$(find verify -mindepth 1 -maxdepth 1 -type d -printf '%f\n')
+          sed "s|\"\.\./platform/main.roc\"|\"./$extracted/main.roc\"|" examples/hello.roc > verify/hello.roc
+          # If the sed pattern didn't match, the copy still points at the
+          # repo's own platform tree and the verification proves nothing.
+          grep -q "\"./$extracted/main.roc\"" verify/hello.roc || {
+            echo "error: platform path substitution failed in verify/hello.roc" >&2
+            exit 1
+          }
+          nix develop -c roc build --opt=speed --target=wasm32 --no-cache --output=build/speed/hello.wasm verify/hello.roc
+          nix develop -c env JOY_OPT=speed node tests/check_hello.mjs
+
+      - name: Generate docs
+        run: |
+          nix develop -c roc docs platform/main.roc --output=generated-docs
+          tar -czf docs.tar.gz -C generated-docs .
+
+      - name: Draft the release with assets and notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+
+          # Reuse an existing release on re-runs, otherwise draft a new one
+          # with generated notes as the starting point for editing.
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$tag" --draft --title "$tag" --generate-notes \
+              --repo "$GITHUB_REPOSITORY"
+          fi
+
+          gh release upload "$tag" dist/*.tar.zst docs.tar.gz \
+            --clobber --repo "$GITHUB_REPOSITORY"
+
+          # Append the usage snippet once, re-runs must not duplicate it.
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/${{ steps.bundle.outputs.archive }}"
+          html=$(grep -o 'https://[^"]*' platform/main.roc | head -1)
+          [ -n "$html" ] || {
+            echo "error: no joy-html URL in platform/main.roc" >&2
+            exit 1
+          }
+          gh release view "$tag" --json body -q .body --repo "$GITHUB_REPOSITORY" > notes.md
+          if ! grep -q '## Using this release' notes.md; then
+            {
+              echo ""
+              echo "## Using this release"
+              echo ""
+              echo '```roc'
+              echo "app [Model, Msg, init, update, render, subscriptions] {"
+              echo "    pf: platform \"$url\","
+              echo "    html: \"$html\","
+              echo "}"
+              echo '```'
+            } >> notes.md
+            gh release edit "$tag" --notes-file notes.md --repo "$GITHUB_REPOSITORY"
+          fi
+
+          draft_url=$(gh release view "$tag" --json url -q .url --repo "$GITHUB_REPOSITORY")
+          {
+            echo "## Draft release ready"
+            echo ""
+            echo "Everything is tested, bundled, verified and attached."
+            echo "Edit the notes and press Publish: $draft_url"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "draft ready: $draft_url"

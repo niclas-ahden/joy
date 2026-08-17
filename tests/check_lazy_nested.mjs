@@ -11,7 +11,7 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, htmlBare, find } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
 const writes = new Map();
 const countingDom = {
@@ -24,7 +24,7 @@ const countingDom = {
 const w = (node) => writes.get(node) ?? 0;
 
 const root = new El('#root');
-await mount({ wasm: readFileSync('build/lazy_nested.wasm'), root, flags: '', dom: countingDom });
+await mount({ wasm: readFileSync(wasmPath('lazy_nested')), root, flags: '', dom: countingDom });
 
 const bump = find(root, 'bump');
 const grow = find(root, 'grow');

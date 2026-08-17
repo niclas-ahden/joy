@@ -8,7 +8,7 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, find, findTag, htmlBare, activeGlobalListeners } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
 // Warm up with `warm` iterations, then measure across `measure` more.
 // Returns [watermarkAfterWarmup, watermarkAtEnd].
@@ -20,7 +20,7 @@ const run = (iterations, step, exportsRef) => {
 // --- counter: msg events, diff, model churn ---
 {
   const root = new El('#root');
-  const { instance } = await mount({ wasm: readFileSync('build/counter.wasm'), root, flags: '', dom: fakeDom });
+  const { instance } = await mount({ wasm: readFileSync(wasmPath('counter')), root, flags: '', dom: fakeDom });
   const plus = find(root, '+');
   const click = () => plus.listeners.click();
   const afterWarmup = run(2000, click, instance.exports);
@@ -32,7 +32,7 @@ const run = (iterations, step, exportsRef) => {
 // --- events_input: value events, big strings through js_alloc ---
 {
   const root = new El('#root');
-  const { instance } = await mount({ wasm: readFileSync('build/events_input.wasm'), root, flags: '', dom: fakeDom });
+  const { instance } = await mount({ wasm: readFileSync(wasmPath('events_input')), root, flags: '', dom: fakeDom });
   const ta = findTag(root, 'textarea');
   const realLog = console.log;
   console.log = () => {};
@@ -50,7 +50,7 @@ const run = (iterations, step, exportsRef) => {
     arrayBuffer: async () => new TextEncoder().encode(`["${'q'.repeat(300)}"]`).buffer,
   });
   const root = new El('#root');
-  const { instance } = await mount({ wasm: readFileSync('build/http.wasm'), root, flags: '', dom: fakeDom });
+  const { instance } = await mount({ wasm: readFileSync(wasmPath('http')), root, flags: '', dom: fakeDom });
   const realLog = console.log;
   console.log = () => {};
   const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -74,7 +74,7 @@ const run = (iterations, step, exportsRef) => {
   const realSetInterval = globalThis.setInterval;
   globalThis.setInterval = (fn, ms) => { intervals.push({ fn, ms }); return intervals.length; };
   const root = new El('#root');
-  const { instance } = await mount({ wasm: readFileSync('build/time.wasm'), root, flags: '', dom: fakeDom });
+  const { instance } = await mount({ wasm: readFileSync(wasmPath('time')), root, flags: '', dom: fakeDom });
   const tickFn = intervals[0].fn;
   const afterWarmup = run(500, tickFn, instance.exports);
   const atEnd = run(1500, tickFn, instance.exports);
@@ -90,7 +90,7 @@ const run = (iterations, step, exportsRef) => {
 // KeyEvent record's heap strings are increfed per extra callback) ---
 {
   const root = new El('#root');
-  const { instance } = await mount({ wasm: readFileSync('build/keyboard.wasm'), root, flags: '', dom: fakeDom });
+  const { instance } = await mount({ wasm: readFileSync(wasmPath('keyboard')), root, flags: '', dom: fakeDom });
   const toggle = () => {
     (find(root, 'Stop listening') ?? find(root, 'Listen')).listeners.click();
   };

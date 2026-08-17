@@ -7,13 +7,14 @@
 // must not know anything about this repo's layout. Everything that has to know
 // lives here instead.
 //
-// Two modes:
+// Two modes, both naming the optimization level whose build/<opt>/ tree to
+// serve:
 //
-//   node www/serve.mjs 8000 counter
+//   node www/serve.mjs 8000 speed counter
 //     One app pinned at `/`, which is what watch.roc starts. The site looks
 //     like it has a single app on it, because as far as the page knows it does.
 //
-//   node www/serve.mjs 8787
+//   node www/serve.mjs 8787 speed
 //     Every app under its own prefix, `/counter/` and `/modal/`, which is what
 //     e2e.roc starts so several tests can share one server. Relative paths do
 //     the routing, so the page served there is byte for byte the same one.
@@ -22,8 +23,14 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const port = Number(process.argv[2] ?? 8000);
-const pinned = process.argv[3] ?? null;
+const opt = process.argv[3];
+const pinned = process.argv[4] ?? null;
 const rootDir = process.cwd();
+
+if (!opt) {
+  console.error('usage: node www/serve.mjs <port> <opt> [app], e.g. node www/serve.mjs 8000 speed counter');
+  process.exit(1);
+}
 
 // Nothing a watch loop serves is cacheable. Browsers cache heuristically when
 // no cache headers are present, and a stale wasm survives even a hard reload,
@@ -47,7 +54,7 @@ function routeFor(app, rest) {
     case '/perf.js':
       return { file: 'www/perf.js', type: 'text/javascript' };
     case '/app.wasm':
-      return { file: `build/${app}.wasm`, type: 'application/wasm' };
+      return { file: `build/${opt}/${app}.wasm`, type: 'application/wasm' };
     default:
       return null;
   }

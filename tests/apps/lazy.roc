@@ -52,7 +52,7 @@ import pf.Time
 #   3. Produce the surrounding Msg type inside the region. Wrapping a lazy
 #      region in `Html.map` rebuilds the thunk every render and defeats it.
 #
-# Run it from the repo root with `./watch.roc examples/lazy.roc` and open
+# Run it from the repo root with `./watch.roc --opt=speed examples/lazy.roc` and open
 # http://localhost:8000 (run `await import('/perf.js')` in the devtools
 # console for the frame-time meter)
 

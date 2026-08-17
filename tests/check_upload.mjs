@@ -6,9 +6,9 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, FakeFile, fakeDom, find, findTag, htmlBare } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
-const bytes = readFileSync('build/upload.wasm');
+const bytes = readFileSync(wasmPath('upload'));
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 

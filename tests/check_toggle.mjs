@@ -4,10 +4,10 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, html, find } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
 const root = new El('#root');
-await mount({ wasm: readFileSync('build/toggle.wasm'), root, flags: '', dom: fakeDom });
+await mount({ wasm: readFileSync(wasmPath('toggle')), root, flags: '', dom: fakeDom });
 const nextBtn = find(root, 'next');
 const click = () => nextBtn.listeners.click();
 

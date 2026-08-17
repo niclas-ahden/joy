@@ -6,10 +6,10 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, find, findTag, htmlBare } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
 const root = new El('#root');
-await mount({ wasm: readFileSync('build/keyed_list.wasm'), root, flags: '', dom: fakeDom });
+await mount({ wasm: readFileSync(wasmPath('keyed_list')), root, flags: '', dom: fakeDom });
 
 const ul = findTag(root, 'ul');
 const labels = () => ul.children.map((li) => li.children[0].text);

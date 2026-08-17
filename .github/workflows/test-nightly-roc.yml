@@ -1,13 +1,21 @@
 name: Test on latest nightly Roc
 
-# Test the latest Joy release against the latest Roc nightly, every morning.
-# A red run means we have some work to do! Either we need to adapt to a change
-# in Roc or we should isolate and report a bug :)
+# Test the latest Joy release against the latest Roc nightly, every morning
+# and when a release is published. A red run means we have some work to do!
+# Either we need to adapt to a change in Roc or we should isolate and report
+# a bug :)
+#
+# The suite runs once per optimization level, and the README only starts
+# recommending a nightly when both the speed and the dev pass are green. A
+# nightly that miscompiles dev builds is not one we can recommend.
 
 on:
   schedule:
     # Nightlies publish between 10:00 and 13:30 UTC.
     - cron: '0 15 * * *'
+  # Publishing is the manual last step of the Release workflow, which builds
+  # and attaches the platform bundle to a draft first. So at publish time the
+  # bundle this workflow tests is guaranteed to exist.
   release:
     types: [published]
   workflow_dispatch:
@@ -20,13 +28,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  nightly:
-    name: Test latest Roc nightly
+  # Resolve the versions once, so both test legs run the exact same nightly
+  # against the exact same Joy release.
+  resolve:
+    name: Resolve the latest nightly and the latest Joy release
     runs-on: ubuntu-24.04
-    permissions:
-      contents: write # names the passing nightly in the README
+    outputs:
+      nightly: ${{ steps.versions.outputs.nightly }}
+      nightly_url: ${{ steps.versions.outputs.nightly_url }}
+      sha: ${{ steps.versions.outputs.sha }}
+      prev_sha: ${{ steps.versions.outputs.prev_sha }}
+      joy: ${{ steps.versions.outputs.joy }}
+      bundle: ${{ steps.versions.outputs.bundle }}
     steps:
-      - name: Resolve the latest nightly and the latest Joy release
+      - name: Resolve versions
         id: versions
         env:
           GH_TOKEN: ${{ github.token }}
@@ -57,9 +72,20 @@ jobs:
 
           echo "Roc $tag against Joy $joy_tag"
 
+  test:
+    name: Test latest Roc nightly (${{ matrix.opt }})
+    needs: resolve
+    runs-on: ubuntu-24.04
+    strategy:
+      # Both legs must report. Seeing speed pass while dev fails is exactly
+      # the signal this workflow exists to surface.
+      fail-fast: false
+      matrix:
+        opt: [speed, dev]
+    steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ steps.versions.outputs.joy }}
+          ref: ${{ needs.resolve.outputs.joy }}
 
       - uses: actions/setup-node@v4
         with:
@@ -76,7 +102,7 @@ jobs:
       - name: Install the Roc nightly
         run: |
           set -euo pipefail
-          curl -sSL -o roc_nightly.tar.gz "${{ steps.versions.outputs.nightly_url }}"
+          curl -sSL -o roc_nightly.tar.gz "${{ needs.resolve.outputs.nightly_url }}"
           mkdir -p "$RUNNER_TEMP/roc"
           tar -xzf roc_nightly.tar.gz --strip-components=1 -C "$RUNNER_TEMP/roc"
           echo "$RUNNER_TEMP/roc" >> "$GITHUB_PATH"
@@ -93,8 +119,8 @@ jobs:
           apps=(examples/*.roc tests/apps/*.roc)
           for src in "${apps[@]}"; do
             sed -i \
-              -e 's|"\.\./\.\./platform/main\.roc"|"${{ steps.versions.outputs.bundle }}"|' \
-              -e 's|"\.\./platform/main\.roc"|"${{ steps.versions.outputs.bundle }}"|' \
+              -e 's|"\.\./\.\./platform/main\.roc"|"${{ needs.resolve.outputs.bundle }}"|' \
+              -e 's|"\.\./platform/main\.roc"|"${{ needs.resolve.outputs.bundle }}"|' \
               "$src"
           done
           leftover=$(grep -l 'platform "\.\.' "${apps[@]}" || true)
@@ -106,19 +132,25 @@ jobs:
           echo "rewrote ${#apps[@]} apps"
 
       - name: Build and run the checks
-        run: ./tests.roc
+        run: ./tests.roc --opt=${{ matrix.opt }}
 
-      # If the tests pass, then let's update the README to recommend this new nightly!
-
+  # If both legs pass, then let's update the README to recommend this new
+  # nightly! `needs: test` covers the whole matrix, so one red leg is enough
+  # to keep the recommendation where it is.
+  update-readme:
+    name: Name this nightly in the README
+    needs: [resolve, test]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
       - uses: actions/checkout@v4
         with:
           ref: main
-          path: main
 
       - name: Name this nightly in the README
-        working-directory: main
         env:
-          NIGHTLY: ${{ steps.versions.outputs.nightly }}
+          NIGHTLY: ${{ needs.resolve.outputs.nightly }}
         run: |
           set -euo pipefail
 
@@ -145,11 +177,19 @@ jobs:
           git config user.email ''
           git add README.md
           git commit -m "README: Update recommended Roc to $NIGHTLY"
+          # main may have moved since checkout, replay this one commit on top
+          # rather than failing the push.
+          git pull --rebase origin main
           git push
           echo "README now recommends $NIGHTLY (was $current)"
 
+  name-commit-range:
+    name: Name the commit range
+    needs: [resolve, test]
+    if: failure()
+    runs-on: ubuntu-24.04
+    steps:
       - name: Name the commit range
-        if: failure()
         run: |
-          echo "::error::Joy ${{ steps.versions.outputs.joy }} fails on roc ${{ steps.versions.outputs.nightly }}"
-          echo "  https://github.com/roc-lang/roc/compare/${{ steps.versions.outputs.prev_sha }}...${{ steps.versions.outputs.sha }}"
+          echo "::error::Joy ${{ needs.resolve.outputs.joy }} fails on roc ${{ needs.resolve.outputs.nightly }}"
+          echo "  https://github.com/roc-lang/roc/compare/${{ needs.resolve.outputs.prev_sha }}...${{ needs.resolve.outputs.sha }}"

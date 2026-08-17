@@ -16,6 +16,16 @@ Util :: [].{
 		}
 	}
 
+	## run!, with one environment variable set for the child.
+	run_env! : Str, List(Str), Str, Str => Try({}, [Exit(I32), ..])
+	run_env! = |program, args, key, value| {
+		match Cmd.new_str(program).args_str(args).env_str(key, value).exec_exit_code!() {
+			Ok(0) => Ok({})
+			Ok(code) => Err(Exit(code))
+			Err(_) => Err(Exit(1))
+		}
+	}
+
 	## Report a message on stderr and exit non-zero.
 	fail! : Str => Try(ok, [Exit(I32), ..])
 	fail! = |message| {

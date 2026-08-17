@@ -5,9 +5,9 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, htmlBare } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
-const bytes = readFileSync('build/pointer.wasm');
+const bytes = readFileSync(wasmPath('pointer'));
 
 function findById(node, id) {
   if (node instanceof El) {

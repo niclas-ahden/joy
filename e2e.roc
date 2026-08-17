@@ -1,9 +1,12 @@
-#!/usr/bin/env roc
+#!/usr/bin/env -S sh -c 'exec roc "$0" -- "$@"'
 # Run:
 #
-#   ./e2e.roc
+#   ./e2e.roc --opt=speed
+#   ./e2e.roc --opt=dev
 #
-# To build the examples, serve the repo root, then let roc-spec run
+# To build the examples at that optimization level (the shebang trampolines
+# through sh so roc passes --opt through instead of claiming it), serve the
+# repo root, then let roc-spec run
 # tests/e2e/*_test.roc. Each one drives a Joy example in a real Chromium via
 # roc-playwright. Run from the repo root, inside the nix devShell (it carries
 # playwright and its browsers). CI runs this next to ./tests.roc: the fake-DOM
@@ -15,6 +18,7 @@
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.23.0/7NpDhuqoqGFedmVLvmm1zjq37GCmaFGzwr5sz4ch9wTK.tar.zst",
 	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.3.0/2v2CV8CLXRJmQRvfoHtPngAUGgE8jL6DDgXbugZhFVf5.tar.zst",
+	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.7.0/9PiT7ffE9m8BJyVv3LwE4rWWdcbpxEMUADMpiLBfY8jJ.tar.zst",
 }
 
 import pf.Cmd
@@ -22,14 +26,18 @@ import pf.Env
 import pf.Http
 import pf.Sleep
 import spec.Wait
+import weaver.Cli
+import Args
 import Util exposing [fail!, run!]
 
-main! = |_args| {
+main! = |args| {
+	opt = Args.check_opt!(Args.parse!(parser, args)?)?
+
 	if !(on_path!("playwright")) {
 		fail!("playwright not found, run inside the nix devShell")?
 	}
 
-	run!("./build.roc", [])?
+	run!("./build.roc", ["--opt=${opt}"])?
 
 	port = Env.var_str!("JOY_E2E_PORT") ?? "8787"
 	url = "http://127.0.0.1:${port}"
@@ -39,7 +47,7 @@ main! = |_args| {
 	# The same dev server watch.roc uses, started without an app name so every
 	# app is reachable under its own prefix and the tests can share one port.
 	server = Cmd.new_str("node")
-		.args_str(["www/serve.mjs", port])
+		.args_str(["www/serve.mjs", port, opt])
 		.env_str("JOY_E2E_URL", url)
 		.spawn_grouped!()?
 
@@ -82,3 +90,17 @@ main! = |_args| {
 on_path! : Str => Bool
 on_path! = |program|
 	Cmd.new_str(program).args_str(["--version"]).exec_output_bytes!().is_ok()
+
+parser : Cli.CliParser(Str)
+parser = Cli.assert_valid(
+	Cli.finish(
+		Args.opt_option,
+		{
+			name: "e2e",
+			version: "",
+			authors: [],
+			description: "Build the examples at the given optimization level and drive them in a real Chromium via tests/e2e/.",
+			text_style: Plain,
+		},
+	),
+)

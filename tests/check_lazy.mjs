@@ -11,7 +11,7 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, htmlBare, find } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
 // Deterministic clock + captured intervals (same scheme as check_time.mjs).
 const T0 = 1_754_000_000_000;
@@ -32,7 +32,7 @@ const countingDom = {
 const w = (node) => writes.get(node) ?? 0;
 
 const root = new El('#root');
-await mount({ wasm: readFileSync('build/lazy.wasm'), root, flags: '', dom: countingDom });
+await mount({ wasm: readFileSync(wasmPath('lazy')), root, flags: '', dom: countingDom });
 
 expect('ticker subscribed at 16ms', intervals.length === 1 && intervals[0].ms === 16, true);
 const tick = () => { nowMs += 16; intervals[0].fn(); };

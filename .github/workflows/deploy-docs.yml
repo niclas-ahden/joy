@@ -7,11 +7,11 @@ on:
     paths:
       - 'platform/**'
       - 'docs/**'
-  # Re-deploy after a release publishes its docs.tar.gz asset.
-  workflow_run:
-    workflows: ["Bundle Platform"]
-    types:
-      - completed
+  # Re-deploy when a release is published. Its docs.tar.gz was attached while
+  # the release was still a draft (see release.yaml), so it is already there
+  # to serve.
+  release:
+    types: [published]
   workflow_dispatch:
 
 concurrency:
@@ -61,17 +61,18 @@ jobs:
       - name: Fetch Nix dependencies
         run: nix develop --command true
 
-      # Each release carries its docs as a docs.tar.gz asset (uploaded by the
-      # Bundle Platform workflow). Serve every release's docs under /<tag>/.
-      # The generated pages only use relative URLs, so they can live at any
-      # subpath unmodified.
+      # Each release carries its docs as a docs.tar.gz asset (attached by the
+      # Release workflow). Serve every release's docs under /<tag>/. The
+      # generated pages only use relative URLs, so they can live at any
+      # subpath unmodified. Drafts are filtered out: a pending draft must not
+      # publish docs, let alone become the landing page redirect.
       - name: Fetch docs for each release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p site
           latest=""
-          for tag in $(gh release list --repo "${{ github.repository }}" --json tagName -q '.[].tagName'); do
+          for tag in $(gh release list --repo "${{ github.repository }}" --json tagName,isDraft -q '.[] | select(.isDraft | not) | .tagName'); do
             if gh release download "$tag" --repo "${{ github.repository }}" \
                  --pattern docs.tar.gz --output /tmp/docs.tar.gz --clobber 2>/dev/null; then
               mkdir -p "site/$tag"

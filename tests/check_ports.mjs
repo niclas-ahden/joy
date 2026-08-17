@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, htmlBare } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
 const logged = [];
 const realLog = console.log;
@@ -15,7 +15,7 @@ const statuses = [];
 const levels = [];
 const root = new El('#root');
 const app = await mount({
-  wasm: readFileSync('build/ports.wasm'),
+  wasm: readFileSync(wasmPath('ports')),
   root,
   flags: '',
   dom: fakeDom,

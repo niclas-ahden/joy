@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, find } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
 const logged = [];
 const debugged = [];
@@ -16,7 +16,7 @@ console.log = (...a) => logged.push(a.join(' '));
 console.debug = (...a) => debugged.push(a.join(' '));
 
 const root = new El('#root');
-await mount({ wasm: readFileSync('build/logging.wasm'), root, flags: '', dom: fakeDom });
+await mount({ wasm: readFileSync(wasmPath('logging')), root, flags: '', dom: fakeDom });
 
 expect('boot Console.log drained to console.log', logged.length, 1);
 expect('boot message intact', logged[0], 'The app booted');

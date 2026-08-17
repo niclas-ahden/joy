@@ -6,9 +6,9 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, findTag } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
-const bytes = readFileSync('build/jsbench.wasm');
+const bytes = readFileSync(wasmPath('jsbench'));
 
 // First element with the given id attribute (pre-order).
 function findId(node, id) {

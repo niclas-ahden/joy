@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, find, htmlBare } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
 // Deterministic clock + captured intervals.
 const T0 = 1_751_450_000_000;
@@ -23,7 +23,7 @@ globalThis.clearInterval = (id) => { cleared.push(id); };
 // The example expects the boot clock in the flags string (init is pure and
 // has no clock), so pass T0 the way a browser embedder passes Date.now().
 const root = new El('#root');
-await mount({ wasm: readFileSync('build/time.wasm'), root, flags: String(T0), dom: fakeDom });
+await mount({ wasm: readFileSync(wasmPath('time')), root, flags: String(T0), dom: fakeDom });
 
 expect('one interval started from the subscription', intervals.length, 1);
 expect('interval period', intervals[0].ms, 1000);

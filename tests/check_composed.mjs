@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, htmlBare } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
 // All elements matching pred, pre-order.
 const collect = (node, pred, out = []) => {
@@ -25,7 +25,7 @@ globalThis.setInterval = (fn, ms) => { intervals.push({ fn, ms }); return interv
 globalThis.clearInterval = () => {};
 
 const root = new El('#root');
-await mount({ wasm: readFileSync('build/composed.wasm'), root, flags: '', dom: fakeDom });
+await mount({ wasm: readFileSync(wasmPath('composed')), root, flags: '', dom: fakeDom });
 
 const counters = () => htmlBare(root).match(/<h2>left<\/h2><div><button>-<\/button>(-?\d+)<button>\+<\/button><\/div><h2>right<\/h2><div><button>-<\/button>(-?\d+)<button>\+<\/button><\/div>/)?.slice(1, 3).join(',');
 

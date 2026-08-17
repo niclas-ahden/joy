@@ -11,7 +11,7 @@
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, htmlBare, find } from './fakedom.mjs';
-import { expect } from './harness.mjs';
+import { expect, wasmPath } from './harness.mjs';
 
 const attrWrites = new Map();
 const countingDom = {
@@ -23,7 +23,7 @@ const countingDom = {
 };
 
 const root = new El('#root');
-await mount({ wasm: readFileSync('build/shared.wasm'), root, flags: '', dom: countingDom });
+await mount({ wasm: readFileSync(wasmPath('shared')), root, flags: '', dom: countingDom });
 
 const bump = find(root, 'bump');
 const grow = find(root, 'grow');
