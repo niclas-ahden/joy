@@ -1,4 +1,4 @@
-name: Test on latest nightly Roc
+name: Test latest Joy release on latest nightly Roc
 
 # Test the latest Joy release against the latest Roc nightly, every morning
 # and when a release is published. A red run means we have some work to do!
@@ -71,9 +71,13 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
           echo "Roc $tag against Joy $joy_tag"
+          echo "Testing Joy **$joy_tag** against Roc **$tag**" >> "$GITHUB_STEP_SUMMARY"
 
   test:
-    name: Test latest Roc nightly (${{ matrix.opt }})
+    # The run title cannot name the versions, because `run-name` is evaluated
+    # before any job starts and so cannot see `needs`. Job names can, so the
+    # versions under test are visible without opening a log.
+    name: Joy ${{ needs.resolve.outputs.joy }} on ${{ needs.resolve.outputs.nightly }} (${{ matrix.opt }})
     needs: resolve
     runs-on: ubuntu-24.04
     strategy:
@@ -138,7 +142,7 @@ jobs:
   # nightly! `needs: test` covers the whole matrix, so one red leg is enough
   # to keep the recommendation where it is.
   update-readme:
-    name: Name this nightly in the README
+    name: Name ${{ needs.resolve.outputs.nightly }} in the README
     needs: [resolve, test]
     runs-on: ubuntu-24.04
     permissions:
