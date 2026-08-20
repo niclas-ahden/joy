@@ -125,4 +125,16 @@ http
       res.end('not found');
     }
   })
+  // watch.roc pipes this process's output rather than letting it inherit the
+  // terminal, and repeats whatever landed here if the server dies on startup.
+  // So say what went wrong in one line: that line is the whole error someone
+  // gets when the port they asked for is not theirs to take.
+  .on('error', (err) => {
+    console.error(
+      err.code === 'EADDRINUSE'
+        ? `port ${port} is already in use`
+        : `could not listen on port ${port}: ${err.message}`,
+    );
+    process.exit(1);
+  })
   .listen(port, '127.0.0.1');

@@ -25,7 +25,7 @@
 # instrumentation is compiled out entirely without JOY_BENCH, so normal
 # builds pay nothing.
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.23.0/7NpDhuqoqGFedmVLvmm1zjq37GCmaFGzwr5sz4ch9wTK.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
 	playwright: "../../../roc-playwright/package/main.roc",
 }
 
@@ -41,7 +41,7 @@ import playwright.Playwright
 hooks = {
 	new: Cmd.new_str,
 	args: Cmd.args_str,
-	spawn_grouped!: Cmd.spawn_grouped!,
+	spawn_grouped!: Cmd.spawn_leashed!,
 	write_stdin!: Cmd.Child.write_stdin!,
 	read_stdout!: Cmd.Child.read_stdout!,
 	kill!: Cmd.Child.kill!,
@@ -72,11 +72,11 @@ main! = |args| {
 		fail!("build failed")?
 	}
 
-	# Spawned grouped, so the platform kills the server when this script
+	# Spawned leashed, so the platform kills the server when this script
 	# exits, pass or fail. Pinned mode: jsbench is the site's only app.
 	server = Cmd.new_str("node")
 		.args_str(["www/serve.mjs", port, "speed", "jsbench"])
-		.spawn_grouped!()?
+		.spawn_leashed!()?
 	url = "http://127.0.0.1:${port}/"
 	wait_for_server!(url, 100)?
 

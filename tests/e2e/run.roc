@@ -3,7 +3,7 @@
 # roc-playwright). Invoked by e2e.roc, which builds the examples, serves the
 # repo root and exports JOY_E2E_URL first.
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.23.0/7NpDhuqoqGFedmVLvmm1zjq37GCmaFGzwr5sz4ch9wTK.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
 	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.3.0/2v2CV8CLXRJmQRvfoHtPngAUGgE8jL6DDgXbugZhFVf5.tar.zst",
 }
 
@@ -20,7 +20,7 @@ hooks = {
 		Cmd.new(OsStr.utf8("roc"))
 			.args_str(["--opt=speed", file])
 			.envs_str(envs)
-			.spawn_grouped!(),
+			.spawn_leashed!(),
 	poll!: Cmd.Child.poll!,
 	kill_wait!: Cmd.Child.kill_wait!,
 	list_dir!: |dir| Path.list!(Path.utf8(dir)).map_ok(|entries| entries.map(Path.display)),

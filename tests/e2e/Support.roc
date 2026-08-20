@@ -20,7 +20,7 @@ Support :: [].{
 		hooks = {
 			new: Cmd.new_str,
 			args: Cmd.args_str,
-			spawn_grouped!: Cmd.spawn_grouped!,
+			spawn_grouped!: Cmd.spawn_leashed!,
 			write_stdin!: Cmd.Child.write_stdin!,
 			read_stdout!: Cmd.Child.read_stdout!,
 			kill!: Cmd.Child.kill!,

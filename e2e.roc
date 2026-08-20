@@ -16,7 +16,7 @@
 #
 # Set the environment variable `JOY_E2E_PORT` to change the port (default 8787).
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.23.0/7NpDhuqoqGFedmVLvmm1zjq37GCmaFGzwr5sz4ch9wTK.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
 	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.3.0/2v2CV8CLXRJmQRvfoHtPngAUGgE8jL6DDgXbugZhFVf5.tar.zst",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.7.0/9PiT7ffE9m8BJyVv3LwE4rWWdcbpxEMUADMpiLBfY8jJ.tar.zst",
 }
@@ -42,14 +42,14 @@ main! = |args| {
 	port = Env.var_str!("JOY_E2E_PORT") ?? "8787"
 	url = "http://127.0.0.1:${port}"
 
-	# Spawned grouped, so the platform kills the server (and anything it
+	# Spawned leashed, so the platform kills the server (and anything it
 	# spawned) when this script exits, pass or fail.
 	# The same dev server watch.roc uses, started without an app name so every
 	# app is reachable under its own prefix and the tests can share one port.
 	server = Cmd.new_str("node")
 		.args_str(["www/serve.mjs", port, opt])
 		.env_str("JOY_E2E_URL", url)
-		.spawn_grouped!()?
+		.spawn_leashed!()?
 
 	# Any response means the port is live, so poll the page the tests open.
 	# Bounded, so a server that never comes up fails the run instead of
