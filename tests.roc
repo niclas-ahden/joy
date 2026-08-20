@@ -1,20 +1,19 @@
-#!/usr/bin/env -S sh -c 'exec roc "$0" -- "$@"'
+#!/usr/bin/env roc
 # Run:
 #
-#   ./tests.roc --opt=speed
-#   ./tests.roc --opt=dev
+#   ./tests.roc -- --opt=speed
+#   ./tests.roc -- --opt=dev
 #
 # To build everything at that optimization level (see build.roc) and run the
 # node harness checks against it. `--opt` is required and is handed explicitly
 # to build.roc and, as JOY_OPT, to the harnesses, so every stage of one run
 # agrees on the build/<opt>/ tree. Run from the repo root.
 #
-# The shebang trampolines through sh to place roc's `--` separator between
-# the script and its args. Without it roc claims --opt and --help for itself
-# instead of passing them through.
+# Flags need roc's `--` separator in front of them. Without it roc claims
+# --opt and --help for itself instead of passing them on.
 #
 # Environment variables pass straight through to build.roc, so
-# `SMALL_BUFFERS=1 ./tests.roc --opt=speed` runs the whole suite with tiny
+# `SMALL_BUFFERS=1 ./tests.roc -- --opt=speed` runs the whole suite with tiny
 # initial outbound buffers, exercising the buffer growth path on every render.
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
@@ -28,7 +27,7 @@ import Args
 import Util exposing [run!, run_env!]
 
 main! = |args| {
-	opt = Args.check_opt!(Args.parse!(parser, args)?)?
+	opt = Args.check_opt!(Args.parse!(parser, args, "--opt=speed")?)?
 
 	# Roc-level unit tests: top-level `expect`s in the platform modules (pure
 	# code: the Cmd/Sub/Attribute/Html `map` plumbing, WebCrypto.to_hex, ...).
@@ -37,7 +36,7 @@ main! = |args| {
 	run!("roc", ["test", "platform/main.roc"])?
 
 	Stdout.line!("== building and testing with --opt=${opt}")?
-	run!("./build.roc", ["--opt=${opt}"])?
+	run!("./build.roc", ["--", "--opt=${opt}"])?
 
 	# node:test runs each harness in its own child process (concurrently) and
 	# keeps going past a failing file, so one broken harness can't hide the

@@ -141,7 +141,7 @@ jobs:
           echo "rewrote ${#apps[@]} apps"
 
       - name: Build and run the checks
-        run: ./tests.roc --opt=${{ matrix.opt }}
+        run: ./tests.roc -- --opt=${{ matrix.opt }}
 
   # If the suite passes, then let's recommend this new nightly! It is named in
   # two places: the README, for people building from a checkout, and the notes

@@ -62,7 +62,7 @@ main! = |args| {
 
 	Stdout.line!("== building jsbench with joy_bench instrumentation ==")?
 	build_code = Cmd.new_str("./build.roc")
-		.args_str(["--opt=speed", "tests/apps/jsbench.roc"])
+		.args_str(["--", "--opt=speed", "tests/apps/jsbench.roc"])
 		.env_str("JOY_BENCH", "1")
 		.exec_exit_code!()
 		.ok_or(1)

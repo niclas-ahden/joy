@@ -1,15 +1,15 @@
-#!/usr/bin/env -S sh -c 'exec roc "$0" -- "$@"'
+#!/usr/bin/env roc
 # Run:
 #
-#   ./build.roc --opt=speed                       every app, what tests.roc and CI want
-#   ./build.roc --opt=speed examples/counter.roc  just that one, what watch.roc wants
+#   ./build.roc -- --opt=speed                       every app, what tests.roc and CI want
+#   ./build.roc -- --opt=speed examples/counter.roc  just that one, what watch.roc wants
 #
 # To build the Rust host and link each app into `build/<opt>/<name>.wasm`.
 # Run from the repo root.
 #
-# The shebang trampolines through sh to place roc's `--` separator between
-# the script and its args. Without it roc claims --opt and --help for itself
-# instead of passing them through.
+# Flags need roc's `--` separator in front of them. Without it roc claims
+# --opt and --help for itself instead of passing them on. Plain arguments,
+# like the app name above, need no separator.
 #
 # `--opt` mirrors roc's own flag and is passed straight to `roc build`. It is
 # required, there is no default: every caller says which level it wants, and
@@ -35,7 +35,7 @@ import Args
 import Util exposing [example_name, fail!, run!]
 
 main! = |args| {
-	config = Args.parse!(parser, args)?
+	config = Args.parse!(parser, args, "--opt=speed examples/counter.roc")?
 	opt = Args.check_opt!(config.opt)?
 
 	Path.utf8("platform/targets/wasm32").create_all!()?

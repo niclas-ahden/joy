@@ -38,11 +38,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: speed,         cmd: "./tests.roc --opt=speed" }
-          - { name: small-buffers, cmd: "env SMALL_BUFFERS=1 ./tests.roc --opt=speed" }
-          - { name: e2e-speed,     cmd: "./e2e.roc --opt=speed" }
-          # - { name: dev,         cmd: "./tests.roc --opt=dev" }
-          # - { name: e2e-dev,     cmd: "./e2e.roc --opt=dev" }
+          - { name: speed,         cmd: "./tests.roc -- --opt=speed" }
+          - { name: small-buffers, cmd: "env SMALL_BUFFERS=1 ./tests.roc -- --opt=speed" }
+          - { name: e2e-speed,     cmd: "./e2e.roc -- --opt=speed" }
+          # - { name: dev,         cmd: "./tests.roc -- --opt=dev" }
+          # - { name: e2e-dev,     cmd: "./e2e.roc -- --opt=dev" }
     steps:
       - name: Require a tag
         run: |

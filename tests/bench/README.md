@@ -5,7 +5,7 @@ A local tool, run by hand and compared against a saved baseline, the same way
 makes these timings unreliable anyway).
 
 `bench.roc` builds the jsbench app with the host's `joy_bench` instrumentation
-(`JOY_BENCH=1 ./build.roc`), serves it, and drives update steps in headless
+(`JOY_BENCH=1 ./build.roc -- --opt=speed`), serves it, and drives update steps in headless
 Chromium. Each step's cost is split into the phases we own end to end:
 
 - **update**: the app's `update` runs (`roc_update`, plus effect handling)

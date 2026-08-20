@@ -29,11 +29,11 @@ jobs:
         # we cannot fix here. Uncomment them once the bugs are fixed. Both
         # suites still take --opt=dev, so nothing else needs to change.
         include:
-          - { name: speed,         cmd: "./tests.roc --opt=speed" }
-          - { name: small-buffers, cmd: "env SMALL_BUFFERS=1 ./tests.roc --opt=speed" }
-          - { name: e2e-speed,     cmd: "./e2e.roc --opt=speed" }
-          # - { name: dev,         cmd: "./tests.roc --opt=dev" }
-          # - { name: e2e-dev,     cmd: "./e2e.roc --opt=dev" }
+          - { name: speed,         cmd: "./tests.roc -- --opt=speed" }
+          - { name: small-buffers, cmd: "env SMALL_BUFFERS=1 ./tests.roc -- --opt=speed" }
+          - { name: e2e-speed,     cmd: "./e2e.roc -- --opt=speed" }
+          # - { name: dev,         cmd: "./tests.roc -- --opt=dev" }
+          # - { name: e2e-dev,     cmd: "./e2e.roc -- --opt=dev" }
     steps:
       - uses: actions/checkout@v4
 
@@ -121,7 +121,7 @@ jobs:
       - run: roc --version
 
       - name: Build host + examples and run checks
-        run: ./tests.roc --opt=${{ matrix.opt }}
+        run: ./tests.roc -- --opt=${{ matrix.opt }}
 
       - name: Name the nightly
         if: failure()

@@ -108,23 +108,25 @@ If you don't want to use Nix then please install:
 Pick an [example](https://github.com/niclas-ahden/joy/tree/main/examples) and run it like so:
 
 ```sh
-$ ./watch.roc --opt=speed examples/hello.roc
+$ ./watch.roc examples/hello.roc
 ```
 
 The application should now be available at: [`http://localhost:8000`](http://localhost:8000)
+
+That builds at `--opt=speed`, the default. To pick another level, put roc's `--` separator in front of the flag so roc passes it on to the script instead of claiming it: `./watch.roc -- --opt=dev examples/hello.roc`.
 
 Start modifying the example to get a feel for it. Refresh the browser to see your changes (the app is recompiled on change but there's no browser hot-reloading yet).
 
 ### Running the tests
 
 ```sh
-$ ./tests.roc --opt=speed # Roc unit tests + the fake-DOM harnesses in tests/
-$ ./e2e.roc --opt=speed   # tests/e2e/ in a real headless Chromium
+$ ./tests.roc -- --opt=speed # Roc unit tests + the fake-DOM harnesses in tests/
+$ ./e2e.roc -- --opt=speed   # tests/e2e/ in a real headless Chromium
 ```
 
 The harnesses in `tests/` mount the built apps on a fake DOM and cover the app and runtime logic. The browser suite in `tests/e2e/` is built on [roc-spec](https://github.com/niclas-ahden/roc-spec) and [roc-playwright](https://github.com/niclas-ahden/roc-playwright) and covers what only a real browser can prove: real event dispatch and bubbling, `<dialog>` semantics, the History API, WebCrypto, fetch, real timers, and real keyboard and mouse input.
 
-Both suites take the optimization level to test as their argument, so `./tests.roc --opt=dev` and `./e2e.roc --opt=dev` run the same suites against dev builds. Each level lands in its own `build/<opt>/` tree.
+Both suites take the optimization level to test as their argument, and it is required here, so `./tests.roc -- --opt=dev` and `./e2e.roc -- --opt=dev` run the same suites against dev builds. Each level lands in its own `build/<opt>/` tree.
 
 ## Sponsors
 

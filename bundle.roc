@@ -27,7 +27,7 @@ import Util exposing [fail!, run!]
 main! = |_args| {
 	# The host ships inside the platform bundle, so it must be fresh.
 	# Naming an example is the cheapest way through build.roc.
-	run!("./build.roc", ["--opt=speed", "hello"])?
+	run!("./build.roc", ["--", "--opt=speed", "hello"])?
 
 	# Start from an empty dist/ so it holds exactly one archive. A leftover
 	# from an earlier run would make `dist/*.tar.zst` ambiguous, and the

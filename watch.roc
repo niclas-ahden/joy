@@ -1,13 +1,18 @@
-#!/usr/bin/env -S sh -c 'exec roc "$0" -- "$@"'
+#!/usr/bin/env roc
 # Run:
 #
-#   ./watch.roc --opt=speed examples/counter.roc
+#   ./watch.roc examples/counter.roc               at --opt=speed, the default
+#   ./watch.roc -- --opt=dev examples/counter.roc  at another level
 #
-# To build the given example at that optimization level (the shebang
-# trampolines through sh so roc passes --opt through instead of claiming it)
-# and serve it at http://localhost:8000. You can then edit the example and
-# it'll rebuild automatically. Refresh the page to see your changes. Run from
-# the repo root.
+# To build the given example at that optimization level and serve it at
+# http://localhost:8000. You can then edit the example and it'll rebuild
+# automatically. Refresh the page to see your changes. Run from the repo
+# root.
+#
+# `--opt` defaults to speed here: the dev loop wants the same code the
+# examples ship with. Flags need roc's `--` separator in front of them,
+# otherwise roc claims --opt and --help for itself instead of passing them
+# on. Plain arguments, like the app name above, need no separator.
 #
 # Set the environment variable `JOY_WATCH_PORT` to change the port (default 8000).
 app [main!] {
@@ -28,7 +33,7 @@ import Util exposing [example_name, fail!]
 main! = |args| {
 	port = Env.var_str!("JOY_WATCH_PORT") ?? "8000"
 
-	config = Args.parse!(parser, args)?
+	config = Args.parse!(parser, args, "--opt=dev examples/counter.roc")?
 	opt = Args.check_opt!(config.opt)?
 	full_name = config.app_name
 	name = example_name(full_name)
@@ -58,7 +63,7 @@ main! = |args| {
 # The rebuild loop: watchexec reruns build.roc whenever a source file changes.
 watchexec_cmd = |opt, full_name|
 	Cmd.new_str("watchexec")
-		.args_str(["--no-global-ignore", "--restart", "--print-events", "--debounce", "500ms", "--exts", "roc,rs,html,css,js,mjs,toml", "--", "./build.roc", "--opt=${opt}", full_name])
+		.args_str(["--no-global-ignore", "--restart", "--print-events", "--debounce", "500ms", "--exts", "roc,rs,html,css,js,mjs,toml", "--", "./build.roc", "--", "--opt=${opt}", full_name])
 
 # Check that watchexec is installed
 check_watchexec! = |probe|
@@ -122,7 +127,7 @@ start_server! = |port, opt, name| {
 						"./watch.roc whose dev server outlived the terminal it ran in. Stop that",
 						"process, or pick another port:",
 						"",
-						"    JOY_WATCH_PORT=8001 ./watch.roc --opt=${opt} ${name}",
+						"    JOY_WATCH_PORT=8001 ./watch.roc -- --opt=${opt} ${name}",
 					],
 					"\n",
 				)
@@ -138,7 +143,7 @@ parser : Cli.CliParser({ opt : Str, app_name : Str })
 parser = Cli.assert_valid(
 	Cli.finish(
 		{
-			opt: Args.opt_option,
+			opt: Args.opt_option_with_default("speed"),
 			app_name: Param.str({
 				name: "app",
 				help: "The app to serve, e.g. counter or examples/counter.roc.",

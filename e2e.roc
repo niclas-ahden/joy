@@ -1,12 +1,12 @@
-#!/usr/bin/env -S sh -c 'exec roc "$0" -- "$@"'
+#!/usr/bin/env roc
 # Run:
 #
-#   ./e2e.roc --opt=speed
-#   ./e2e.roc --opt=dev
+#   ./e2e.roc -- --opt=speed
+#   ./e2e.roc -- --opt=dev
 #
-# To build the examples at that optimization level (the shebang trampolines
-# through sh so roc passes --opt through instead of claiming it), serve the
-# repo root, then let roc-spec run
+# To build the examples at that optimization level (flags need roc's `--`
+# separator in front of them, otherwise roc claims --opt instead of passing
+# it on), serve the repo root, then let roc-spec run
 # tests/e2e/*_test.roc. Each one drives a Joy example in a real Chromium via
 # roc-playwright. Run from the repo root, inside the nix devShell (it carries
 # playwright and its browsers). CI runs this next to ./tests.roc: the fake-DOM
@@ -31,13 +31,13 @@ import Args
 import Util exposing [fail!, run!]
 
 main! = |args| {
-	opt = Args.check_opt!(Args.parse!(parser, args)?)?
+	opt = Args.check_opt!(Args.parse!(parser, args, "--opt=speed")?)?
 
 	if !(on_path!("playwright")) {
 		fail!("playwright not found, run inside the nix devShell")?
 	}
 
-	run!("./build.roc", ["--opt=${opt}"])?
+	run!("./build.roc", ["--", "--opt=${opt}"])?
 
 	port = Env.var_str!("JOY_E2E_PORT") ?? "8787"
 	url = "http://127.0.0.1:${port}"
