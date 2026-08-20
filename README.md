@@ -124,7 +124,7 @@ $ ./e2e.roc --opt=speed   # tests/e2e/ in a real headless Chromium
 
 The harnesses in `tests/` mount the built apps on a fake DOM and cover the app and runtime logic. The browser suite in `tests/e2e/` is built on [roc-spec](https://github.com/niclas-ahden/roc-spec) and [roc-playwright](https://github.com/niclas-ahden/roc-playwright) and covers what only a real browser can prove: real event dispatch and bubbling, `<dialog>` semantics, the History API, WebCrypto, fetch, real timers, and real keyboard and mouse input.
 
-Both suites take the optimization level to test as their argument, so `./tests.roc --opt=dev` and `./e2e.roc --opt=dev` run the same suites against dev builds. Each level lands in its own `build/<opt>/` tree. CI runs both levels, and only recommends a Roc nightly in this README when the whole suite passes on both.
+Both suites take the optimization level to test as their argument, so `./tests.roc --opt=dev` and `./e2e.roc --opt=dev` run the same suites against dev builds. Each level lands in its own `build/<opt>/` tree.
 
 ## Sponsors
 

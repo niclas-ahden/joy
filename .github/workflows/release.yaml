@@ -6,20 +6,9 @@ name: Release
 #
 # The tag push runs the full test matrix against the tagged commit, bundles
 # and verifies the platform, then creates a DRAFT release for the tag with
-# the bundle and docs already attached and generated notes to start from.
-# Nothing is public and nobody is notified yet: edit the notes in the GitHub
-# UI and press Publish to release. Publishing fires `release: published`,
-# which deploy-docs and test-nightly-roc listen for, and by then every asset
-# they need is already on the release.
-#
-# If a gate leg fails, no draft is created. Fix things, move the tag, and
-# push it again (or re-run the failed run from the Actions tab). The draft
-# job is idempotent: re-running it reuses an existing draft and re-uploads
-# the assets.
-#
-# The run summary links the draft when it is ready. To also get a
-# notification, enable success notifications for Actions in your GitHub
-# notification settings (failures notify by default).
+# the bundle and docs already attached and notes to start from: GitHub's
+# generated changelog, the Roc nightly this release is known to work on, and
+# the usage snippet naming this release's own bundle.
 
 on:
   push:
@@ -37,9 +26,10 @@ concurrency:
 
 jobs:
   # The release gate: the exact suite a push to main runs (see tests.yml).
-  # Harnesses and browser E2E, each at both optimization levels, plus the
-  # small-buffers pass. Nothing is bundled or drafted unless every leg is
-  # green.
+  # Harnesses and browser E2E, plus the small-buffers pass. Nothing is
+  # bundled or drafted unless every leg is green.
+  #
+  # Keep this list in step with tests.yml, including the parked dev legs.
   test:
     name: Release gate (${{ matrix.name }})
     runs-on: ubuntu-24.04
@@ -49,10 +39,10 @@ jobs:
       matrix:
         include:
           - { name: speed,         cmd: "./tests.roc --opt=speed" }
-          - { name: dev,           cmd: "./tests.roc --opt=dev" }
           - { name: small-buffers, cmd: "env SMALL_BUFFERS=1 ./tests.roc --opt=speed" }
           - { name: e2e-speed,     cmd: "./e2e.roc --opt=speed" }
-          - { name: e2e-dev,       cmd: "./e2e.roc --opt=dev" }
+          # - { name: dev,         cmd: "./tests.roc --opt=dev" }
+          # - { name: e2e-dev,     cmd: "./e2e.roc --opt=dev" }
     steps:
       - name: Require a tag
         run: |
@@ -172,14 +162,39 @@ jobs:
           gh release upload "$tag" dist/*.tar.zst docs.tar.gz \
             --clobber --repo "$GITHUB_REPOSITORY"
 
-          # Append the usage snippet once, re-runs must not duplicate it.
           url="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/${{ steps.bundle.outputs.archive }}"
           html=$(grep -o 'https://[^"]*' platform/main.roc | head -1)
           [ -n "$html" ] || {
             echo "error: no joy-html URL in platform/main.roc" >&2
             exit 1
           }
+          # The README names the nightly we last verified this platform on, so
+          # it is the one to start the notes with. test-nightly-roc moves both
+          # forward from here as newer nightlies pass.
+          nightly=$(sed -n 's|.*/roc-lang/nightlies/releases/tag/\(nightly-[^)]*\)).*|\1|p' README.md | head -1)
+          [ -n "$nightly" ] || {
+            echo "error: no roc nightly link in README.md" >&2
+            exit 1
+          }
+
+          # Append each section once, re-runs must not duplicate them.
           gh release view "$tag" --json body -q .body --repo "$GITHUB_REPOSITORY" > notes.md
+          edited=
+
+          if ! grep -q '## Roc compiler version' notes.md; then
+            {
+              echo ""
+              echo "## Roc compiler version"
+              echo ""
+              echo "Compatible with: [\`roc $nightly\`](https://github.com/roc-lang/nightlies/releases/tag/$nightly)."
+              echo ""
+              echo "Roc is currently a moving target and which version you're using matters a lot. We test the latest Joy release against the latest Roc nightly and update the compatibility here every day."
+              echo ""
+              echo "Oftentimes you'll still be able to use Joy with other Roc versions than what's listed here, but if you run into any issues, please try the Roc version above."
+            } >> notes.md
+            edited=1
+          fi
+
           if ! grep -q '## Using this release' notes.md; then
             {
               echo ""
@@ -192,8 +207,10 @@ jobs:
               echo "}"
               echo '```'
             } >> notes.md
-            gh release edit "$tag" --notes-file notes.md --repo "$GITHUB_REPOSITORY"
+            edited=1
           fi
+
+          [ -z "$edited" ] || gh release edit "$tag" --notes-file notes.md --repo "$GITHUB_REPOSITORY"
 
           draft_url=$(gh release view "$tag" --json url -q .url --repo "$GITHUB_REPOSITORY")
           {

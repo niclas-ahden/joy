@@ -23,12 +23,17 @@ jobs:
         # Chromium (the devShell carries playwright and its browsers).
         # SMALL_BUFFERS shrinks the host's initial outbound buffers so every
         # render exercises the buffer growth path.
+        #
+        # The dev legs are parked, not deleted: Roc has a number of open bugs
+        # in dev mode that Joy trips over, so those legs are red for reasons
+        # we cannot fix here. Uncomment them once the bugs are fixed. Both
+        # suites still take --opt=dev, so nothing else needs to change.
         include:
           - { name: speed,         cmd: "./tests.roc --opt=speed" }
-          - { name: dev,           cmd: "./tests.roc --opt=dev" }
           - { name: small-buffers, cmd: "env SMALL_BUFFERS=1 ./tests.roc --opt=speed" }
           - { name: e2e-speed,     cmd: "./e2e.roc --opt=speed" }
-          - { name: e2e-dev,       cmd: "./e2e.roc --opt=dev" }
+          # - { name: dev,         cmd: "./tests.roc --opt=dev" }
+          # - { name: e2e-dev,     cmd: "./e2e.roc --opt=dev" }
     steps:
       - uses: actions/checkout@v4
 
@@ -62,14 +67,16 @@ jobs:
 
   # The job above uses the Roc version from flake.nix. The following job runs
   # the harness suite against the nightly Roc version which our README
-  # recommends, once per optimization level.
+  # recommends.
   nightly:
     name: README nightly (${{ matrix.opt }})
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        opt: [speed, dev]
+        # Add dev back here when Roc's dev mode bugs are fixed, see the
+        # parked legs above.
+        opt: [speed]
     steps:
       - uses: actions/checkout@v4
 
