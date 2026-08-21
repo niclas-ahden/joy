@@ -23,5 +23,5 @@ notes/
 # Platform bundles from ./bundle.roc
 dist/
 
-# The devShell profile ./cache.roc --shell builds to push
+# devShell profile symlinks kept when pushing to the binary cache
 .cachix-profile*

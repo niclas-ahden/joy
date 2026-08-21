@@ -1,0 +1,167 @@
+name: Suite
+
+# The test matrix, defined once, called by every other workflow.
+#
+# A caller picks compilers, opt levels, what to build against (checkout,
+# published bundle URL, or drafted bundle artifact) and how much browser E2E.
+# A red leg reddens the call: no advisory mode here, so `needs.<job>.result`
+# is the truth. (Job-level continue-on-error reports success for failed legs,
+# which is why it is not used.) Callers isolate informational legs in their
+# own call and simply don't gate on it.
+
+on:
+  workflow_call:
+    inputs:
+      roc:
+        description: >
+          JSON array of compilers, crossed with `opts` and `os`. Each entry is
+          `pinned` for the compiler in flake.nix, or a nightly tag such as
+          `nightly-2026-08-20-9e3980a`. See .github/actions/setup.
+        type: string
+        required: true
+      label:
+        description: Prefix for the job names, so a caller's legs are tellable apart.
+        type: string
+        required: true
+      opts:
+        description: >
+          JSON array of roc optimization levels, crossed with `roc` and `os`. Note that
+          `interpreter` is not one of them: that backend only targets the
+          native host, and Joy always builds --target=wasm32.
+        type: string
+        default: '["speed"]'
+      os:
+        description: JSON array of runner labels, crossed with `roc` and `opts`.
+        type: string
+        default: '["ubuntu-24.04", "macos-15"]'
+      extras:
+        description: >
+          Also run the small-buffers leg, which is not an opt x os cell.
+        type: boolean
+        default: false
+      e2e:
+        description: >
+          How much of the matrix also drives the examples in a real Chromium
+          after the node harnesses: `none`, `linux` (the ubuntu legs only;
+          Chromium's behaviour does not vary by host, so one system is enough
+          for a pull request), or `all` (every leg, for a release).
+        type: string
+        default: none
+      ref:
+        description: Ref to check out. Defaults to whatever triggered the caller.
+        type: string
+        default: ''
+      bundle-url:
+        description: >
+          Point every app at this published bundle before building, instead of
+          at this checkout's platform. Tests the released artifact.
+        type: string
+        default: ''
+      bundle-artifact:
+        description: >
+          Workflow artifact holding one *.tar.zst bundle. Each leg serves it
+          on 127.0.0.1 and points every app there; roc allows http to
+          localhost, so it does the download/hash/unbundle itself. For draft
+          bundles, whose assets need a token. Exclusive with `bundle-url`.
+        type: string
+        default: ''
+
+jobs:
+  # Every app built per compiler x opt x OS, then the node harnesses, then
+  # (if asked) the browser E2E suite. The wasm is identical across OSes but
+  # the toolchain producing it is not, and that is where the bugs have been
+  # (see 012b128).
+  harness:
+    name: ${{ inputs.label }} (${{ matrix.roc }}, ${{ matrix.opt }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One red leg must never hide another's result.
+      fail-fast: false
+      matrix:
+        roc: ${{ fromJSON(inputs.roc) }}
+        opt: ${{ fromJSON(inputs.opts) }}
+        os: ${{ fromJSON(inputs.os) }}
+    steps:
+      # The code under test.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      # Tooling from the workflow's own ref, so an old release tag (which
+      # may predate these files) can still be tested.
+      - uses: actions/checkout@v4
+        with:
+          path: .ci
+
+      - name: Point every app at the released bundle
+        if: inputs.bundle-url != ''
+        run: .ci/.github/scripts/point-at-bundle.sh "${{ inputs.bundle-url }}"
+
+      - name: Download the drafted bundle
+        if: inputs.bundle-artifact != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.bundle-artifact }}
+          path: .bundle
+
+      # Background process, survives until the job ends. 8788 because e2e.roc
+      # uses 8787.
+      - name: Serve the drafted bundle and point every app at it
+        if: inputs.bundle-artifact != ''
+        run: |
+          set -euo pipefail
+          file=$(cd .bundle && ls *.tar.zst)
+          nohup python3 -m http.server 8788 --bind 127.0.0.1 --directory .bundle > .bundle-server.log 2>&1 &
+          for _ in $(seq 50); do
+            curl -sfI "http://127.0.0.1:8788/$file" > /dev/null && break
+            sleep 0.2
+          done
+          curl -sfI "http://127.0.0.1:8788/$file" > /dev/null || { cat .bundle-server.log; exit 1; }
+          .ci/.github/scripts/point-at-bundle.sh "http://127.0.0.1:8788/$file"
+
+      - id: setup
+        uses: ./.ci/.github/actions/setup
+        with:
+          roc: ${{ matrix.roc }}
+          github-token: ${{ github.token }}
+          playwright: ${{ inputs.e2e == 'all' || (inputs.e2e == 'linux' && startsWith(matrix.os, 'ubuntu')) }}
+
+      - name: Build and test
+        run: ${{ steps.setup.outputs.prefix }} ./tests.roc -- --opt=${{ matrix.opt }}
+
+      # What only a real browser can prove: event dispatch, <dialog>,
+      # History, fetch, timers, real input.
+      - name: Drive the examples in a real browser
+        if: inputs.e2e == 'all' || (inputs.e2e == 'linux' && startsWith(matrix.os, 'ubuntu'))
+        run: ${{ steps.setup.outputs.prefix }} ./e2e.roc -- --opt=${{ matrix.opt }}
+
+  # SMALL_BUFFERS shrinks the host's outbound buffers so every render takes
+  # the growth path. One leg: it only changes the Rust host, so other opt/OS
+  # cells would repeat identical work. Set inside the prefix because
+  # `nix develop` does not reliably pass ambient exports through.
+  small-buffers:
+    name: ${{ inputs.label }} (${{ matrix.roc }}, small-buffers)
+    if: inputs.extras
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        roc: ${{ fromJSON(inputs.roc) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      # See the harness job: tooling comes from the workflow's ref.
+      - uses: actions/checkout@v4
+        with:
+          path: .ci
+
+      - id: setup
+        uses: ./.ci/.github/actions/setup
+        with:
+          roc: ${{ matrix.roc }}
+          github-token: ${{ github.token }}
+
+      - name: Build and test with tiny buffers
+        run: ${{ steps.setup.outputs.prefix }} env SMALL_BUFFERS=1 ./tests.roc -- --opt=speed

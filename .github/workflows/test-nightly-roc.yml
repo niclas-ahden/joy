@@ -1,35 +1,28 @@
 name: Test latest Joy release on latest nightly Roc
 
-# Test the latest Joy release against the latest Roc nightly, every morning
-# and when a release is published. A red run means we have some work to do!
-# Either we need to adapt to a change in Roc or we should isolate and report
-# a bug :)
+# Every morning, test the latest published Joy bundle, by its real URL, on
+# the newest Roc nightly. Green moves the recommendation forward in the
+# README and in that release's notes. Red means we adapt to Roc or report a
+# bug.
 #
-# We only start recommending a nightly, in the README and in the tested
-# release's notes, when the suite is green.
-#
-# The dev leg is parked: Roc has a number of open bugs in dev mode that Joy
-# trips over, so that leg is red for reasons no nightly can fix. Restore it
-# below once the bugs are fixed, so that a nightly which miscompiles dev
-# builds stops being one we recommend.
+# Speed only, because dev and size must not hold back a recommendation.
+# Publishing does not trigger this. The release workflow already tested that
+# bundle as a draft.
 
 on:
   schedule:
     # Nightlies publish between 10:00 and 13:30 UTC.
     - cron: '0 15 * * *'
-  # Publishing is the manual last step of the Release workflow, which builds
-  # and attaches the platform bundle to a draft first. So at publish time the
-  # bundle this workflow tests is guaranteed to exist.
-  release:
-    types: [published]
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Queue instead of cancel. The run ends by pushing to README and editing the
+# release notes, and a cancel between the two leaves them disagreeing.
 concurrency:
   group: nightly-roc
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   # Resolve the versions once, so every test leg runs the exact same nightly
@@ -39,7 +32,6 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       nightly: ${{ steps.versions.outputs.nightly }}
-      nightly_url: ${{ steps.versions.outputs.nightly_url }}
       sha: ${{ steps.versions.outputs.sha }}
       prev_sha: ${{ steps.versions.outputs.prev_sha }}
       joy: ${{ steps.versions.outputs.joy }}
@@ -53,8 +45,6 @@ jobs:
           set -euo pipefail
 
           tag=$(gh release view --repo roc-lang/nightlies --json tagName -q .tagName)
-          url=$(gh release view --repo roc-lang/nightlies --json assets \
-                  -q '.assets[] | select(.name | test("linux_x86_64")) | .url')
           # Tag spellings have changed before, but both end in the short sha
           prev=$(gh release list --repo roc-lang/nightlies --limit 2 --json tagName -q '.[1].tagName')
 
@@ -62,12 +52,11 @@ jobs:
           bundle=$(gh release view --repo "$GITHUB_REPOSITORY" --json assets \
                      -q '.assets[] | select(.name | endswith(".tar.zst")) | .url')
 
-          [ -n "$url" ] || { echo "error: no linux_x86_64 asset on $tag" >&2; exit 1; }
+          [ -n "$tag" ] || { echo "error: could not resolve the latest roc nightly" >&2; exit 1; }
           [ -n "$bundle" ] || { echo "error: no platform bundle on Joy $joy_tag" >&2; exit 1; }
 
           {
             echo "nightly=$tag"
-            echo "nightly_url=$url"
             echo "sha=${tag##*-}"
             echo "prev_sha=${prev##*-}"
             echo "joy=$joy_tag"
@@ -77,77 +66,19 @@ jobs:
           echo "Roc $tag against Joy $joy_tag"
           echo "Testing Joy **$joy_tag** against Roc **$tag**" >> "$GITHUB_STEP_SUMMARY"
 
+  # Versions go in the job name: `run-name` cannot see `needs`.
   test:
-    # The run title cannot name the versions, because `run-name` is evaluated
-    # before any job starts and so cannot see `needs`. Job names can, so the
-    # versions under test are visible without opening a log.
-    name: Joy ${{ needs.resolve.outputs.joy }} on ${{ needs.resolve.outputs.nightly }} (${{ matrix.opt }})
     needs: resolve
-    runs-on: ubuntu-24.04
-    strategy:
-      # Every leg must report. Seeing one pass while another fails is exactly
-      # the signal this workflow exists to surface.
-      fail-fast: false
-      matrix:
-        # Add dev back here when Roc's dev mode bugs are fixed.
-        opt: [speed]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.resolve.outputs.joy }}
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: '["${{ needs.resolve.outputs.nightly }}"]'
+      label: Joy ${{ needs.resolve.outputs.joy }} on ${{ needs.resolve.outputs.nightly }}
+      opts: '["speed"]'
+      ref: ${{ needs.resolve.outputs.joy }}
+      bundle-url: ${{ needs.resolve.outputs.bundle }}
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      # We need `rustc` because `build.roc` always builds the platform. We don't
-      # need to build the platform in this workflow, but we'll let it happen and
-      # perhaps catch bugs there as well.
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: '1.94.0'
-          targets: wasm32-unknown-unknown
-
-      - name: Install the Roc nightly
-        run: |
-          set -euo pipefail
-          curl -sSL -o roc_nightly.tar.gz "${{ needs.resolve.outputs.nightly_url }}"
-          mkdir -p "$RUNNER_TEMP/roc"
-          tar -xzf roc_nightly.tar.gz --strip-components=1 -C "$RUNNER_TEMP/roc"
-          echo "$RUNNER_TEMP/roc" >> "$GITHUB_PATH"
-
-      - run: roc --version
-
-      # Point every test app at the published bundle URL. We want to test the
-      # released bundle (rather than a locally rebuilt version) so that we catch
-      # any potential issues with the bundle format changing between Roc versions
-      # etc.
-      - name: Point every app at the released platform bundle
-        run: |
-          set -euo pipefail
-          apps=(examples/*.roc tests/apps/*.roc)
-          for src in "${apps[@]}"; do
-            sed -i \
-              -e 's|"\.\./\.\./platform/main\.roc"|"${{ needs.resolve.outputs.bundle }}"|' \
-              -e 's|"\.\./platform/main\.roc"|"${{ needs.resolve.outputs.bundle }}"|' \
-              "$src"
-          done
-          leftover=$(grep -l 'platform "\.\.' "${apps[@]}" || true)
-          [ -z "$leftover" ] || {
-            echo "error: these apps still name this checkout's platform" >&2
-            echo "$leftover" >&2
-            exit 1
-          }
-          echo "rewrote ${#apps[@]} apps"
-
-      - name: Build and run the checks
-        run: ./tests.roc -- --opt=${{ matrix.opt }}
-
-  # If the suite passes, then let's recommend this new nightly! It is named in
-  # two places: the README, for people building from a checkout, and the notes
-  # of the release we just tested, for people depending on the bundle.
-  # `needs: test` covers the whole matrix, so one red leg is enough to keep
-  # both recommendations where they are.
+  # Green on every leg: recommend this nightly in the README (checkout
+  # builders) and in the tested release's notes (bundle users).
   update-recommendation:
     name: Name ${{ needs.resolve.outputs.nightly }} in the README and release notes
     needs: [resolve, test]
@@ -196,44 +127,17 @@ jobs:
 
       - name: Name this nightly in the release notes
         env:
-          NIGHTLY: ${{ needs.resolve.outputs.nightly }}
-          JOY: ${{ needs.resolve.outputs.joy }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
-
-          # Out of the checkout, the step above pushes from it.
-          notes="$RUNNER_TEMP/notes.md"
-          gh release view "$JOY" --json body -q .body --repo "$GITHUB_REPOSITORY" > "$notes"
-
-          # Anchor on the compatibility line rather than on the first nightly
-          # link anywhere in the body. The notes are hand edited, and a
-          # section such as "Known issues" may well name the nightly a bug was
-          # seen on. That is a statement about the past and must survive.
-          #
-          # Releases from before the notes carried a compatibility section have
-          # nothing to update. That is not a reason to redden a green run, so
-          # say so and stop.
-          current=$(sed -n 's|^Compatible with: \[`roc \(nightly-[^`]*\)`\].*|\1|p' "$notes" | head -1)
-          [ -n "$current" ] || {
-            echo "::warning::Joy $JOY notes carry no 'Compatible with:' line naming a roc nightly, leaving them alone"
-            exit 0
-          }
-          if [ "$current" = "$NIGHTLY" ]; then
-            echo "Joy $JOY notes already name $NIGHTLY"
-            exit 0
-          fi
-
-          # The tag is both the link text and the URL, so replace it wherever
-          # it appears on that line and any wording around it survives.
-          sed -i "/^Compatible with: \[\`roc /s|$current|$NIGHTLY|g" "$notes"
-          gh release edit "$JOY" --notes-file "$notes" --repo "$GITHUB_REPOSITORY"
-          echo "Joy $JOY now names $NIGHTLY (was $current)"
+          .github/scripts/name-nightly.sh \
+            "${{ needs.resolve.outputs.joy }}" "${{ needs.resolve.outputs.nightly }}"
 
   name-commit-range:
     name: Name the commit range
     needs: [resolve, test]
-    if: failure()
+    # Only for a red suite. A failed `resolve` would leave every version
+    # below empty.
+    if: needs.test.result == 'failure'
     runs-on: ubuntu-24.04
     steps:
       - name: Name the commit range

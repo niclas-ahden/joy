@@ -4,11 +4,16 @@ name: Release
 #
 #   git tag 0.33.0 && git push origin 0.33.0
 #
-# The tag push runs the full test matrix against the tagged commit, bundles
-# and verifies the platform, then creates a DRAFT release for the tag with
-# the bundle and docs already attached and notes to start from: GitHub's
-# generated changelog, the Roc nightly this release is known to work on, and
-# the usage snippet naming this release's own bundle.
+# 1. `required` gates `draft`: pinned compiler, speed, both OS, extras.
+# 2. `draft` bundles the platform and creates a DRAFT release with the bundle,
+#    docs and starter notes attached. A human presses Publish.
+# 3. `bundle` tests that exact bundle the way a consumer will: both compilers,
+#    every opt level, both OS, real browser.
+# 4. `recommend` names the newest nightly in the notes if it passed both from
+#    scratch (`nightly`) and on the bundle.
+#
+# Everything else (`*-advisory`) runs dev/size and may be red without
+# blocking anything. Publish only when the whole run is green.
 
 on:
   push:
@@ -25,111 +30,106 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # The release gate: the exact suite a push to main runs (see tests.yml).
-  # Harnesses and browser E2E, plus the small-buffers pass. Nothing is
-  # bundled or drafted unless every leg is green.
-  #
-  # Keep this list in step with tests.yml, including the parked dev legs.
-  test:
-    name: Release gate (${{ matrix.name }})
+  guard:
+    name: Require a tag
     runs-on: ubuntu-24.04
-    strategy:
-      # One red leg must not hide the other legs' results.
-      fail-fast: false
-      matrix:
-        include:
-          - { name: speed,         cmd: "./tests.roc -- --opt=speed" }
-          - { name: small-buffers, cmd: "env SMALL_BUFFERS=1 ./tests.roc -- --opt=speed" }
-          - { name: e2e-speed,     cmd: "./e2e.roc -- --opt=speed" }
-          # - { name: dev,         cmd: "./tests.roc -- --opt=dev" }
-          # - { name: e2e-dev,     cmd: "./e2e.roc -- --opt=dev" }
     steps:
-      - name: Require a tag
-        run: |
+      - run: |
           [[ "$GITHUB_REF" == refs/tags/* ]] || {
             echo "error: this workflow releases a tag, run it from one (push a tag, or pick it as the ref when dispatching)" >&2
             exit 1
           }
 
-      - uses: actions/checkout@v4
+  # The release gate.
+  required:
+    needs: guard
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: '["pinned"]'
+      label: Release gate
+      opts: '["speed"]'
+      extras: true
 
-      - uses: cachix/install-nix-action@02a151ada4993995686f9ed4f1be7cfbb229e56f # v31
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
-          # Signature checking stays on for the public caches. Only
-          # magic-nix-cache-action's local server is trusted unsigned
-          # (?trusted=1) because it merely replays this repo's own CI builds.
-          extra_nix_config: |
-            substituters = https://cache.nixos.org https://niclas-ahden.cachix.org http://127.0.0.1:37515?trusted=1
-            trusted-substituters = https://cache.nixos.org https://niclas-ahden.cachix.org http://127.0.0.1:37515?trusted=1
-            accept-flake-config = true
-            extra-trusted-public-keys = niclas-ahden.cachix.org-1:FdGli1vBk0cTuVJV27Tau/JvlbW+Ly3pRwFByyqdke0=
+  # Informational, see tests.yml. A red leg here reddens the run but gates
+  # nothing.
+  advisory:
+    needs: guard
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: '["pinned"]'
+      label: Advisory
+      opts: '["dev", "size"]'
 
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
-
-      # --max-jobs 0 forbids local builds, so a compiler that is missing from
-      # the binary cache shows up here as a warning naming the fix, instead of
-      # as half an hour of silent compiling inside the next step.
-      - name: Substitute the Roc compiler
+  resolve-nightly:
+    name: Resolve the latest Roc nightly
+    needs: guard
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.latest.outputs.tag }}
+    steps:
+      - id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          nix build .#roc --no-link --max-jobs 0 \
-            || echo "::warning::The pinned Roc compiler is not in the binary cache, so this run builds it from source. Run ./cache.roc to push it."
+          set -euo pipefail
+          tag=$(gh release view --repo roc-lang/nightlies --json tagName -q .tagName)
+          [ -n "$tag" ] || { echo "error: could not resolve the latest roc nightly" >&2; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "latest nightly is $tag"
 
-      - name: Fetch Nix dependencies
-        run: nix develop --command true
+  # From-scratch build on the newest nightly, which is what a contributor
+  # following the README does. It cannot stop the draft. It decides what
+  # `recommend` may claim in the notes.
+  nightly:
+    needs: [guard, resolve-nightly]
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: '["${{ needs.resolve-nightly.outputs.tag }}"]'
+      label: Latest nightly
+      opts: '["speed"]'
 
-      - name: Build and test
-        run: nix develop -c ${{ matrix.cmd }}
+  # Separate call so a known roc dev-mode bug cannot block `recommend`.
+  nightly-advisory:
+    needs: [guard, resolve-nightly]
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: '["${{ needs.resolve-nightly.outputs.tag }}"]'
+      label: Latest nightly advisory
+      opts: '["dev"]'
 
   draft:
     name: Bundle, verify and draft the release
-    needs: test
+    needs: required
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+    outputs:
+      archive: ${{ steps.bundle.outputs.archive }}
+      artifact: bundle-${{ github.run_id }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: cachix/install-nix-action@02a151ada4993995686f9ed4f1be7cfbb229e56f # v31
+      - id: setup
+        uses: ./.github/actions/setup
         with:
-          nix_path: nixpkgs=channel:nixos-unstable
-          # Signature checking stays on for the public caches. Only
-          # magic-nix-cache-action's local server is trusted unsigned
-          # (?trusted=1) because it merely replays this repo's own CI builds.
-          extra_nix_config: |
-            substituters = https://cache.nixos.org https://niclas-ahden.cachix.org http://127.0.0.1:37515?trusted=1
-            trusted-substituters = https://cache.nixos.org https://niclas-ahden.cachix.org http://127.0.0.1:37515?trusted=1
-            accept-flake-config = true
-            extra-trusted-public-keys = niclas-ahden.cachix.org-1:FdGli1vBk0cTuVJV27Tau/JvlbW+Ly3pRwFByyqdke0=
-
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
-
-      # --max-jobs 0 forbids local builds, so a compiler that is missing from
-      # the binary cache shows up here as a warning naming the fix, instead of
-      # as half an hour of silent compiling inside the next step.
-      - name: Substitute the Roc compiler
-        run: |
-          nix build .#roc --no-link --max-jobs 0 \
-            || echo "::warning::The pinned Roc compiler is not in the binary cache, so this run builds it from source. Run ./cache.roc to push it."
-
-      - name: Fetch Nix dependencies
-        run: nix develop --command true
+          roc: pinned
+          github-token: ${{ github.token }}
 
       - name: Bundle the platform
         id: bundle
         run: |
-          nix develop -c ./bundle.roc
+          ${{ steps.setup.outputs.prefix }} ./bundle.roc
           echo "archive=$(basename dist/*.tar.zst)" >> "$GITHUB_OUTPUT"
 
-      # Prove the artifact itself works before publishing it: extract it and
-      # build + run an example against the extracted platform, exactly like a
-      # consumer's compiler will after downloading.
+      # Seconds-long sanity check so an outright broken bundle is never
+      # attached to a release. The full matrix (`bundle`) runs after drafting.
       - name: Verify the bundle end to end
         run: |
+          set -euo pipefail
           mkdir -p verify
           cp dist/*.tar.zst verify/
-          nix develop -c bash -c 'cd verify && roc unbundle'
-          extracted=$(find verify -mindepth 1 -maxdepth 1 -type d -printf '%f\n')
+          ${{ steps.setup.outputs.prefix }} bash -c 'cd verify && roc unbundle'
+          extracted=$(find verify -mindepth 1 -maxdepth 1 -type d -exec basename {} \;)
           sed "s|\"\.\./platform/main.roc\"|\"./$extracted/main.roc\"|" examples/hello.roc > verify/hello.roc
           # If the sed pattern didn't match, the copy still points at the
           # repo's own platform tree and the verification proves nothing.
@@ -137,12 +137,22 @@ jobs:
             echo "error: platform path substitution failed in verify/hello.roc" >&2
             exit 1
           }
-          nix develop -c roc build --opt=speed --target=wasm32 --no-cache --output=build/speed/hello.wasm verify/hello.roc
-          nix develop -c env JOY_OPT=speed node tests/check_hello.mjs
+          ${{ steps.setup.outputs.prefix }} roc build --opt=speed --target=wasm32 --no-cache --output=build/speed/hello.wasm verify/hello.roc
+          ${{ steps.setup.outputs.prefix }} env JOY_OPT=speed node tests/check_hello.mjs
+
+      # For `bundle`. Draft assets need a token and roc fetches anonymously,
+      # so the bundle travels as an artifact and each leg serves it to roc
+      # over localhost.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ github.run_id }}
+          path: dist/*.tar.zst
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Generate docs
         run: |
-          nix develop -c roc docs platform/main.roc --output=generated-docs
+          ${{ steps.setup.outputs.prefix }} roc docs platform/main.roc --output=generated-docs
           tar -czf docs.tar.gz -C generated-docs .
 
       - name: Draft the release with assets and notes
@@ -168,9 +178,9 @@ jobs:
             echo "error: no joy-html URL in platform/main.roc" >&2
             exit 1
           }
-          # The README names the nightly we last verified this platform on, so
-          # it is the one to start the notes with. test-nightly-roc moves both
-          # forward from here as newer nightlies pass.
+          # Start from the nightly the README names, which is the last one
+          # known to pass. The `recommend` job moves it forward if the newest
+          # nightly passed too. If it did not, this is the right claim to keep.
           nightly=$(sed -n 's|.*/roc-lang/nightlies/releases/tag/\(nightly-[^)]*\)).*|\1|p' README.md | head -1)
           [ -n "$nightly" ] || {
             echo "error: no roc nightly link in README.md" >&2
@@ -216,7 +226,54 @@ jobs:
           {
             echo "## Draft release ready"
             echo ""
-            echo "Everything is tested, bundled, verified and attached."
-            echo "Edit the notes and press Publish: $draft_url"
+            echo "Bundled, verified and attached: $draft_url"
+            echo ""
+            echo "Before editing the notes or pressing Publish, wait for the rest of this run:"
+            echo "the *Drafted bundle* legs build every app against this bundle the way a"
+            echo "consumer's compiler will, and *Name the newest passing nightly* may still"
+            echo "rewrite the notes."
           } >> "$GITHUB_STEP_SUMMARY"
           echo "draft ready: $draft_url"
+
+  # The consumer's path. roc downloads, hash-checks and unbundles the drafted
+  # bundle, then every app builds and runs against it. The pinned compiler is
+  # the one that produced the bundle, so it catches packaging bugs. The
+  # nightly is the one consumers install. Speed decides (`recommend` and
+  # whether to publish). dev and size only inform.
+  bundle:
+    needs: [draft, resolve-nightly]
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: '["pinned", "${{ needs.resolve-nightly.outputs.tag }}"]'
+      label: Drafted bundle
+      opts: '["speed"]'
+      e2e: all
+      bundle-artifact: ${{ needs.draft.outputs.artifact }}
+
+  bundle-advisory:
+    needs: [draft, resolve-nightly]
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: '["pinned", "${{ needs.resolve-nightly.outputs.tag }}"]'
+      label: Drafted bundle advisory
+      opts: '["dev", "size"]'
+      e2e: all
+      bundle-artifact: ${{ needs.draft.outputs.artifact }}
+
+  # The notes start on the README's nightly, the last known good. Move them
+  # to the newest nightly only if it passed from scratch and on the bundle.
+  # Plain `needs` skips this job otherwise. dev and size are deliberately
+  # not in the list.
+  recommend:
+    name: Name the newest passing nightly in the notes
+    needs: [resolve-nightly, nightly, bundle, draft]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          .github/scripts/name-nightly.sh \
+            "$GITHUB_REF_NAME" "${{ needs.resolve-nightly.outputs.tag }}"

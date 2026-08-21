@@ -8,8 +8,9 @@
 # separator in front of them, otherwise roc claims --opt instead of passing
 # it on), serve the repo root, then let roc-spec run
 # tests/e2e/*_test.roc. Each one drives a Joy example in a real Chromium via
-# roc-playwright. Run from the repo root, inside the nix devShell (it carries
-# playwright and its browsers). CI runs this next to ./tests.roc: the fake-DOM
+# roc-playwright. Run from the repo root with `playwright` on PATH: the nix
+# devShell carries it and its browsers, CI's nightly-compiler legs install it
+# with npm instead. CI runs this next to ./tests.roc: the fake-DOM
 # harnesses there own the app logic, these tests own what only a real browser
 # can prove (event dispatch and bubbling, <dialog>, History, WebCrypto, fetch,
 # timers, real keyboard/mouse input).

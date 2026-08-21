@@ -11,7 +11,7 @@
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     roc-src = {
-      url = "github:roc-lang/roc/f70f90af362d751f409ea99af31579399d1ca224";
+      url = "github:roc-lang/roc/90da19f2941b421f40081a0e26ed3c1a39f2f9d9";
       flake = false;
     };
   };
@@ -131,7 +131,7 @@
             buildInputs = with pkgs;
               [
                 roc # the from-source Roc compiler (ReleaseFast)
-                cachix # ./cache.roc pushes that compiler to the binary cache
+                cachix # pushes that compiler to the binary cache
                 zig
                 wabt # provides wasm2wat for debugging
                 rustToolchain # rustc + cargo + rustfmt, pinned, with wasm targets

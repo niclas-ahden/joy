@@ -19,7 +19,7 @@ Args :: [].{
 	opt_option = Opt.str({
 		short: "",
 		long: "opt",
-		help: "Optimization level: speed, dev, interpreter or size.",
+		help: "Optimization level: speed, dev or size.",
 		default: NoDefault,
 	})
 
@@ -30,7 +30,7 @@ Args :: [].{
 		Opt.str({
 			short: "",
 			long: "opt",
-			help: "Optimization level: speed, dev, interpreter or size (default: ${level}).",
+			help: "Optimization level: speed, dev or size (default: ${level}).",
 			default: Value(level),
 		})
 
@@ -85,11 +85,15 @@ Args :: [].{
 				}
 		}
 
-	## Reject levels roc itself would reject, before any build starts.
+	## Reject levels that cannot produce what this repo builds, before any
+	## build starts. roc also takes `interpreter`, but that backend only
+	## targets the native host and every Joy app is built --target=wasm32, so
+	## it could never work here. Catching it here beats letting roc fail per
+	## app with an error about a flag the caller did not know was a dead end.
 	check_opt! = |opt|
-		if ["speed", "dev", "interpreter", "size"].contains(opt) {
+		if ["speed", "dev", "size"].contains(opt) {
 			Ok(opt)
 		} else {
-			fail!("invalid --opt=${opt}, expected speed, dev, interpreter or size")
+			fail!("invalid --opt=${opt}, expected speed, dev or size")
 		}
 }

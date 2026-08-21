@@ -1,0 +1,149 @@
+name: Set up the Joy toolchain
+description: >
+  Put roc, node and rustc on PATH by one of Joy's two routes: the flake's
+  from-source compiler (`nix develop`) or a downloaded nightly (the README's
+  no-Nix route). Outputs the command prefix a leg must use, so the same
+  matrix covers both routes.
+
+inputs:
+  roc:
+    description: >
+      `pinned` for the compiler in flake.nix, or a nightly tag such as
+      `nightly-2026-08-20-9e3980a` to download that release from
+      roc-lang/nightlies instead.
+    required: true
+  github-token:
+    description: Token for the API call that resolves a nightly's asset URL.
+    required: false
+    default: ''
+  playwright:
+    description: >
+      Also provide the `playwright` CLI and a Chromium. The devShell has
+      both, so this only acts on the nightly route.
+    required: false
+    default: 'false'
+
+outputs:
+  prefix:
+    description: >
+      Command prefix that puts the toolchain on PATH: `nix develop -c` for the
+      pinned compiler, empty for a downloaded nightly.
+    value: ${{ steps.prefix.outputs.prefix }}
+  version:
+    description: The `roc --version` of whatever ended up on PATH.
+    value: ${{ steps.prefix.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    # ---------------------------------------------------------------- pinned
+    - name: Install Nix
+      if: inputs.roc == 'pinned'
+      uses: cachix/install-nix-action@02a151ada4993995686f9ed4f1be7cfbb229e56f # v31
+      with:
+        nix_path: nixpkgs=channel:nixos-unstable
+        # Only magic-nix-cache's local server is trusted unsigned: it only
+        # replays this repo's own CI builds.
+        extra_nix_config: |
+          substituters = https://cache.nixos.org https://niclas-ahden.cachix.org http://127.0.0.1:37515?trusted=1
+          trusted-substituters = https://cache.nixos.org https://niclas-ahden.cachix.org http://127.0.0.1:37515?trusted=1
+          accept-flake-config = true
+          extra-trusted-public-keys = niclas-ahden.cachix.org-1:FdGli1vBk0cTuVJV27Tau/JvlbW+Ly3pRwFByyqdke0=
+
+    - name: Enable the Actions-backed Nix cache
+      if: inputs.roc == 'pinned'
+      uses: DeterminateSystems/magic-nix-cache-action@v13
+
+    # --max-jobs 0 forbids local builds, so a cache miss is a warning naming
+    # the fix instead of half an hour of silent compiling in the next step.
+    - name: Substitute the Roc compiler
+      if: inputs.roc == 'pinned'
+      shell: bash
+      run: |
+        nix build .#roc --no-link --max-jobs 0 \
+          || echo "::warning::The pinned Roc compiler is not in the binary cache for $(nix eval --raw --impure --expr builtins.currentSystem), so this run builds it from source. Run 'nix build .#roc && cachix push niclas-ahden ./result' on that system to push it."
+
+    - name: Fetch Nix dependencies
+      if: inputs.roc == 'pinned'
+      shell: bash
+      run: nix develop --command true
+
+    # --------------------------------------------------------------- nightly
+    - name: Install node
+      if: inputs.roc != 'pinned'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+
+    - name: Install rustc
+      if: inputs.roc != 'pinned'
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: '1.94.0'
+        targets: wasm32-unknown-unknown
+
+    # One asset per system. An unknown system fails here with a clear
+    # message instead of later with "roc: not found".
+    - name: Install the Roc nightly
+      if: inputs.roc != 'pinned'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        ROC_TAG: ${{ inputs.roc }}
+      run: |
+        set -euo pipefail
+
+        case "$RUNNER_OS-$RUNNER_ARCH" in
+          Linux-X64)   asset=linux_x86_64 ;;
+          Linux-ARM64) asset=linux_arm64 ;;
+          macOS-ARM64) asset=macos_apple_silicon ;;
+          macOS-X64)   asset=macos_x86_64 ;;
+          *)
+            echo "error: no roc nightly asset for $RUNNER_OS-$RUNNER_ARCH" >&2
+            exit 1
+            ;;
+        esac
+
+        url=$(gh release view "$ROC_TAG" --repo roc-lang/nightlies --json assets \
+                -q ".assets[] | select(.name | test(\"$asset\")) | .url")
+        [ -n "$url" ] || {
+          echo "error: no $asset asset on $ROC_TAG" >&2
+          exit 1
+        }
+
+        curl -sSL -o roc_nightly.tar.gz "$url"
+        mkdir -p "$RUNNER_TEMP/roc"
+        tar -xzf roc_nightly.tar.gz --strip-components=1 -C "$RUNNER_TEMP/roc"
+        rm roc_nightly.tar.gz
+        echo "$RUNNER_TEMP/roc" >> "$GITHUB_PATH"
+
+    # Keep in step with the devShell's playwright-test
+    # (`nix develop -c playwright --version`).
+    - name: Install playwright and Chromium
+      if: inputs.roc != 'pinned' && inputs.playwright == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        npm install -g playwright@1.61.1
+        if [ "$RUNNER_OS" = Linux ]; then
+          playwright install --with-deps chromium
+        else
+          playwright install chromium
+        fi
+        playwright --version
+
+    # ----------------------------------------------------------------- both
+    - name: Report the prefix and the compiler
+      id: prefix
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ "${{ inputs.roc }}" = pinned ]; then
+          prefix="nix develop -c"
+        else
+          prefix=""
+        fi
+        echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+        version=$($prefix roc --version | head -1)
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        echo "$version"

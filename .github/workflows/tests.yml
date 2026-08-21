@@ -1,8 +1,14 @@
 name: Tests
 
+# Pull request checks. Everything here only reads the binary cache. The
+# compiler is substituted with --max-jobs 0, so a cache miss is a warning
+# instead of half an hour of silent compiling on someone's PR.
+#
+# main.yml fills that cache on every push to main. So the first PR after the
+# roc-src pin moves may be slow, and every one after main has caught up is
+# fast.
+
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -10,120 +16,53 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  test:
-    name: Flake pinned Roc (${{ matrix.name }})
+  # What a PR has to pass. Speed on every system, plus the small-buffers leg
+  # and the browser E2E suite on linux.
+  required:
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: '["pinned"]'
+      label: Pinned
+      opts: '["speed"]'
+      extras: true
+      e2e: linux
+
+  # Informational and not branch-protected. dev is red on open roc bugs.
+  # Running it anyway means we see the day it goes green.
+  advisory:
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: '["pinned"]'
+      label: Advisory
+      opts: '["dev", "size"]'
+
+  # The compiler in flake.nix is not the one the README tells people without
+  # Nix to install. This leg is the one that says the README's instructions
+  # still work.
+  readme-nightly:
+    name: Resolve the nightly named in the README
     runs-on: ubuntu-24.04
-    strategy:
-      # One leg failing must not cancel the others
-      fail-fast: false
-      matrix:
-        # tests.roc builds via build.roc (host object + every app) and runs
-        # the node harnesses. e2e.roc drives the built examples in a real
-        # Chromium (the devShell carries playwright and its browsers).
-        # SMALL_BUFFERS shrinks the host's initial outbound buffers so every
-        # render exercises the buffer growth path.
-        #
-        # The dev legs are parked, not deleted: Roc has a number of open bugs
-        # in dev mode that Joy trips over, so those legs are red for reasons
-        # we cannot fix here. Uncomment them once the bugs are fixed. Both
-        # suites still take --opt=dev, so nothing else needs to change.
-        include:
-          - { name: speed,         cmd: "./tests.roc -- --opt=speed" }
-          - { name: small-buffers, cmd: "env SMALL_BUFFERS=1 ./tests.roc -- --opt=speed" }
-          - { name: e2e-speed,     cmd: "./e2e.roc -- --opt=speed" }
-          # - { name: dev,         cmd: "./tests.roc -- --opt=dev" }
-          # - { name: e2e-dev,     cmd: "./e2e.roc -- --opt=dev" }
+    outputs:
+      tag: ${{ steps.readme.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
-
-      - uses: cachix/install-nix-action@02a151ada4993995686f9ed4f1be7cfbb229e56f # v31
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
-          # Signature checking stays on for the public caches. Only
-          # magic-nix-cache-action's local server is trusted unsigned
-          # (?trusted=1) because it merely replays this repo's own CI builds.
-          extra_nix_config: |
-            substituters = https://cache.nixos.org https://niclas-ahden.cachix.org http://127.0.0.1:37515?trusted=1
-            trusted-substituters = https://cache.nixos.org https://niclas-ahden.cachix.org http://127.0.0.1:37515?trusted=1
-            accept-flake-config = true
-            extra-trusted-public-keys = niclas-ahden.cachix.org-1:FdGli1vBk0cTuVJV27Tau/JvlbW+Ly3pRwFByyqdke0=
-
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
-
-      # --max-jobs 0 forbids local builds, so a compiler that is missing from
-      # the binary cache shows up here as a warning naming the fix, instead of
-      # as half an hour of silent compiling inside the next step.
-      - name: Substitute the Roc compiler
-        run: |
-          nix build .#roc --no-link --max-jobs 0 \
-            || echo "::warning::The pinned Roc compiler is not in the binary cache, so this run builds it from source. Run ./cache.roc to push it."
-
-      - name: Fetch Nix dependencies
-        run: nix develop --command true
-
-      - name: Build and test
-        run: nix develop -c ${{ matrix.cmd }}
-
-  # The job above uses the Roc version from flake.nix. The following job runs
-  # the harness suite against the nightly Roc version which our README
-  # recommends.
-  nightly:
-    name: README nightly (${{ matrix.opt }})
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        # Add dev back here when Roc's dev mode bugs are fixed, see the
-        # parked legs above.
-        opt: [speed]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Resolve the nightly named in the README
-        id: nightly
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - id: readme
         run: |
           set -euo pipefail
-
           tag=$(sed -n 's|.*/roc-lang/nightlies/releases/tag/\(nightly-[^)]*\)).*|\1|p' README.md | head -1)
           [ -n "$tag" ] || { echo "error: no roc nightly link in README.md" >&2; exit 1; }
-
-          url=$(gh release view "$tag" --repo roc-lang/nightlies --json assets \
-                  -q '.assets[] | select(.name | test("linux_x86_64")) | .url')
-          [ -n "$url" ] || { echo "error: no linux_x86_64 asset on $tag" >&2; exit 1; }
-
-          {
-            echo "tag=$tag"
-            echo "url=$url"
-          } >> "$GITHUB_OUTPUT"
-
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "README names $tag"
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: '1.94.0'
-          targets: wasm32-unknown-unknown
-
-      - name: Install the Roc nightly
-        run: |
-          set -euo pipefail
-          curl -sSL -o roc_nightly.tar.gz "${{ steps.nightly.outputs.url }}"
-          mkdir -p "$RUNNER_TEMP/roc"
-          tar -xzf roc_nightly.tar.gz --strip-components=1 -C "$RUNNER_TEMP/roc"
-          echo "$RUNNER_TEMP/roc" >> "$GITHUB_PATH"
-
-      - run: roc --version
-
-      - name: Build host + examples and run checks
-        run: ./tests.roc -- --opt=${{ matrix.opt }}
-
-      - name: Name the nightly
-        if: failure()
-        run: |
-          echo "::error::This branch fails on ${{ steps.nightly.outputs.tag }} (--opt=${{ matrix.opt }}), the nightly the README tells users to install"
+  # Blocking on purpose: red means the README's instructions are wrong.
+  nightly:
+    needs: readme-nightly
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: '["${{ needs.readme-nightly.outputs.tag }}"]'
+      label: README nightly
+      opts: '["speed"]'

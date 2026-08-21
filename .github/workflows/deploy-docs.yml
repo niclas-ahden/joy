@@ -36,30 +36,11 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      - uses: cachix/install-nix-action@02a151ada4993995686f9ed4f1be7cfbb229e56f # v31
+      - id: setup
+        uses: ./.github/actions/setup
         with:
-          nix_path: nixpkgs=channel:nixos-unstable
-          # Signature checking stays on for the public caches. Only
-          # magic-nix-cache-action's local server is trusted unsigned
-          # (?trusted=1) because it merely replays this repo's own CI builds.
-          extra_nix_config: |
-            substituters = https://cache.nixos.org https://niclas-ahden.cachix.org http://127.0.0.1:37515?trusted=1
-            trusted-substituters = https://cache.nixos.org https://niclas-ahden.cachix.org http://127.0.0.1:37515?trusted=1
-            accept-flake-config = true
-            extra-trusted-public-keys = niclas-ahden.cachix.org-1:FdGli1vBk0cTuVJV27Tau/JvlbW+Ly3pRwFByyqdke0=
-
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
-
-      # --max-jobs 0 forbids local builds, so a compiler that is missing from
-      # the binary cache shows up here as a warning naming the fix, instead of
-      # as half an hour of silent compiling inside the next step.
-      - name: Substitute the Roc compiler
-        run: |
-          nix build .#roc --no-link --max-jobs 0 \
-            || echo "::warning::The pinned Roc compiler is not in the binary cache, so this run builds it from source. Run ./cache.roc to push it."
-
-      - name: Fetch Nix dependencies
-        run: nix develop --command true
+          roc: pinned
+          github-token: ${{ github.token }}
 
       # Each release carries its docs as a docs.tar.gz asset (attached by the
       # Release workflow). Serve every release's docs under /<tag>/. The
@@ -90,7 +71,7 @@ jobs:
           echo "${latest:-main}" > /tmp/redirect-target
 
       - name: Build docs for the main branch
-        run: nix develop -c roc docs platform/main.roc --output=site/main
+        run: ${{ steps.setup.outputs.prefix }} roc docs platform/main.roc --output=site/main
 
       - name: Add the landing page
         run: |
