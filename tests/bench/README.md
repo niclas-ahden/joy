@@ -28,8 +28,8 @@ Tunables (env): `BENCH_STEPS` (default 200), `BENCH_WARMUP` (default 30),
 `BENCH_PORT` (default 8788), `BENCH_THRESHOLD` (slowdown ratio that prints
 `REGRESSION`, default 1.10).
 
-Needs the nix devShell (playwright + browsers) and a `../roc-playwright`
-checkout, the same requirements as `e2e.roc`.
+Needs the nix devShell (playwright + browsers), the same requirement as
+`e2e.roc`.
 
 `performance.now()` is deliberately coarsened by browsers (0.1 ms steps), so
 phases can quantize and single-digit-percent moves are noise: re-run before

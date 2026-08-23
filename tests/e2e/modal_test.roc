@@ -4,32 +4,28 @@
 # by the browser itself.
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
-	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.7.0/BW5do1pddeCsifMZcgwV4fjYH5mdy9sNA4moigRTvQNg.tar.zst",
-	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.3.0/2v2CV8CLXRJmQRvfoHtPngAUGgE8jL6DDgXbugZhFVf5.tar.zst",
+	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.8.0/9boAetfXPFWCmMg5uavT1juSYFRw9zaGsWcfs4qspXde.tar.zst",
 }
 
-import playwright.Playwright
-import Support
+import playwright.Playwright exposing [assert!]
+import Browser
 
 main! = |_args| {
-	{ browser, page } = Support.open!("modal", "#open")?
+	{ browser, page } = Browser.open!("modal", "#open")?
 
 	# The dialog starts closed: its contents must not be visible.
-	before = Playwright.is_visible!(page, "#prompt")?
-	if before {
-		Err(DialogOpenBeforeClick)?
-	}
+	assert!(page.find("#prompt").is_hidden())?
 
 	# "Delete everything" -> update! calls DOM.show_modal!("#confirm").
-	Playwright.click!(page, "#open")?
-	Playwright.wait_for!(page, "#prompt", Visible)?
+	page.find("#open").click!()?
+	assert!(page.find("#prompt").is_visible())?
 
 	# "Yes, delete" -> update! closes the dialog and counts the confirm.
-	Playwright.click!(page, "#yes")?
-	Playwright.wait_for!(page, "#prompt", Hidden)?
+	page.find("#yes").click!()?
+	assert!(page.find("#prompt").is_hidden())?
 
-	Support.expect_text!(page, "#counts", "opened 1, confirmed 1", |got| ModalFlowWrong(got))?
+	assert!(page.find("#counts").has_text("opened 1, confirmed 1"))?
 
-	Playwright.close!(browser)?
+	browser.close!()?
 	Ok({})
 }

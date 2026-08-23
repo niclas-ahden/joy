@@ -7,64 +7,50 @@
 # formatting of F64s is not this test's business.
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
-	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.7.0/BW5do1pddeCsifMZcgwV4fjYH5mdy9sNA4moigRTvQNg.tar.zst",
-	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.3.0/2v2CV8CLXRJmQRvfoHtPngAUGgE8jL6DDgXbugZhFVf5.tar.zst",
+	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.8.0/9boAetfXPFWCmMg5uavT1juSYFRw9zaGsWcfs4qspXde.tar.zst",
 }
 
-import playwright.Playwright
-import Support
+import playwright.Playwright exposing [assert!]
+import Browser
 
 position = "#position"
 moves = "#moves"
-shift_clicks = "#shift-clicks"
 
 main! = |_args| {
-	{ browser, page } = Support.open!("pointer", "#pad")?
-	box = Playwright.bounding_box!(page, "#pad")?
+	{ browser, page } = Browser.open!("pointer", "#pad")?
+	box = page.find("#pad").bounding_box!()?
 
 	# Hovering (no button held) is not a drag: nothing counts, nothing grabs.
-	Playwright.mouse_move!(page, box.x + 30, box.y + 20)?
-	hovered = (Playwright.text_content!(page, position)?, Playwright.text_content!(page, moves)?)
-	if !(hovered.0.contains("(idle)") and hovered.1 == "Moves: 0") {
-		Err(HoverGrabbed(hovered))?
-	}
+	page.mouse_move!(box.x + 30, box.y + 20)?
+	assert!(page.find(position).contains_text("(idle)"))?
+	assert!(page.find(moves).has_text("Moves: 0"))?
 
 	# Press to grab: the press coordinates land in the model and the pad
 	# reports dragging.
-	Playwright.mouse_down!(page)?
-	at_press = Playwright.text_content!(page, position)?
-	if !at_press.contains("(dragging)") {
-		Err(PressDidNotGrab(at_press))?
-	}
+	page.mouse_down!()?
+	assert!(page.find(position).contains_text("(dragging)"))?
+	at_press = page.find(position).text!()?
 
 	# Drag in five steps: five real pointermoves with the button held, each
-	# counted, and the tracked point actually moves.
-	Playwright.mouse_move_with_steps!(page, box.x + 130, box.y + 80, 5)?
-	dragged = (Playwright.text_content!(page, position)?, Playwright.text_content!(page, moves)?)
-	if !(dragged.0.contains("(dragging)") and dragged.0 != at_press and dragged.1 == "Moves: 5") {
-		Err(DragNotTracked(dragged))?
-	}
+	# counted, and the tracked point actually moves away from the press.
+	page.mouse_move_with_steps!(box.x + 130, box.y + 80, 5)?
+	assert!(page.find(position).contains_text("(dragging)"))?
+	assert!(page.find(position).not_has_text(at_press))?
+	assert!(page.find(moves).has_text("Moves: 5"))?
 
 	# Release to drop. Moving afterwards must not count.
-	Playwright.mouse_up!(page)?
-	Playwright.mouse_move!(page, box.x + 60, box.y + 60)?
-	released = (Playwright.text_content!(page, position)?, Playwright.text_content!(page, moves)?)
-	if !(released.0.contains("(idle)") and released.1 == "Moves: 5") {
-		Err(ReleaseDidNotDrop(released))?
-	}
+	page.mouse_up!()?
+	page.mouse_move!(box.x + 60, box.y + 60)?
+	assert!(page.find(position).contains_text("(idle)"))?
+	assert!(page.find(moves).has_text("Moves: 5"))?
 
 	# Shift held across a press: the modifier crosses as part of the event.
-	Playwright.key_down_targetless!(page, Shift)?
-	Playwright.mouse_down!(page)?
-	Playwright.mouse_up!(page)?
-	Playwright.key_up_targetless!(page, Shift)?
-	shifted = Playwright.text_content!(page, shift_clicks)?
+	page.key_down_targetless!(Shift)?
+	page.mouse_down!()?
+	page.mouse_up!()?
+	page.key_up_targetless!(Shift)?
+	assert!(page.find("#shift-clicks").has_text("Shift-clicks: 1"))?
 
-	Playwright.close!(browser)?
-
-	if shifted == "Shift-clicks: 1" {
-		Ok({})
-	} else {
-		Err(ShiftNotSeen(shifted))
-	}
+	browser.close!()?
+	Ok({})
 }

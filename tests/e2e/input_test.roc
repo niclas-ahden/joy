@@ -3,20 +3,19 @@
 # must echo the value into its <p> (typed value events, big-string path).
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
-	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.7.0/BW5do1pddeCsifMZcgwV4fjYH5mdy9sNA4moigRTvQNg.tar.zst",
-	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.3.0/2v2CV8CLXRJmQRvfoHtPngAUGgE8jL6DDgXbugZhFVf5.tar.zst",
+	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.8.0/9boAetfXPFWCmMg5uavT1juSYFRw9zaGsWcfs4qspXde.tar.zst",
 }
 
-import playwright.Playwright
-import Support
+import playwright.Playwright exposing [assert!]
+import Browser
 
 main! = |_args| {
-	{ browser, page } = Support.open!("events_input", "#app textarea")?
+	{ browser, page } = Browser.open!("events_input", "#app textarea")?
 
 	typed = "hello from a real browser ✓"
-	Playwright.fill!(page, "#app textarea", typed)?
-	Support.expect_text!(page, "#draft", typed, |got| InputNotEchoed(got))?
+	page.find("#app textarea").fill!(typed)?
+	assert!(page.find("#draft").has_text(typed))?
 
-	Playwright.close!(browser)?
+	browser.close!()?
 	Ok({})
 }

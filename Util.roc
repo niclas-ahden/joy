@@ -5,14 +5,19 @@ import pf.Stderr
 ## tests.roc, e2e.roc and watch.roc. All of them are run from the repo root.
 Util :: [].{
 
-	## Run a command with inherited stdio, exiting with the child's code when it
-	## fails.
+	## Run a command with inherited stdio, exiting with the child's code when
+	## it fails. A command that could not be run at all (missing binary, no
+	## permission) is reported on stderr: the child never got to say anything,
+	## so without this the script would die with no output at all.
 	run! : Str, List(Str) => Try({}, [Exit(I32), ..])
 	run! = |program, args| {
 		match Cmd.new_str(program).args_str(args).exec_exit_code!() {
 			Ok(0) => Ok({})
 			Ok(code) => Err(Exit(code))
-			Err(_) => Err(Exit(1))
+			Err(FailedToGetExitCode({ err, .. })) => {
+				Stderr.line!("error: could not run ${program}: ${Str.inspect(err)}") ?? {}
+				Err(Exit(1))
+			}
 		}
 	}
 
@@ -22,7 +27,10 @@ Util :: [].{
 		match Cmd.new_str(program).args_str(args).env_str(key, value).exec_exit_code!() {
 			Ok(0) => Ok({})
 			Ok(code) => Err(Exit(code))
-			Err(_) => Err(Exit(1))
+			Err(FailedToGetExitCode({ err, .. })) => {
+				Stderr.line!("error: could not run ${program}: ${Str.inspect(err)}") ?? {}
+				Err(Exit(1))
+			}
 		}
 	}
 

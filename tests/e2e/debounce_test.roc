@@ -7,32 +7,33 @@
 # a busy machine.
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
-	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.7.0/BW5do1pddeCsifMZcgwV4fjYH5mdy9sNA4moigRTvQNg.tar.zst",
-	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.3.0/2v2CV8CLXRJmQRvfoHtPngAUGgE8jL6DDgXbugZhFVf5.tar.zst",
+	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.8.0/9boAetfXPFWCmMg5uavT1juSYFRw9zaGsWcfs4qspXde.tar.zst",
 }
 
 import pf.Sleep
-import playwright.Playwright
-import Support
+import playwright.Playwright exposing [assert!]
+import Browser
 
 main! = |_args| {
-	{ browser, page } = Support.open!("debounce", "#search")?
+	{ browser, page } = Browser.open!("debounce", "#search")?
 
-	# A burst of three keystrokes: one search, with the final text.
-	Playwright.key_type!(page, "#search", "joy")?
-	Support.wait_for_text!(page, "#searches", "searches: 1")?
-	Support.expect_text!(page, "#searched", "searched for: joy", |got| SearchedTooEarly(got))?
+	# A burst of three keystrokes: one search, with the final text. The first
+	# claim rides out the debounce window, since assert! re-checks until it
+	# holds.
+	page.key_type!("#search", "joy")?
+	assert!(page.find("#searches").has_text("searches: 1"))?
+	assert!(page.find("#searched").has_text("searched for: joy"))?
 
 	# The timer fired once. Well past another debounce window it must not
 	# have fired again.
 	Sleep.millis!(300)
-	Support.expect_text!(page, "#searches", "searches: 1", |got| TimerFiredTwice(got))?
+	assert!(page.find("#searches").has_text("searches: 1"))?
 
 	# The key is reusable: another keystroke arms a fresh timer.
-	Playwright.key_type!(page, "#search", "x")?
-	Support.wait_for_text!(page, "#searches", "searches: 2")?
-	Support.expect_text!(page, "#searched", "searched for: joyx", |got| WrongSecondSearch(got))?
+	page.key_type!("#search", "x")?
+	assert!(page.find("#searches").has_text("searches: 2"))?
+	assert!(page.find("#searched").has_text("searched for: joyx"))?
 
-	Playwright.close!(browser)?
+	browser.close!()?
 	Ok({})
 }

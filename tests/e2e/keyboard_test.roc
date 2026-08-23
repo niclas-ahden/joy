@@ -7,52 +7,51 @@
 # listeners.
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
-	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.7.0/BW5do1pddeCsifMZcgwV4fjYH5mdy9sNA4moigRTvQNg.tar.zst",
-	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.3.0/2v2CV8CLXRJmQRvfoHtPngAUGgE8jL6DDgXbugZhFVf5.tar.zst",
+	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.8.0/9boAetfXPFWCmMg5uavT1juSYFRw9zaGsWcfs4qspXde.tar.zst",
 }
 
-import playwright.Playwright
-import Support
+import playwright.Playwright exposing [assert!, assert_with!]
+import Browser
 
 main! = |_args| {
-	{ browser, page } = Support.open!("keyboard", "#listen")?
+	{ browser, page } = Browser.open!("keyboard", "#listen")?
 
 	# A page-level press reaches the two all-keys document subscriptions (one
 	# message each) and lands in the model as the full KeyEvent.
-	Playwright.key_press_targetless!(page, KeyS, [])?
-	Support.expect_text!(page, "#last-key", "Last key: s (KeyS)", |got| WrongKeyEvent(got))?
+	page.key_press_targetless!(KeyS, [])?
+	assert!(page.find("#last-key").has_text("Last key: s (KeyS)"))?
 
 	# Escape hits the key-filtered subscription too, and the all-keys ones
 	# still count it.
-	Playwright.key_press_targetless!(page, Escape, [])?
-	Support.expect_text!(page, "#keys-seen", "Keys seen: 2", |got| EscapeNotCounted(got))?
-	Support.expect_text!(page, "#escapes", "Escapes: 1", |got| EscapeNotCounted(got))?
+	page.key_press_targetless!(Escape, [])?
+	assert!(page.find("#keys-seen").has_text("Keys seen: 2"))?
+	assert!(page.find("#escapes").has_text("Escapes: 1"))?
 
 	# The first input's own on_keydown fires for that element, and the real
 	# keydown bubbles on to the document subscriptions.
-	Playwright.key_press!(page, "#typing", KeyA, [])?
-	Support.expect_text!(page, "#input-key", "Input key: a", |got| ElementHandlerMissedKey(got))?
-	Support.expect_text!(page, "#keys-seen", "Keys seen: 3", |got| ElementHandlerMissedKey(got))?
+	page.key_press!("#typing", KeyA, [])?
+	assert!(page.find("#input-key").has_text("Input key: a"))?
+	assert!(page.find("#keys-seen").has_text("Keys seen: 3"))?
 
 	# The second input filters on Enter (with prevent_default), so Enter
 	# submits...
-	Playwright.key_press!(page, "#submitting", Enter, [])?
+	page.key_press!("#submitting", Enter, [])?
 	# ...and any other key must not.
-	Playwright.key_press!(page, "#submitting", KeyQ, [])?
-	Support.expect_text!(page, "#submits", "Submits: 1", |got| EnterFilterWrong(got))?
+	page.key_press!("#submitting", KeyQ, [])?
+	assert!(page.find("#submits").has_text("Submits: 1"))?
 
 	# "Stop listening" empties the subscription list, which must detach the
 	# real document listeners: further keys change nothing. Still 5, which
 	# also proves the Enter and Q presses above reached the document.
-	Playwright.click!(page, "#listen")?
-	Playwright.key_press_targetless!(page, KeyX, [])?
-	Support.expect_text!(page, "#keys-seen", "Keys seen: 5", |got| ListenerNotDetached(got))?
+	page.find("#listen").click!()?
+	page.key_press_targetless!(KeyX, [])?
+	assert_with!(page.find("#keys-seen").has_text("Keys seen: 5"), { label: "listener not detached" })?
 
 	# "Listen" declares them again: fresh listeners, counting resumes.
-	Playwright.click!(page, "#listen")?
-	Playwright.key_press_targetless!(page, KeyZ, [])?
-	Support.expect_text!(page, "#keys-seen", "Keys seen: 6", |got| ListenerNotReattached(got))?
+	page.find("#listen").click!()?
+	page.key_press_targetless!(KeyZ, [])?
+	assert_with!(page.find("#keys-seen").has_text("Keys seen: 6"), { label: "listener not reattached" })?
 
-	Playwright.close!(browser)?
+	browser.close!()?
 	Ok({})
 }

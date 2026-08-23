@@ -10,7 +10,7 @@
 #   paint   the runtime applies the ops to the real DOM
 #
 # Run from the repo root, inside the nix devShell (playwright + browsers),
-# with a ../roc-playwright checkout (same requirement as e2e.roc):
+# the same requirement as e2e.roc:
 #
 #   tests/bench/bench.roc                  # run and compare against baseline.json
 #   tests/bench/bench.roc --save-baseline  # accept the current numbers as the new baseline
@@ -26,7 +26,7 @@
 # builds pay nothing.
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
-	playwright: "../../../roc-playwright/package/main.roc",
+	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.8.0/9boAetfXPFWCmMg5uavT1juSYFRw9zaGsWcfs4qspXde.tar.zst",
 }
 
 import pf.Cmd
@@ -37,15 +37,6 @@ import pf.Sleep
 import pf.Stderr
 import pf.Stdout
 import playwright.Playwright
-
-hooks = {
-	new: Cmd.new_str,
-	args: Cmd.args_str,
-	spawn_grouped!: Cmd.spawn_leashed!,
-	write_stdin!: Cmd.Child.write_stdin!,
-	read_stdout!: Cmd.Child.read_stdout!,
-	kill!: Cmd.Child.kill!,
-}
 
 baseline_path = "tests/bench/baseline.json"
 
@@ -81,13 +72,16 @@ main! = |args| {
 	wait_for_server!(url, 100)?
 
 	Stdout.line!("== driving ${steps.to_str()} steps (${warmup.to_str()} warmup) in Chromium ==")?
-	{ browser, page } = Playwright.launch_page!(hooks, Chromium(DefaultChannel))?
-	Playwright.navigate!(page, url)?
-	Playwright.wait_for!(page, "#run", Visible)?
+	{ browser, page } = Playwright.launch_page!(
+		{ new: Cmd.new_str, spawn!: Cmd.spawn_leashed! },
+		Chromium(DefaultChannel),
+	)?
+	page.navigate!(url)?
+	page.wait_for!("#run", Visible)?
 	# The workload needs its 1000 rows first, and the create itself is not
 	# measured.
-	Playwright.click!(page, "#run")?
-	Playwright.wait_for!(page, "#tbody tr", Visible)?
+	page.click!("#run")?
+	page.wait_for!("#tbody tr", Visible)?
 
 	# One evaluate drives every step: each button.click() dispatches into the
 	# app synchronously, and the runtime's cumulative perf counters are
@@ -95,9 +89,9 @@ main! = |args| {
 	# sampling itself runs outside enter() and never lands in the counters.
 	warmup_js = "(() => { const btn = document.getElementById('update'); for (let i = 0; i < ${warmup.to_str()}; i++) btn.click(); return 'ok'; })()"
 	measure_js = "(() => { const app = window.app; app.perf.enabled = true; const btn = document.getElementById('update'); const c = () => [app.perf.updateMs, app.perf.renderMs, app.perf.diffMs, app.perf.paintMs, app.perf.busyMs]; const rows = []; for (let i = 0; i < ${steps.to_str()}; i++) { const a = c(); btn.click(); const b = c(); rows.push([b[0]-a[0], b[1]-a[1], b[2]-a[2], b[3]-a[3], b[4]-a[4]]); } return JSON.stringify(rows); })()"
-	_ = Playwright.evaluate!(page, warmup_js)?
-	raw = Playwright.evaluate!(page, measure_js)?
-	Playwright.close!(browser)?
+	_ = page.evaluate!(warmup_js)?
+	raw = page.evaluate!(measure_js)?
+	browser.close!()?
 	server.kill!() ?? {}
 
 	samples : Try(List(List(F64)), _)
