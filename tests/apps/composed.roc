@@ -1,6 +1,6 @@
 app [Model, Msg, init, update, render, subscriptions] {
 	pf: platform "../../platform/main.roc",
-	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.15.0/5Yoz712P8ed4MBW74eddTEJdZ92ZDCUbVGFkt4XXSuj9.tar.zst",
+	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.16.0/56NBT6VkQ5xm87Wjzcv9mRuNT4RACiAmuAmPbXwc8cuk.tar.zst",
 }
 
 import html.Html exposing [Html, div, h2, button, text]
@@ -11,7 +11,7 @@ import pf.Time
 
 # Component composition via the map combinators: a self-contained counter
 # component owns its CounterMsg, its view, its update, a boot effect and a
-# tick subscription — and the parent embeds TWO of them, wrapping each with
+# tick subscription, and the parent embeds TWO of them, wrapping each with
 # Html.map / Effect.map / Sub.map so the messages route back to the right one.
 
 # --- The counter component (its own Msg, view, update, cmd, sub) ---

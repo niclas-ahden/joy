@@ -19,6 +19,7 @@ platform/targets/
 
 # Local working notes
 notes/
+PERF_DECISIONS.md
 
 # Platform bundles from ./bundle.roc
 dist/

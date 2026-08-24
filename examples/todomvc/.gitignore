@@ -1,0 +1,15 @@
+# Ignore generated binaries (with no extension) by default
+*
+!*.*
+!*/
+!LICENSE
+!Caddyfile
+
+.direnv/
+.envrc
+
+# Build artifacts (runtime.js is copied out of the platform bundle by build.roc)
+www/app.wasm
+www/runtime.js
+
+.zig-cache/

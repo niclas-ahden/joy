@@ -33,7 +33,16 @@ export const fakeDom = {
   },
   on: (node, event, fn) => {
     (node.bound[event] ??= []).push(fn);
-    node.listeners[event] = (domEvent) => { for (const f of [...node.bound[event]]) f(domEvent); };
+    // Browsers hand listeners currentTarget and type, harnesses call
+    // `listeners.click()` bare, so the dispatcher fills both in. Mutates
+    // the caller's event rather than copying: bubbling harnesses pass one
+    // event through several nodes and rely on its identity.
+    node.listeners[event] = (domEvent) => {
+      const ev = domEvent ?? {};
+      ev.currentTarget = node;
+      ev.type = event;
+      for (const f of [...node.bound[event]]) f(ev);
+    };
   },
   setText: (node, s) => { node.text = s; },
   childrenOf: (node) => node.children ?? [],

@@ -129,7 +129,6 @@ Sub(msg) := [
 	url_changed = |on_change| UrlChanged({ on_change: Box.box(|s| Box.box(on_change(s))) })
 }
 
-# --- roc test (run via `roc test platform/main.roc`) ---
 # `map` is Box plumbing: a mistake there (wrong unbox depth, dropped wrap)
 # only shows up in the wasm harnesses as corruption, so pin it here by
 # firing the mapped callbacks directly.

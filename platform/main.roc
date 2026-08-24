@@ -13,7 +13,7 @@ platform ""
 		# this exact URL and `import html.Html`. It must be the same URL, or
 		# the app's Html is a different nominal type than the one `render`
 		# is required to return.
-		html: "https://github.com/niclas-ahden/joy-html/releases/download/0.15.0/5Yoz712P8ed4MBW74eddTEJdZ92ZDCUbVGFkt4XXSuj9.tar.zst",
+		html: "https://github.com/niclas-ahden/joy-html/releases/download/0.16.0/56NBT6VkQ5xm87Wjzcv9mRuNT4RACiAmuAmPbXwc8cuk.tar.zst",
 	}
 	provides {
 		"roc_init": init_for_host,
@@ -36,7 +36,44 @@ platform ""
 	}
 	targets: {
 		inputs_dir: "targets/",
-		wasm32: { inputs: ["host.wasm", app] },
+		wasm32: {
+			inputs: ["host.wasm", app],
+			# A reactor module: no entry point, the runtime calls in.
+			output: Shared,
+			# The sole authority for what the module exports. A symbol missing
+			# here is stripped from the wasm, however the host declares it.
+			exports: [
+				"start",
+				"dispatch",
+				"dispatch_bytes",
+				"dispatch_file",
+				"dispatch_http",
+				"dispatch_key",
+				"dispatch_pointer",
+				"dispatch_sub",
+				"dispatch_sub_key",
+				"dispatch_sub_value",
+				"dispatch_timer",
+				"dispatch_value",
+				"drop_timer_cb",
+				"cmd_ptr",
+				"cmd_len",
+				"effects_ptr",
+				"effects_len",
+				"effects_clear",
+				"log_ptr",
+				"log_len",
+				"log_clear",
+				"js_alloc",
+				"stack_canary_ok",
+				"stack_floor",
+				"heap_used",
+				"dealloc_miss",
+				"lazy_forces",
+				"lazy_entries",
+				"bench_phase_ms",
+			],
+		},
 	}
 
 import html.Html exposing [Html]

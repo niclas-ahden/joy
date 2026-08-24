@@ -3,7 +3,7 @@
 # the address bar without adding entries, push_url adds one, Back fires a
 # real popstate that DOM.on_url_change turns into a message, and navigate is
 # a genuine page load that boots the app afresh. The URL claims read the
-# address bar the browser reports; evaluate! remains only for history.back(),
+# address bar the browser reports. evaluate! remains only for history.back(),
 # which has no built-in.
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",

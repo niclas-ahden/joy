@@ -51,9 +51,9 @@ main! = |args| {
 	port = Env.var_str!("BENCH_PORT") ?? "8788"
 	threshold = F64.from_str(Env.var_str!("BENCH_THRESHOLD") ?? "") ?? 1.10
 
-	Stdout.line!("== building jsbench with joy_bench instrumentation ==")?
+	Stdout.line!("== building jsbench_keyed with joy_bench instrumentation ==")?
 	build_code = Cmd.new_str("./build.roc")
-		.args_str(["--", "--opt=speed", "tests/apps/jsbench.roc"])
+		.args_str(["--", "--opt=speed", "tests/apps/jsbench_keyed.roc"])
 		.env_str("JOY_BENCH", "1")
 		.exec_exit_code!()
 		.ok_or(1)
@@ -64,9 +64,11 @@ main! = |args| {
 	}
 
 	# Spawned leashed, so the platform kills the server when this script
-	# exits, pass or fail. Pinned mode: jsbench is the site's only app.
+	# exits, pass or fail. Pinned mode: jsbench_keyed is the site's only app.
+	# The keyed bracket is the one tracked here, since it is the bracket the
+	# results table compares Joy on.
 	server = Cmd.new_str("node")
-		.args_str(["www/serve.mjs", port, "speed", "jsbench"])
+		.args_str(["www/serve.mjs", port, "speed", "jsbench_keyed"])
 		.spawn_leashed!()?
 	url = "http://127.0.0.1:${port}/"
 	wait_for_server!(url, 100)?

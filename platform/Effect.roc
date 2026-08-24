@@ -215,7 +215,6 @@ Effect(msg) := [
 	time_debounce = |key, ms, on_fire| TimeDebounce(key, ms, Box.box(|now| Box.box(on_fire(now))))
 }
 
-# --- roc test (run via `roc test platform/main.roc`) ---
 # `map` is Box plumbing: a mistake there (wrong unbox depth, dropped wrap)
 # only shows up in the wasm harnesses as corruption, so pin it here by
 # firing the mapped callbacks directly.

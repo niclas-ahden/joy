@@ -1,0 +1,268 @@
+/* A compact take on the classic TodoMVC look (https://todomvc.com). */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font: 14px 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-weight: 300;
+  line-height: 1.4em;
+  background: #f5f5f5;
+  color: #111111;
+  min-width: 230px;
+  max-width: 550px;
+  margin: 0 auto;
+}
+
+button {
+  border: 0;
+  background: none;
+  font-size: 100%;
+  font-family: inherit;
+  font-weight: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.todoapp {
+  background: #fff;
+  margin: 140px 0 40px 0;
+  position: relative;
+  box-shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.2),
+              0 25px 50px 0 rgba(0, 0, 0, 0.1);
+}
+
+.todoapp h1 {
+  position: absolute;
+  top: -125px;
+  width: 100%;
+  font-size: 80px;
+  font-weight: 200;
+  line-height: 1.2;
+  text-align: center;
+  color: #b83f45;
+}
+
+.new-todo,
+.edit {
+  width: 100%;
+  font-size: 24px;
+  font-family: inherit;
+  font-weight: inherit;
+  line-height: 1.4em;
+  color: inherit;
+  border: 0;
+  padding: 16px 16px 16px 60px;
+  background: rgba(0, 0, 0, 0.003);
+  box-shadow: inset 0 -2px 1px rgba(0, 0, 0, 0.03);
+}
+
+.new-todo::placeholder {
+  font-style: italic;
+  font-weight: 300;
+  color: rgba(0, 0, 0, 0.4);
+}
+
+.new-todo:focus,
+.edit:focus {
+  outline: 0;
+  box-shadow: inset 0 0 2px 2px #cf7d7d;
+}
+
+.main {
+  position: relative;
+  border-top: 1px solid #e6e6e6;
+}
+
+.toggle-all {
+  position: absolute;
+  opacity: 0;
+}
+
+.toggle-all + label {
+  position: absolute;
+  top: -52px;
+  left: 0;
+  width: 60px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0;
+  cursor: pointer;
+}
+
+.toggle-all + label::before {
+  content: '\276f';
+  display: inline-block;
+  font-size: 22px;
+  color: #949494;
+  padding: 10px 27px;
+  transform: rotate(90deg);
+}
+
+.toggle-all:checked + label::before {
+  color: #484848;
+}
+
+.todo-list {
+  list-style: none;
+}
+
+.todo-list li {
+  position: relative;
+  font-size: 24px;
+  border-bottom: 1px solid #ededed;
+}
+
+.todo-list li:last-child {
+  border-bottom: none;
+}
+
+.todo-list li .view {
+  display: flex;
+  align-items: center;
+}
+
+.todo-list li .toggle {
+  appearance: none;
+  width: 30px;
+  height: 30px;
+  margin: 0 15px;
+  flex-shrink: 0;
+  border: 1px solid #949494;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.todo-list li .toggle:checked {
+  border-color: #59a193;
+}
+
+.todo-list li .toggle:checked::after {
+  content: '\2713';
+  font-size: 18px;
+  color: #59a193;
+}
+
+.todo-list li label {
+  flex: 1;
+  word-break: break-all;
+  padding: 15px 15px 15px 0;
+  line-height: 1.2;
+  transition: color 0.4s;
+}
+
+.todo-list li.completed label {
+  color: #949494;
+  text-decoration: line-through;
+}
+
+.todo-list li .destroy {
+  width: 40px;
+  font-size: 30px;
+  color: #949494;
+  transition: color 0.2s ease-out;
+  display: none;
+}
+
+.todo-list li .destroy:hover {
+  color: #c18585;
+}
+
+.todo-list li .destroy::after {
+  content: '\00d7';
+}
+
+.todo-list li:hover .destroy {
+  display: block;
+}
+
+.todo-list li .edit {
+  display: none;
+}
+
+.todo-list li.editing .view {
+  display: none;
+}
+
+.todo-list li.editing .edit {
+  display: block;
+  padding: 15px 15px 15px 60px;
+}
+
+.footer {
+  padding: 10px 15px;
+  border-top: 1px solid #e6e6e6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 15px;
+  color: #777;
+}
+
+.footer::before {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 50px;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.2),
+              0 8px 0 -3px #f6f6f6,
+              0 9px 1px -3px rgba(0, 0, 0, 0.2),
+              0 16px 0 -6px #f6f6f6,
+              0 17px 2px -6px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+}
+
+.todo-count {
+  min-width: 90px;
+}
+
+.filters {
+  list-style: none;
+  display: flex;
+  gap: 5px;
+}
+
+.filters li a {
+  color: inherit;
+  padding: 3px 7px;
+  text-decoration: none;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.filters li a:hover {
+  border-color: #db7676;
+}
+
+.filters li a.selected {
+  border-color: #ce4646;
+}
+
+.clear-completed {
+  min-width: 100px;
+  text-align: right;
+}
+
+.clear-completed:hover {
+  text-decoration: underline;
+}
+
+.info {
+  margin: 65px auto 0;
+  padding-bottom: 40px;
+  color: #4d4d4d;
+  font-size: 11px;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+  text-align: center;
+}

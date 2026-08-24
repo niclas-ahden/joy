@@ -1,0 +1,114 @@
+name: Test on latest nightly Roc
+
+# Test this app against the latest Roc nightly, every morning.
+# A red run means we have some work to do! Either we need to adapt to a change
+# in Roc or we should isolate and report a bug :)
+
+on:
+  schedule:
+    # Nightlies publish between 10:00 and 13:30 UTC. Joy runs its own nightly
+    # check at 15:00, so we go after it: if both are red, Joy is the one to fix.
+    - cron: '30 15 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-roc
+  cancel-in-progress: true
+
+jobs:
+  nightly:
+    name: Test latest Roc nightly
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # names the passing nightly in the README
+    steps:
+      - name: Resolve the latest nightly
+        id: versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          tag=$(gh release view --repo roc-lang/nightlies --json tagName -q .tagName)
+          url=$(gh release view --repo roc-lang/nightlies --json assets \
+                  -q '.assets[] | select(.name | test("linux_x86_64")) | .url')
+          # Tag spellings have changed before, but both end in the short sha
+          prev=$(gh release list --repo roc-lang/nightlies --limit 2 --json tagName -q '.[1].tagName')
+
+          [ -n "$url" ] || { echo "error: no linux_x86_64 asset on $tag" >&2; exit 1; }
+
+          {
+            echo "nightly=$tag"
+            echo "nightly_url=$url"
+            echo "sha=${tag##*-}"
+            echo "prev_sha=${prev##*-}"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Roc $tag"
+
+      - uses: actions/checkout@v4
+
+      - name: Install the Roc nightly
+        run: |
+          set -euo pipefail
+          curl -sSL -o roc_nightly.tar.gz "${{ steps.versions.outputs.nightly_url }}"
+          mkdir -p "$RUNNER_TEMP/roc"
+          tar -xzf roc_nightly.tar.gz --strip-components=1 -C "$RUNNER_TEMP/roc"
+          echo "$RUNNER_TEMP/roc" >> "$GITHUB_PATH"
+
+      - run: roc --version
+
+      - name: Build the app
+        run: ./build.roc
+
+      # The browser tests need caddy and playwright, which the tests dev
+      # shell provides prebuilt from the public Nix cache. The shell brings
+      # no compiler of its own, so `roc` stays the nightly from above.
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v14
+
+      - name: Run the browser tests
+        run: nix develop .#tests -c ./tests.roc
+
+      # If the build passes, then let's update the README to recommend this new nightly!
+
+      - name: Name this nightly in the README
+        env:
+          NIGHTLY: ${{ steps.versions.outputs.nightly }}
+        run: |
+          set -euo pipefail
+
+          # Find the currently recommended nightly in the README
+          current=$(sed -n 's|.*/roc-lang/nightlies/releases/tag/\(nightly-[^)]*\)).*|\1|p' README.md | head -1)
+          [ -n "$current" ] || {
+            echo "error: no roc nightly link in README.md to update" >&2
+            exit 1
+          }
+          if [ "$current" = "$NIGHTLY" ]; then
+            echo "README already names $NIGHTLY"
+            exit 0
+          fi
+
+          # The tag is both the link text and the URL, so replace it wherever
+          # it appears and any wording around it survives.
+          sed -i "s|$current|$NIGHTLY|g" README.md
+          if git diff --quiet README.md; then
+            echo "error: README rewrite changed nothing" >&2
+            exit 1
+          fi
+
+          git config user.name 'GitHub Actions'
+          git config user.email ''
+          git add README.md
+          git commit -m "README: Update recommended Roc to $NIGHTLY"
+          git push
+          echo "README now recommends $NIGHTLY (was $current)"
+
+      - name: Name the commit range
+        if: failure()
+        run: |
+          echo "::error::joy-todomvc fails on roc ${{ steps.versions.outputs.nightly }}"
+          echo "  https://github.com/roc-lang/roc/compare/${{ steps.versions.outputs.prev_sha }}...${{ steps.versions.outputs.sha }}"

@@ -1,15 +1,15 @@
 app [Model, Msg, init, update, render, subscriptions] {
 	pf: platform "../platform/main.roc",
-	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.15.0/5Yoz712P8ed4MBW74eddTEJdZ92ZDCUbVGFkt4XXSuj9.tar.zst",
+	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.16.0/56NBT6VkQ5xm87Wjzcv9mRuNT4RACiAmuAmPbXwc8cuk.tar.zst",
 }
 
 import html.Html exposing [Html, div, button, ul, li, text]
-import html.Attribute exposing [key, on_click]
+import html.Attribute exposing [on_click]
 import pf.Effect exposing [Effect]
 
-# A reorderable list whose items carry `key` attributes. Keys give items
-# identity across renders: rotating, prepending or removing moves the
-# existing DOM nodes (keeping their state) instead of rewriting every
+# A reorderable list whose items are wrapped in `Html.keyed`. Keys give
+# items identity across renders: rotating, prepending or removing moves
+# the existing DOM nodes (keeping their state) instead of rewriting every
 # position. Compare `counters.roc`, whose unkeyed children are only ever
 # patched positionally.
 
@@ -65,7 +65,7 @@ render = |model|
 			button([on_click(UserClickedReverse)], [text("reverse")]),
 			ul(
 				[],
-				model.items.map(|item| li([key(item)], [text(item)])),
+				model.items.map(|item| Html.keyed(item, li([], [text(item)]))),
 			),
 		],
 	)

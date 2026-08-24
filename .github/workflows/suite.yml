@@ -60,7 +60,7 @@ on:
       bundle-artifact:
         description: >
           Workflow artifact holding one *.tar.zst bundle. Each leg serves it
-          on 127.0.0.1 and points every app there; roc allows http to
+          on 127.0.0.1 and points every app there. roc allows http to
           localhost, so it does the download/hash/unbundle itself. For draft
           bundles, whose assets need a token. Exclusive with `bundle-url`.
         type: string
@@ -70,7 +70,7 @@ jobs:
   # Every app built per compiler x opt x OS, then the node harnesses, then
   # (if asked) the browser E2E suite. The wasm is identical across OSes but
   # the toolchain producing it is not, and that is where the bugs have been
-  # (see 012b128).
+  # (macOS arg handling broke while Linux passed).
   harness:
     name: ${{ inputs.label }} (${{ matrix.roc }}, ${{ matrix.opt }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -135,12 +135,21 @@ jobs:
         if: inputs.e2e == 'all' || (inputs.e2e == 'linux' && startsWith(matrix.os, 'ubuntu'))
         run: ${{ steps.setup.outputs.prefix }} ./e2e.roc -- --opt=${{ matrix.opt }}
 
+      # examples/todomvc doubles as the standalone starter template, so its
+      # own scripts must work, not just its app: its suite runs build.roc,
+      # the per-worker caddy servers, every browser test, and a smoke pass
+      # over watch.roc. Caddy comes from the devShell on pinned legs and
+      # from the setup action on nightly ones.
+      - name: Drive the TodoMVC template's own suite
+        if: inputs.e2e == 'all' || (inputs.e2e == 'linux' && startsWith(matrix.os, 'ubuntu'))
+        run: ${{ steps.setup.outputs.prefix }} sh -c 'cd examples/todomvc && ./tests.roc'
+
   # SMALL_BUFFERS shrinks the host's outbound buffers so every render takes
   # the growth path. One leg: it only changes the Rust host, so other opt/OS
   # cells would repeat identical work. Set inside the prefix because
   # `nix develop` does not reliably pass ambient exports through.
   small-buffers:
-    name: ${{ inputs.label }} (${{ matrix.roc }}, small-buffers)
+    name: Small buffers
     if: inputs.extras
     runs-on: ubuntu-24.04
     strategy:
@@ -163,5 +172,5 @@ jobs:
           roc: ${{ matrix.roc }}
           github-token: ${{ github.token }}
 
-      - name: Build and test with tiny buffers
+      - name: Build and test with tiny buffers (${{ matrix.roc }})
         run: ${{ steps.setup.outputs.prefix }} env SMALL_BUFFERS=1 ./tests.roc -- --opt=speed

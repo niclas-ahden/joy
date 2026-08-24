@@ -35,7 +35,7 @@ main! = |args| {
 	opt = Args.check_opt!(Args.parse!(parser, args, "--opt=speed")?)?
 
 	if !(on_path!("playwright")) {
-		fail!("playwright not found, run inside the nix devShell")?
+		fail!("playwright not found. The nix devShell provides it, or install it with `npm install -g playwright && playwright install chromium`.")?
 	}
 
 	run!("./build.roc", ["--", "--opt=${opt}"])?
@@ -67,10 +67,13 @@ main! = |args| {
 	) ? |_| ServerNeverAnswered(url)
 
 	# The runner is interpreted (default --opt=dev). It is only orchestration,
-	# each test is spawned compiled (`roc --opt=speed`) by roc-spec.
+	# each test is spawned compiled (`roc --opt=speed`) by roc-spec. JOY_OPT
+	# names the build under test (stack_canary_test gates its deep budget on
+	# it).
 	code = Cmd.new_str("roc")
 		.args_str(["tests/e2e/run.roc"])
 		.env_str("JOY_E2E_URL", url)
+		.env_str("JOY_OPT", opt)
 		.exec_exit_code!()
 		.ok_or(1)
 

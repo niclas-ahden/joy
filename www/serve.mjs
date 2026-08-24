@@ -5,7 +5,9 @@
 // ./runtime.js, and there are no query strings, no injected globals and no
 // repo paths. That page is what someone copies into their own project, so it
 // must not know anything about this repo's layout. Everything that has to know
-// lives here instead.
+// lives here instead. A directory example that brings a page or styles of
+// its own (examples/<app>/index.html and style.css, equally copyable) gets
+// them by name.
 //
 // Two modes, both naming the optimization level whose build/<opt>/ tree to
 // serve:
@@ -45,8 +47,14 @@ const isAppName = (app) => /^[a-z0-9_]+$/i.test(app);
 // The whole URL space, relative to an app's root.
 function routeFor(app, rest) {
   switch (rest) {
+    // A directory example with a page of its own, like examples/todomvc/,
+    // gets it; every other app shares the plain shell. Both are complete
+    // copyable pages.
     case '/':
-      return { file: 'www/index.html', type: 'text/html' };
+      return { files: [`examples/${app}/www/index.html`, 'www/index.html'], type: 'text/html' };
+    // Only a page that links it requests it, so most apps never hit this.
+    case '/style.css':
+      return { file: `examples/${app}/www/style.css`, type: 'text/css' };
     case '/runtime.js':
       return { file: 'www/runtime.js', type: 'text/javascript' };
     // Not referenced by the page. The frame-time meter, loaded by hand from
@@ -63,7 +71,14 @@ function routeFor(app, rest) {
 // Split a request path into the app it belongs to and the path within that
 // app. Pinned mode has no prefix to strip, everything sits at the root.
 function resolve(pathname) {
-  if (pinned) return { app: pinned, rest: pathname };
+  // The pinned app also answers under its own prefix, so a URL that names
+  // the app, like the /todomvc/ the browser tests navigate to, works against
+  // this server and the prefix-mode one alike.
+  if (pinned) {
+    const prefix = `/${pinned}/`;
+    const rest = pathname.startsWith(prefix) ? pathname.slice(prefix.length - 1) : pathname;
+    return { app: pinned, rest };
+  }
   if (pathname === '/') return {};
   const at = pathname.indexOf('/', 1);
   // `/counter` names an app but no path within it, so the page's own
@@ -116,14 +131,18 @@ http
       return;
     }
 
-    try {
-      const body = await readFile(path.join(rootDir, route.file));
-      res.writeHead(200, headers(route.type));
-      res.end(body);
-    } catch {
-      res.writeHead(404, headers('text/plain'));
-      res.end('not found');
+    // A route names one file, or candidates tried in order for the per-app
+    // page override above.
+    for (const file of route.files ?? [route.file]) {
+      try {
+        const body = await readFile(path.join(rootDir, file));
+        res.writeHead(200, headers(route.type));
+        res.end(body);
+        return;
+      } catch {}
     }
+    res.writeHead(404, headers('text/plain'));
+    res.end('not found');
   })
   // watch.roc pipes this process's output rather than letting it inherit the
   // terminal, and repeats whatever landed here if the server dies on startup.

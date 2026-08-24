@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Joy TodoMVC</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { mount } from './runtime.js';
+
+    // Exposed globally so you can poke at it from the console.
+    window.app = await mount({
+      wasm: './app.wasm',
+      root: document.getElementById('app'),
+      // The string your app's `init` receives. The "flags" example wants JSON
+      // here, e.g. `{"name": "Brödil", "karma": 99}`
+      flags: '',
+    });
+  </script>
+</body>
+</html>

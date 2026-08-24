@@ -1,8 +1,6 @@
 # Phase regression benchmark
 
-A local tool, run by hand and compared against a saved baseline, the same way
-`cargo bench --baseline` works. There is no CI gate (a noisy shared runner
-makes these timings unreliable anyway).
+A local tool, run by hand and compared against a saved baseline.
 
 `bench.roc` builds the jsbench app with the host's `joy_bench` instrumentation
 (`JOY_BENCH=1 ./build.roc -- --opt=speed`), serves it, and drives update steps in headless
@@ -17,7 +15,7 @@ If a number moves, this tells you *which* layer moved: `update`/`render` point
 at the app or Roc codegen, `diff` at the differ in `host/host.rs`, `paint` at
 the runtime's command interpreter. The workload (update every 10th of 1000
 rows) is the same one the js-framework-benchmark measures, so these phases
-explain movements in `benchmarks/jsframework/` numbers directly.
+explain movements in the js-framework-benchmark numbers directly.
 
 ```sh
 tests/bench/bench.roc                  # run and compare against baseline.json
@@ -28,8 +26,8 @@ Tunables (env): `BENCH_STEPS` (default 200), `BENCH_WARMUP` (default 30),
 `BENCH_PORT` (default 8788), `BENCH_THRESHOLD` (slowdown ratio that prints
 `REGRESSION`, default 1.10).
 
-Needs the nix devShell (playwright + browsers), the same requirement as
-`e2e.roc`.
+The requirements are the same as the `e2e.roc` tests: `playwright` on PATH
+with a chromium installed (the nix `devShell` provides both).
 
 `performance.now()` is deliberately coarsened by browsers (0.1 ms steps), so
 phases can quantize and single-digit-percent moves are noise: re-run before

@@ -40,7 +40,6 @@ Model : { count : I64 }
 
 Msg : [Increment, Decrement]
 
-# No recurring event sources.
 subscriptions = |_model| []
 
 init : Str -> (Model, List(Effect(Msg)))
@@ -73,14 +72,18 @@ Start with the [Joy TodoMVC](https://www.github.com/niclas-ahden/joy-todomvc) ex
 
 ## Performance
 
-Joy is tracked against the [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark), with one keyed and one non-keyed entry. Numbers below are from a local run and gives you a rough idea of our relative performance:
+Joy is tracked against the [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark), with keyed and non-keyed entries. Numbers below are from a local run and give you a rough idea of our relative performance:
 
-| | Joy (keyed) | Joy (non-keyed) | Elm (keyed) | Elm (non-keyed) | React | vanilla JS |
-|---|---|---|---|---|---|---|
-| CPU geomean (ms) | 40.7 | 36.4 | 32.5 | 30.4 | 41.9 | 23.9 |
-| Slowdown vs best | 1.83× | 1.64× | 1.46× | 1.37× | 1.88× | 1.07× |
-| Memory (MB) | 7.7 | 7.7 | 1.3 | 1.3 | 2.2 | 0.8 |
-| Bundle, compressed (KB) | 45.3 | 45.3 | 7.9 | 8.2 | 51.4 | 2.4 |
+| | Joy (keyed) | Joy (non-keyed) | Elm (keyed) | Elm (non-keyed) | Leptos | SolidJS | React | vanilla JS |
+|---|---|---|---|---|---|---|---|---|
+| CPU geomean (ms) | 29.6 | 26.7 | 31.7 | 29.0 | 29.0 | 26.0 | 40.7 | 22.4 |
+| Slowdown vs best | 1.42× | 1.28× | 1.52× | 1.39× | 1.39× | 1.24× | 1.95× | 1.07× |
+| Memory (MB) | 3.6 | 3.6 | 1.3 | 1.3 | 3.5 | 1.0 | 2.2 | 0.8 |
+| Bundle, compressed (KB) | 27.5 | 27.3 | 7.9 | 8.2 | 48.8 | 4.5 | 51.4 | 2.4 |
+
+Bundle is the brotli-compressed transfer of everything the page loads, so for Joy that covers the WASM, the JS runtime, and the HTML. The WASM is the bulk of it at 22.1 KB, and the minified JS runtime is 5.0 KB.
+
+Every framework in the table was measured in one session on a machine running NixOS, x86, AMD 9950X. Hopefully we can get Joy into the official benchmark soon!
 
 ## Contributing
 
@@ -98,10 +101,11 @@ $ nix develop # Oh, lord, have mercy! This is great!
 
 If you don't want to use Nix then please install:
 
-* [`roc nightly-2026-08-23-fb208ba`](https://github.com/roc-lang/nightlies/releases/tag/nightly-2026-08-23-fb208ba)
+* [`roc nightly-2026-08-25-cc03aa8`](https://github.com/roc-lang/nightlies/releases/tag/nightly-2026-08-25-cc03aa8)
 * `rustc` (v1.94 + `wasm32-unknown-unknown`)
 * `node` (v22)
 * `watchexec`
+* `playwright` with a chromium, for the browser E2E suite (`npm install -g playwright && playwright install chromium`)
 
 ### Running an example
 

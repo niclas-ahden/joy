@@ -12,16 +12,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-// Where build.roc put the app for the optimization level under test.
-// tests.roc sets JOY_OPT for the harnesses it spawns. There is no default:
-// a harness must never guess which tree it is testing.
-export const wasmPath = (name) => {
+// The optimization level under test. tests.roc sets JOY_OPT for the harnesses
+// it spawns. There is no default: a harness must never guess which tree it is
+// testing.
+export const optLevel = () => {
   const opt = process.env.JOY_OPT;
   if (!opt) {
     throw new Error('JOY_OPT is not set. Run via ./tests.roc <opt>, or directly with e.g. JOY_OPT=speed node tests/check_counter.mjs');
   }
-  return `build/${opt}/${name}.wasm`;
+  return opt;
 };
+
+// Where build.roc put the app for the level under test.
+export const wasmPath = (name) => `build/${optLevel()}/${name}.wasm`;
 
 export const expect = (label, got, want) => {
   test(label, () => {

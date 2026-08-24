@@ -20,3 +20,10 @@ Console := [].{
 	log : Str -> Effect(msg)
 	log = |message| Effect.console_log(message)
 }
+
+expect {
+	match Console.log("booted") {
+		ConsoleLog(message) => message == "booted"
+		_ => Bool.False
+	}
+}

@@ -41,3 +41,43 @@ Time := [].{
 	cancel : Str -> Effect(msg)
 	cancel = |key| Effect.time_cancel(key)
 }
+
+# Each helper is one Effect/Sub constructor call. Pin the variant, the
+# parameters, and that the callback survives the wrap.
+
+expect {
+	match Time.after(250, |now| "fired:${now.to_str()}") {
+		TimeAfter(ms, cb) => {
+			inner = Box.unbox(cb)
+			ms == 250 and Box.unbox(inner(9)) == "fired:9"
+		}
+		_ => Bool.False
+	}
+}
+
+expect {
+	match Time.every(16, |now| "tick:${now.to_str()}") {
+		Every(r) => {
+			inner = Box.unbox(r.on_tick)
+			r.ms == 16 and Box.unbox(inner(5)) == "tick:5"
+		}
+		_ => Bool.False
+	}
+}
+
+expect {
+	match Time.debounce("search", 300, |now| "run:${now.to_str()}") {
+		TimeDebounce(key, ms, cb) => {
+			inner = Box.unbox(cb)
+			key == "search" and ms == 300 and Box.unbox(inner(7)) == "run:7"
+		}
+		_ => Bool.False
+	}
+}
+
+expect {
+	match Time.cancel("search") {
+		TimeCancel(key) => key == "search"
+		_ => Bool.False
+	}
+}

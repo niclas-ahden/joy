@@ -1,0 +1,63 @@
+name: Test
+
+# Run the browser tests on every push, with the Roc compiler the flake pins.
+# Testing against the latest Roc nightly is test-nightly-roc.yml's job.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v14
+        with:
+          # niclas-ahden.cachix.org serves the Roc compiler this flake pins,
+          # pushed there from a dev machine, so no runner builds it from
+          # source.
+          extra-conf: |
+            extra-substituters = https://niclas-ahden.cachix.org
+            extra-trusted-public-keys = niclas-ahden.cachix.org-1:FdGli1vBk0cTuVJV27Tau/JvlbW+Ly3pRwFByyqdke0=
+            accept-flake-config = true
+
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          # Keep the saved store under GitHub's 10 GB/repo cache budget.
+          gc-max-store-size-linux: 5G
+          purge: true
+          purge-prefixes: nix-${{ runner.os }}-
+          purge-created: 0
+          purge-primary-key: never
+
+      # --max-jobs 0 forbids local builds, so a compiler that is missing from
+      # the binary cache is reported here instead of quietly costing the run
+      # half an hour. The plain build after it is the fallback that keeps a
+      # stale cache from failing the run outright.
+      - name: Build Roc from the flake
+        run: |
+          nix build .#roc --max-jobs 0 || {
+            echo "::warning::The pinned Roc compiler is not in the binary cache, so this run builds it from source. Push it from a machine that has it: nix build .#roc --no-link --print-out-paths | cachix push niclas-ahden"
+            nix build .#roc
+          }
+
+      # The default dev shell carries the pinned roc plus caddy and
+      # playwright, and ./tests.roc builds the app before testing it.
+      - name: Run the browser tests
+        run: nix develop -c ./tests.roc

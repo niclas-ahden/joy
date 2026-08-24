@@ -1,14 +1,18 @@
 // Node harness for jsbench, the js-framework-benchmark table app. Asserts the
 // same DOM facts the benchmark runner's driver checks (row counts, ids, the
-// danger class, the " !!!" update, swap, remove, clear), in both the keyed and
-// non-keyed configurations, plus the identity behaviour each bracket promises.
+// danger class, the " !!!" update, swap, remove, clear), for both brackets,
+// plus the identity behaviour each bracket promises. The brackets are separate
+// apps, so each one is a separate module.
 // Run from the repo root: node tests/check_jsbench.mjs
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, findTag } from './fakedom.mjs';
 import { expect, wasmPath } from './harness.mjs';
 
-const bytes = readFileSync(wasmPath('jsbench'));
+const wasm = {
+  keyed: readFileSync(wasmPath('jsbench_keyed')),
+  nonkeyed: readFileSync(wasmPath('jsbench_nonkeyed')),
+};
 
 // First element with the given id attribute (pre-order).
 function findId(node, id) {
@@ -24,7 +28,7 @@ function findId(node, id) {
 async function checkBracket(keyed) {
   const tag = keyed ? 'keyed' : 'non-keyed';
   const root = new El('#root');
-  await mount({ wasm: bytes, root, flags: JSON.stringify({ keyed }), dom: fakeDom });
+  await mount({ wasm: keyed ? wasm.keyed : wasm.nonkeyed, root, flags: '', dom: fakeDom });
 
   const tbody = findId(root, 'tbody');
   const rows = () => tbody.children;

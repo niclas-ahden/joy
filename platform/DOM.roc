@@ -53,3 +53,52 @@ DOM := [].{
 	on_url_change : (Str -> msg) -> Sub(msg)
 	on_url_change = |on_change| Sub.url_changed(on_change)
 }
+
+# Each helper is one Effect/Sub constructor call. Pin the variant so a
+# helper can never quietly produce its sibling (push as replace, show as
+# close).
+
+expect {
+	match DOM.show_modal("#confirm") {
+		ShowModal(selector) => selector == "#confirm"
+		_ => Bool.False
+	}
+}
+
+expect {
+	match DOM.close_modal("#confirm") {
+		CloseModal(selector) => selector == "#confirm"
+		_ => Bool.False
+	}
+}
+
+expect {
+	match DOM.navigate("/login") {
+		Navigate(url) => url == "/login"
+		_ => Bool.False
+	}
+}
+
+expect {
+	match DOM.push_url("?page=2") {
+		PushUrl(url) => url == "?page=2"
+		_ => Bool.False
+	}
+}
+
+expect {
+	match DOM.replace_url("?q=hats") {
+		ReplaceUrl(url) => url == "?q=hats"
+		_ => Bool.False
+	}
+}
+
+expect {
+	match DOM.on_url_change(|url| "nav:${url}") {
+		UrlChanged(r) => {
+			inner = Box.unbox(r.on_change)
+			Box.unbox(inner("/diary?q=1")) == "nav:/diary?q=1"
+		}
+		_ => Bool.False
+	}
+}

@@ -116,17 +116,56 @@ unsafe fn span_of(ptr: usize) -> usize {
     0
 }
 
+// Class lookups run on every alloc and free, so both directions are table
+// reads indexed by total/16 instead of scans over CLASSES. Totals are always
+// multiples of 16 and the largest class is 4096, so 256 slots cover the
+// classed range.
+const CLASS_SLOTS: usize = 4096 / 16;
+/// CLASS_UP[t/16 - 1] = smallest class index whose spans hold `t` bytes.
+const CLASS_UP: [u8; CLASS_SLOTS] = {
+    let mut t = [0u8; CLASS_SLOTS];
+    let mut s = 0;
+    while s < CLASS_SLOTS {
+        let total = (s + 1) * 16;
+        let mut i = 0;
+        while CLASSES[i] < total {
+            i += 1;
+        }
+        t[s] = i as u8;
+        s += 1;
+    }
+    t
+};
+/// CLASS_DOWN[t/16 - 1] = largest class index whose spans fit WITHIN `t` bytes.
+const CLASS_DOWN: [u8; CLASS_SLOTS] = {
+    let mut t = [0u8; CLASS_SLOTS];
+    let mut s = 0;
+    while s < CLASS_SLOTS {
+        let total = (s + 1) * 16;
+        let mut c = 0;
+        let mut i = 0;
+        while i < CLASSES.len() {
+            if CLASSES[i] <= total {
+                c = i;
+            }
+            i += 1;
+        }
+        t[s] = c as u8;
+        s += 1;
+    }
+    t
+};
+
 /// The class index whose spans are at least `total` bytes, or None for large.
 #[inline]
 fn class_of(total: usize) -> Option<usize> {
-    let mut i = 0;
-    while i < CLASSES.len() {
-        if CLASSES[i] >= total {
-            return Some(i);
-        }
-        i += 1;
+    if total == 0 || total > 4096 {
+        return None;
     }
-    None
+    // Round up, so a total that is not a multiple of 16 (no caller today)
+    // maps to the class that fits it instead of underflowing the index.
+    // The -1 keeps 4096 in range.
+    Some(unsafe { *CLASS_UP.get_unchecked((total + 15) / 16 - 1) } as usize)
 }
 
 /// Bump a fresh 16-aligned span of `total` bytes off the top of the heap,
@@ -157,9 +196,12 @@ unsafe fn bump_span(total: usize) -> usize {
 unsafe fn take_span(total: usize) -> usize {
     let span = match class_of(total) {
         Some(class) => {
-            let head = FREE_HEADS[class];
+            // class_of only returns indexes into CLASSES, and a bounds check
+            // here would pull core's panic machinery into the object, which
+            // has nothing to link it against.
+            let head = *FREE_HEADS.get_unchecked(class);
             if head != 0 {
-                FREE_HEADS[class] = *((head + 4) as *const usize); // next link
+                *FREE_HEADS.get_unchecked_mut(class) = *((head + 4) as *const usize); // next link
                 head
             } else {
                 let sized = CLASSES[class];
@@ -213,16 +255,11 @@ unsafe fn release_span(span: usize) {
         // into the class that fits WITHIN it keeps reuse symmetric: pick the
         // largest class not exceeding the capacity.
         Some(_) => {
-            let mut class = 0;
-            let mut i = 0;
-            while i < CLASSES.len() {
-                if CLASSES[i] <= total {
-                    class = i;
-                }
-                i += 1;
-            }
-            *((span + 4) as *mut usize) = FREE_HEADS[class];
-            FREE_HEADS[class] = span;
+            // A table read, indexed like class_of. It stays below CLASSES.len()
+            // by construction, so no bounds check and no core panic import.
+            let class = *CLASS_DOWN.get_unchecked(total / 16 - 1) as usize;
+            *((span + 4) as *mut usize) = *FREE_HEADS.get_unchecked(class);
+            *FREE_HEADS.get_unchecked_mut(class) = span;
         }
         None => {
             *((span + 4) as *mut usize) = LARGE_HEAD;
@@ -238,6 +275,23 @@ unsafe fn release_span(span: usize) {
 #[no_mangle]
 pub extern "C" fn roc_alloc(length: usize, alignment: usize) -> *mut u8 {
     unsafe {
+        // Overflow check at the moment of allocation: a stack pointer below
+        // the band's top has crossed the floor whatever the frame size, which
+        // the band scan alone can miss (a large frame leaps the band without
+        // touching it). Render recursion allocates on nearly every level, so
+        // this fires mid-dispatch. Smashing a canary word first makes the
+        // runtime report its overflow error for this trap too (volatile, or
+        // the store before the trap is eliminated as dead), and trapping
+        // before `take_span` leaves the free lists coherent.
+        // The probe's address pins a stack slot, which is enough: comparing
+        // the address keeps the slot from being promoted to a register, and
+        // being one frame off does not matter here.
+        let probe: u32 = 0;
+        let sp = &probe as *const u32 as usize;
+        if sp < STACK_LIMIT {
+            core::ptr::write_volatile(CANARY_BASE as *mut u32, 0);
+            core::arch::wasm32::unreachable();
+        }
         let header = header_size(alignment);
         let total = align_up(header + length, 16);
         let span = take_span(total);
@@ -314,6 +368,96 @@ pub extern "C" fn roc_realloc(ptr: *mut u8, new_length: usize, alignment: usize)
 #[no_mangle]
 pub extern "C" fn heap_used() -> usize {
     unsafe { NEXT }
+}
+
+// --- Stack overflow canary ---
+// The shadow stack grows down into the data segments without trapping, so an
+// overflow corrupts statics silently. We have two guards to make the corruption
+// loud:
+//
+// a) a canary band sits at the stack floor and the runtime checks `stack_canary_ok`
+//    after every entry, catching recursion that never allocates.
+//
+// b) `roc_alloc` compares the live stack pointer against the band's top and traps
+//    mid-dispatch, catching frames of any size, including ones large enough to leap
+//    the canary band unseen.
+//
+// The floor is derived from the live stack pointer in `start` (roc's embedded wasm-ld
+// resolves `__data_end` and `__heap_base` to the global base, so linker symbols cannot
+// anchor it) minus the stack size the page passed in.
+//
+// The size of the linked stack region, which only the build knows: the linker sizes
+// it from --wasm-stack-size, and nothing the host can read back reports it (see the
+// derivation note above). So the number is fixed here, and build.roc links every
+// module with the same constant. A value that disagrees with the link is worse than
+// no canary: too large puts the band inside live stack (false overflows), too small
+// puts it below the floor (writes into the heap). Changing the stack size means
+// changing this constant and build.roc together, in one release.
+//
+// 1 MiB is ~10,000 levels of view nesting (~97 bytes per frame in
+// tests/check_stack_canary.mjs), two orders of magnitude past what browsers render
+// comfortably, and the module's initial memory has to cover it, so a bigger number
+// costs every page some memory.
+const STACK_SIZE: usize = 1024 * 1024;
+// Band offset above the derived floor, covering the derivation's slack.
+// Anything that writes here is about to cross the floor anyway.
+const CANARY_MARGIN: usize = 8 * 1024;
+// Wide enough that recursing frames cannot leap it.
+const CANARY_BYTES: usize = 4 * 1024;
+const CANARY_WORD: u32 = 0x4A6F_79C5;
+
+static mut CANARY_BASE: usize = 0;
+// Top of the band, the threshold for the alloc-time check in `roc_alloc`.
+// 0 keeps that check inert until `start` places the band.
+static mut STACK_LIMIT: usize = 0;
+
+/// Fill the canary band. `start` runs this before the first render, so the
+/// pattern is in place before anything can recurse.
+unsafe fn write_stack_canary() {
+    let stack_size = STACK_SIZE;
+    let probe: u32 = 0;
+    let top = core::hint::black_box(&probe) as *const u32 as usize;
+    if top < stack_size {
+        // No sound band exists: stay disabled rather than write into data.
+        // A stack larger than the address it starts at means the page and the
+        // link disagree, so there is nothing sound to guard either way.
+        return;
+    }
+    let base = align_up(top - stack_size + CANARY_MARGIN, 16);
+    CANARY_BASE = base;
+    STACK_LIMIT = base + CANARY_BYTES;
+    let mut p = base as *mut u32;
+    let end = (base + CANARY_BYTES) as *mut u32;
+    while p < end {
+        *p = CANARY_WORD;
+        p = p.add(1);
+    }
+}
+
+/// Lowest canary address, so a harness can corrupt the band on purpose.
+/// 0 until `start` has run.
+#[no_mangle]
+pub extern "C" fn stack_floor() -> usize {
+    unsafe { CANARY_BASE }
+}
+
+/// 1 while every canary word is intact, 0 once the stack crossed the band.
+#[no_mangle]
+pub extern "C" fn stack_canary_ok() -> u32 {
+    unsafe {
+        if CANARY_BASE == 0 {
+            return 1;
+        }
+        let mut p = CANARY_BASE as *const u32;
+        let end = (CANARY_BASE + CANARY_BYTES) as *const u32;
+        while p < end {
+            if *p != CANARY_WORD {
+                return 0;
+            }
+            p = p.add(1);
+        }
+        1
+    }
 }
 
 /// Increment the refcount of a heap value by 1, given its data pointer. The
@@ -410,10 +554,34 @@ const _: () = assert!(size_of::<Sub>() == size_of::<abi::SubType123>());
 // derived here from the generated types. Nothing in this file states a
 // layout number the compiler has not checked.
 
-// `Html(msg)`: Element(Str, List(Attribute), List(Html)) / Text(Str).
+// `Html(msg)`: Element(Str, List(Attribute), List(Html)) /
+// Keyed(Str, Box(Html)) / Lazy(Str, Box(thunk)) / Text(Str).
 const TAG_ELEMENT: u8 = HtmlTag::Element as u8;
+const TAG_KEYED: u8 = HtmlTag::Keyed as u8;
 const TAG_LAZY: u8 = HtmlTag::Lazy as u8;
 const TAG_TEXT: u8 = HtmlTag::Text as u8;
+// Lazy payload: the bare thunk callable first in the payload. Spelled
+// node-relative like ATTRS_OFFSET below, so nothing silently rests on the
+// payload sitting at node offset 0.
+const LAZY_CB_OFFSET: usize = offset_of!(Html, payload);
+// Keyed payload: the identity key Str, then the boxed child node. The
+// wrapper has no DOM footprint of its own: every walker sees through it,
+// and only `node_key` reads it.
+const KEYED_KEY_OFFSET: usize =
+    offset_of!(Html, payload) + offset_of!(abi::HtmlKeyedPayload, _0);
+const KEYED_CHILD_OFFSET: usize =
+    offset_of!(Html, payload) + offset_of!(abi::HtmlKeyedPayload, _1);
+
+/// The node at `off` with any Keyed wrappers unwrapped: the wrapped child
+/// is what the DOM shows.
+#[inline]
+unsafe fn unwrap_keyed(off: usize) -> usize {
+    let mut off = off;
+    while *((off + DISC_OFFSET) as *const u8) == TAG_KEYED {
+        off = read_u32(off + KEYED_CHILD_OFFSET) as usize;
+    }
+    off
+}
 const DISC_OFFSET: usize = offset_of!(Html, tag);
 const NODE_STRIDE: usize = size_of::<Html>();
 const ATTRS_OFFSET: usize = offset_of!(Html, payload) + offset_of!(HtmlElementPayload, _1);
@@ -422,7 +590,7 @@ const CHILDREN_OFFSET: usize = offset_of!(Html, payload) + offset_of!(HtmlElemen
 // A `RocList`'s length word, for reading list fields at raw offsets.
 const LIST_LEN_OFFSET: usize = offset_of!(abi::RocList<u8>, length);
 
-// `Attribute(msg)`: Boolean(Str, Bool) / Key(Str) /
+// `Attribute(msg)`: Boolean(Str, Bool) /
 // KeyHandler(Str, List(Str), Bool, Bool, Box(KeyEvent -> Box(msg))) /
 // MsgHandler(Str, Bool, Bool, Box(msg)) /
 // PointerHandler(Str, Bool, Bool, Box(PointerEvent -> Box(msg))) /
@@ -431,12 +599,11 @@ const LIST_LEN_OFFSET: usize = offset_of!(abi::RocList<u8>, length);
 // Every event handler variant carries the (prevent_default, stop_propagation)
 // pair in that order; the layout sorts the box/callable ahead of the bools.
 // Field 0 is always the key/name Str; the remaining field offsets are
-// per-variant. Keys are diff identity, never a DOM attribute.
+// per-variant. Child identity lives on Html's Keyed wrapper, not here.
 const ATTR_STRIDE: usize = size_of::<Attr>();
 const ATTR_DISC_OFFSET: usize = offset_of!(Attr, tag);
 const ATTR_BOOLEAN: u8 = AttrTag::Boolean as u8;
 const ATTR_FILE_HANDLER: u8 = AttrTag::FileHandler as u8;
-const ATTR_KEY: u8 = AttrTag::Key as u8;
 const ATTR_KEY_HANDLER: u8 = AttrTag::KeyHandler as u8;
 const ATTR_MSG_HANDLER: u8 = AttrTag::MsgHandler as u8;
 const ATTR_POINTER_HANDLER: u8 = AttrTag::PointerHandler as u8;
@@ -473,8 +640,10 @@ const ATTR_VIS_MSG: usize = offset_of!(abi::AttributeType52VisibilityHandlerPayl
 // --- Command buffer: our own tiny wire protocol (no wasm-bindgen) ---
 // The host walks the returned Html tree once and serialises it into a flat u32
 // stream. The JS runtime replays it against a node stack to build the DOM,
-// batching the wasm↔JS crossing to one per render. Strings are passed by
-// (ptr, len) into linear memory, the tree is still alive when JS reads them.
+// batching the wasm↔JS crossing to one per render. Text content is passed by
+// (ptr, len) into linear memory (the tree is still alive when JS reads it).
+// Tag/attribute/event names and attribute values are srefs (see the intern
+// section above), decoded once per distinct string for the app's lifetime.
 // Build ops (used for a full render and inside a REPLACE subtree):
 const OP_ELEMENT_OPEN: u32 = 1; // followed by tag_ptr, tag_len; push new element
 const OP_ELEMENT_CLOSE: u32 = 2; // pop current element
@@ -491,9 +660,15 @@ const OP_FILE_EVENT: u32 = 15; // callable_id; bind a file input's change event 
 // index in the PREVIOUS tree, which matches the DOM the runtime already built.
 const OP_SET_TEXT: u32 = 5; // node_idx, str_ptr, str_len; retarget a text node's value
 const OP_REPLACE: u32 = 6; // node_idx, n_words, <build ops...>; swap a subtree for a fresh one
-const OP_PATCH_ATTRS: u32 = 10; // node_idx, n_words, <attr ops...>; replace a node's full attribute set
-const OP_REORDER: u32 = 12; // parent_idx, old_span, n_children, <descriptors...>; rewrite a child list
+const OP_PATCH_ATTRS: u32 = 10; // node_idx, n_words, <attr ops...>; apply an attribute diff (sets + removals)
+const OP_REORDER: u32 = 12; // parent_idx, old_span, n_children, n_kept, <descriptors...>; rewrite a child list
 const OP_REFRESH_HANDLERS: u32 = 16; // node_idx, n_entries, (name_ptr, name_len, handler_id)*; retarget bound handlers
+// Removal ops, only inside a PATCH_ATTRS payload. The host diffs the two
+// attribute lists itself and emits exactly what changed, so the runtime
+// keeps no per-node record of what was set.
+const OP_REMOVE_ATTR: u32 = 17; // key_ptr, key_len; drop a string/bool attribute
+const OP_REMOVE_EVENT: u32 = 18; // name_ptr, name_len; drop an event handler
+const OP_REMOVE_VIS: u32 = 19; // disconnect the visibility observer
 // OP_REORDER descriptors, one per child of the NEW list, in order. STAY and
 // MOVE also carry the old child's pre-order start and subtree size, so the
 // runtime can splice its node list instead of re-walking the DOM:
@@ -621,6 +796,153 @@ unsafe fn read_u32(off: usize) -> u32 {
     *(off as *const u32)
 }
 
+// --- String interning for the command protocol ---
+// Names repeat endlessly across renders (tag names, attribute keys, event
+// names, class strings), and decoding UTF-8 out of linear memory is one of
+// the runtime's biggest costs. Both sides therefore keep a table of interned
+// strings: the host assigns each distinct string a stable id, JS decodes it
+// once and indexes an array forever after. The wire encoding ("sref") is
+//   [0, ptr, len]            raw: decode every time (uninterned)
+//   [id << 2 | 1]            known id: the runtime already holds it
+//   [id << 2 | 3, ptr, len]  new id: decode once and remember
+// Interned bytes are copied into a host-owned arena, because the trees they
+// first appear in are dropped render to render and the table must compare
+// future candidates against stable bytes. Text content stays raw: labels
+// are unbounded and mostly unique, so interning them would flood the table.
+// The table has a fixed cap, and strings past it stay raw.
+const INTERN_MAX: u32 = 4096;
+const INTERN_MAX_LEN: u32 = 64;
+static mut INTERN_ARENA_PTR: usize = 0;
+static mut INTERN_ARENA_CAP: usize = 0;
+static mut INTERN_ARENA_LEN: usize = 0;
+// Slots of [arena_off + 1, len, id, hash], where first word 0 marks empty.
+static mut INTERN_TAB_PTR: usize = 0;
+static mut INTERN_TAB_CAP: usize = 0; // slots, power of two
+static mut INTERN_COUNT: u32 = 0;
+
+#[inline]
+unsafe fn intern_slot(i: usize) -> *mut u32 {
+    (INTERN_TAB_PTR + i * 16) as *mut u32
+}
+
+unsafe fn intern_hash(ptr: u32, len: u32) -> u32 {
+    let mut h: u32 = 2166136261;
+    for i in 0..len as usize {
+        h ^= *((ptr as usize + i) as *const u8) as u32;
+        h = h.wrapping_mul(16777619);
+    }
+    h
+}
+
+/// Copy `len` bytes at `ptr` into the arena, returning the arena offset.
+unsafe fn intern_arena_push(ptr: u32, len: u32) -> usize {
+    let need = INTERN_ARENA_LEN + len as usize;
+    if need > INTERN_ARENA_CAP {
+        let mut cap = if INTERN_ARENA_CAP == 0 { 4096 } else { INTERN_ARENA_CAP * 2 };
+        while cap < need {
+            cap *= 2;
+        }
+        let p = if INTERN_ARENA_PTR == 0 {
+            roc_alloc(cap, 1)
+        } else {
+            roc_realloc(INTERN_ARENA_PTR as *mut u8, cap, 1)
+        } as usize;
+        if p == 0 {
+            core::arch::wasm32::unreachable();
+        }
+        INTERN_ARENA_PTR = p;
+        INTERN_ARENA_CAP = cap;
+    }
+    let off = INTERN_ARENA_LEN;
+    core::ptr::copy_nonoverlapping(ptr as *const u8, (INTERN_ARENA_PTR + off) as *mut u8, len as usize);
+    INTERN_ARENA_LEN = need;
+    off
+}
+
+/// Size (or resize) the intern table to `cap` slots, rehashing every entry
+/// from the stored hashes.
+unsafe fn intern_rebuild(cap: usize) {
+    let old_ptr = INTERN_TAB_PTR;
+    let old_cap = INTERN_TAB_CAP;
+    let p = roc_alloc(cap * 16, 4) as usize;
+    if p == 0 {
+        core::arch::wasm32::unreachable();
+    }
+    INTERN_TAB_PTR = p;
+    INTERN_TAB_CAP = cap;
+    for i in 0..cap {
+        *intern_slot(i) = 0;
+    }
+    if old_ptr != 0 {
+        for i in 0..old_cap {
+            let s = (old_ptr + i * 16) as *const u32;
+            if *s != 0 {
+                let mut at = *s.add(3) as usize & (cap - 1);
+                while *intern_slot(at) != 0 {
+                    at = (at + 1) & (cap - 1);
+                }
+                core::ptr::copy_nonoverlapping(s, intern_slot(at), 4);
+            }
+        }
+        roc_dealloc(old_ptr as *mut u8, 4);
+    }
+}
+
+/// Push the string at (`p`, `l`) as an sref, interning it when it qualifies.
+unsafe fn push_sref(p: u32, l: u32) {
+    if l == 0 || l > INTERN_MAX_LEN {
+        push(0);
+        push(p);
+        push(l);
+        return;
+    }
+    if INTERN_TAB_CAP == 0 {
+        intern_rebuild(1024);
+    }
+    let h = intern_hash(p, l);
+    let mut at = h as usize & (INTERN_TAB_CAP - 1);
+    loop {
+        let s = intern_slot(at);
+        if *s == 0 {
+            if INTERN_COUNT >= INTERN_MAX {
+                push(0);
+                push(p);
+                push(l);
+                return;
+            }
+            let off = intern_arena_push(p, l);
+            let id = INTERN_COUNT;
+            INTERN_COUNT += 1;
+            *s = off as u32 + 1;
+            *s.add(1) = l;
+            *s.add(2) = id;
+            *s.add(3) = h;
+            push(id << 2 | 3);
+            push(p);
+            push(l);
+            if (INTERN_COUNT as usize + 1) * 4 >= INTERN_TAB_CAP * 3 {
+                intern_rebuild(INTERN_TAB_CAP * 2);
+            }
+            return;
+        }
+        if *s.add(1) == l
+            && *s.add(3) == h
+            && bytes_eq(p, l, (INTERN_ARENA_PTR + *s as usize - 1) as u32, l)
+        {
+            push(*s.add(2) << 2 | 1);
+            return;
+        }
+        at = (at + 1) & (INTERN_TAB_CAP - 1);
+    }
+}
+
+/// Push the `RocStr` at offset `off` as an sref.
+#[inline]
+unsafe fn push_sref_str(off: usize) {
+    let (p, l) = str_at(off);
+    push_sref(p, l);
+}
+
 /// `(data_ptr, len)` for the `RocStr` living at linear-memory offset `off`.
 /// For a small string the data lives inline in the struct itself, so the
 /// returned pointer is `off` and the backing storage must outlive the read.
@@ -636,47 +958,33 @@ unsafe fn str_at(off: usize) -> (u32, u32) {
 unsafe fn emit_attr(a: usize) {
     match *((a + ATTR_DISC_OFFSET) as *const u8) {
         ATTR_STRING => {
-            let (kp, kl) = str_at(a);
-            let (vp, vl) = str_at(a + ATTR_STR_VAL);
             push(OP_ATTR);
-            push(kp);
-            push(kl);
-            push(vp);
-            push(vl);
+            push_sref_str(a);
+            push_sref_str(a + ATTR_STR_VAL);
         }
         ATTR_BOOLEAN => {
-            let (kp, kl) = str_at(a);
             push(OP_BOOL_ATTR);
-            push(kp);
-            push(kl);
+            push_sref_str(a);
             push(*((a + ATTR_BOOL_VAL) as *const u8) as u32);
         }
         ATTR_MSG_HANDLER => {
-            let (np, nl) = str_at(a);
             push(OP_MSG_EVENT);
-            push(np);
-            push(nl);
+            push_sref_str(a);
             push(*((a + ATTR_MSG_PD) as *const u8) as u32); // prevent_default
             push(*((a + ATTR_MSG_SP) as *const u8) as u32); // stop_propagation
             push(read_u32(a + ATTR_MSG_BOX));
         }
         ATTR_PROPERTY_HANDLER => {
-            let (np, nl) = str_at(a);
-            let (pp, pl) = str_at(a + ATTR_PROPERTY_PROP);
             push(OP_VALUE_EVENT);
-            push(np);
-            push(nl);
-            push(pp);
-            push(pl);
+            push_sref_str(a);
+            push_sref_str(a + ATTR_PROPERTY_PROP);
             push(*((a + ATTR_PROPERTY_PD) as *const u8) as u32); // prevent_default
             push(*((a + ATTR_PROPERTY_SP) as *const u8) as u32); // stop_propagation
             push(read_u32(a + ATTR_PROPERTY_CB));
         }
         ATTR_KEY_HANDLER => {
-            let (np, nl) = str_at(a);
             push(OP_KEY_EVENT);
-            push(np);
-            push(nl);
+            push_sref_str(a);
             push(*((a + ATTR_KEY_HANDLER_PD) as *const u8) as u32);
             push(*((a + ATTR_KEY_HANDLER_SP) as *const u8) as u32);
             push(read_u32(a + ATTR_KEY_HANDLER_CB));
@@ -689,10 +997,8 @@ unsafe fn emit_attr(a: usize) {
             }
         }
         ATTR_POINTER_HANDLER => {
-            let (np, nl) = str_at(a);
             push(OP_POINTER_EVENT);
-            push(np);
-            push(nl);
+            push_sref_str(a);
             push(*((a + ATTR_POINTER_PD) as *const u8) as u32);
             push(*((a + ATTR_POINTER_SP) as *const u8) as u32);
             push(read_u32(a + ATTR_POINTER_CB));
@@ -702,16 +1008,11 @@ unsafe fn emit_attr(a: usize) {
             push(read_u32(a)); // the callable is the whole payload
         }
         ATTR_VISIBILITY_HANDLER => {
-            let (mp, ml) = str_at(a);
-            let (kp, kl) = str_at(a + ATTR_VIS_KEY);
             push(OP_VISIBLE);
-            push(mp);
-            push(ml);
-            push(kp);
-            push(kl);
+            push_sref_str(a);
+            push_sref_str(a + ATTR_VIS_KEY);
             push(read_u32(a + ATTR_VIS_MSG));
         }
-        // Key is identity for the differ, never a DOM attribute.
         _ => {}
     }
 }
@@ -719,7 +1020,7 @@ unsafe fn emit_attr(a: usize) {
 /// Walk the Html node at `off`, appending commands. A `Lazy` node emits
 /// its forced subtree, which is what the DOM shows in its place.
 unsafe fn emit(off: usize) {
-    let off = resolve(off);
+    let off = resolve_live(off);
     match *((off + DISC_OFFSET) as *const u8) {
         TAG_TEXT => {
             let (ptr, len) = str_at(off);
@@ -728,10 +1029,8 @@ unsafe fn emit(off: usize) {
             push(len);
         }
         TAG_ELEMENT => {
-            let (ptr, len) = str_at(off); // the tag name, e.g. "div"
             push(OP_ELEMENT_OPEN);
-            push(ptr);
-            push(len);
+            push_sref_str(off); // the tag name, e.g. "div"
             let attrs = read_u32(off + ATTRS_OFFSET) as usize;
             let attrs_count = read_u32(off + ATTRS_OFFSET + LIST_LEN_OFFSET) as usize;
             for i in 0..attrs_count {
@@ -766,26 +1065,6 @@ static mut MODEL: usize = 0;
 // subsequence pass to minimize moves) and any shape change is emitted as one
 // OP_REORDER; matched pairs recurse.
 
-/// Total nodes (self + all descendants) in the subtree at `off`, counting
-/// a `Lazy` node as its forced subtree (its DOM footprint), read from the
-/// table so retained regions are not re-walked.
-unsafe fn count_nodes(off: usize) -> usize {
-    if *((off + DISC_OFFSET) as *const u8) == TAG_LAZY {
-        return lazy_count(read_u32(off) as usize);
-    }
-    if *((off + DISC_OFFSET) as *const u8) == TAG_ELEMENT {
-        let children = read_u32(off + CHILDREN_OFFSET) as usize;
-        let count = read_u32(off + CHILDREN_OFFSET + LIST_LEN_OFFSET) as usize;
-        let mut n = 1;
-        for i in 0..count {
-            n += count_nodes(children + i * NODE_STRIDE);
-        }
-        n
-    } else {
-        1
-    }
-}
-
 /// Ensure `PREV_COUNTS` holds at least `n` u32 slots, growing (grow-only) on
 /// the host heap. Reused across renders, so it stops reallocating once the
 /// app's largest tree has been seen.
@@ -811,19 +1090,27 @@ unsafe fn ensure_prev_counts(n: usize) {
     PREV_COUNTS_CAP = new_cap;
 }
 
+/// Write one slot of `PREV_COUNTS`, growing it on demand so callers need no
+/// separate counting pass over the tree.
+#[inline]
+unsafe fn write_prev_count(idx: usize, total: usize) {
+    ensure_prev_counts(idx + 1);
+    *((PREV_COUNTS_PTR + idx * 4) as *mut u32) = total as u32;
+}
+
 /// Fill `PREV_COUNTS[idx..]` with the subtree size of every node in the tree
 /// at `off`, numbering nodes in the same pre-order the diff uses (a node's
 /// index precedes its children, whose subtrees are contiguous). Returns this
-/// subtree's size. One pass, O(nodes).
+/// subtree's size. One pass, O(nodes), growing the table as it goes.
 unsafe fn build_prev_counts(off: usize, idx: usize) -> usize {
-    let counts = PREV_COUNTS_PTR as *mut u32;
+    let off = unwrap_keyed(off);
     // A lazy region occupies [idx, idx + count) in the DOM's pre-order,
     // but a skipped diff never looks inside, so only the region's total is
     // written here. When a changed input makes the diff descend, it fills
     // the inner slots first (see the lazy branches in `diff`).
     if *((off + DISC_OFFSET) as *const u8) == TAG_LAZY {
-        let total = lazy_count(read_u32(off) as usize);
-        *counts.add(idx) = total as u32;
+        let total = lazy_count(read_u32(off + LAZY_CB_OFFSET) as usize);
+        write_prev_count(idx, total);
         return total;
     }
     let total = if *((off + DISC_OFFSET) as *const u8) == TAG_ELEMENT {
@@ -837,7 +1124,7 @@ unsafe fn build_prev_counts(off: usize, idx: usize) -> usize {
     } else {
         1
     };
-    *counts.add(idx) = total as u32;
+    write_prev_count(idx, total);
     total
 }
 
@@ -867,6 +1154,65 @@ const LAZY_ENTRY: usize = 5;
 static mut LAZY_PTR: usize = 0;
 static mut LAZY_LEN: usize = 0;
 static mut LAZY_CAP: usize = 0;
+
+// Bookkeeping that lets the sweep skip its tree walk. The walk exists to
+// find which retained entries the new tree still reaches, but on a steady
+// render the diff itself already proves that: every lazy pair it skips or
+// rekeys marks its entry live. The walk is then only needed when something
+// the diff cannot vouch for happened this render: a thunk was forced (new
+// entries, and old ones may have gone stale), some retained region nests
+// further thunks (their pairs are never visited), or the shared-subtree
+// shortcut skipped a region wholesale.
+static mut LAZY_NEW: bool = false; // an entry was inserted this render
+static mut LAZY_NESTED: usize = 0; // live entries whose content nests thunks
+static mut SHARED_SKIP: bool = false; // diff's byte-identical shortcut fired
+
+// Lifetime count of thunk forces (misses). Exported with the entry count
+// below so the harnesses can observe the machinery from outside: a broken
+// capture comparison shows up as a growing force count, a broken sweep as
+// a shrinking entry count. Both are dead-cheap to keep in every build.
+static mut LAZY_FORCES: u32 = 0;
+
+/// How many times a thunk has been forced (a lazy cache miss) since boot.
+#[no_mangle]
+pub extern "C" fn lazy_forces() -> u32 {
+    unsafe { LAZY_FORCES }
+}
+
+/// How many forced subtrees the lazy table currently retains.
+#[no_mangle]
+pub extern "C" fn lazy_entries() -> u32 {
+    unsafe { LAZY_LEN as u32 }
+}
+
+/// Reset the per-render lazy bookkeeping. Runs before the counting pass
+/// and the diff: clear every live mark (the diff and, if needed, the
+/// sweep's walk set them again).
+unsafe fn lazy_diff_begin() {
+    for i in 0..LAZY_LEN {
+        *lazy_entry(i).add(2) = 0;
+    }
+    LAZY_NEW = false;
+    SHARED_SKIP = false;
+}
+
+/// Mark every entry keyed `cb` live (duplicates share one probe path).
+unsafe fn lazy_mark_entry(cb: usize) {
+    if LAZY_IDX_CAP == 0 {
+        return;
+    }
+    let mut i = idx_hash(cb, LAZY_IDX_CAP);
+    loop {
+        let s = idx_slot(i);
+        if *s == IDX_EMPTY {
+            return;
+        }
+        if *s == cb as u32 {
+            *lazy_entry(*s.add(1) as usize).add(2) = 1;
+        }
+        i = (i + 1) & (LAZY_IDX_CAP - 1);
+    }
+}
 
 // cb -> entry-index hash (open addressing, linear probing). The entries
 // array above stays the iteration order for the sweep, while this index makes
@@ -950,25 +1296,6 @@ unsafe fn idx_insert(cb: usize, entry: usize) {
     idx_raw_insert(cb, entry);
 }
 
-/// Tombstone the slot mapping `cb` to `entry`.
-unsafe fn idx_remove(cb: usize, entry: usize) {
-    if LAZY_IDX_CAP == 0 {
-        return;
-    }
-    let mut i = idx_hash(cb, LAZY_IDX_CAP);
-    loop {
-        let s = idx_slot(i);
-        if *s == IDX_EMPTY {
-            return;
-        }
-        if *s == cb as u32 && *s.add(1) as usize == entry {
-            *s = IDX_TOMB;
-            return;
-        }
-        i = (i + 1) & (LAZY_IDX_CAP - 1);
-    }
-}
-
 #[inline]
 unsafe fn lazy_entry(i: usize) -> *mut u32 {
     (LAZY_PTR + i * LAZY_ENTRY * 4) as *mut u32
@@ -1005,6 +1332,7 @@ unsafe fn lazy_insert(cb: usize, node: usize) {
     *e.add(4) = 0;
     idx_insert(cb, LAZY_LEN);
     LAZY_LEN += 1;
+    LAZY_NEW = true;
 }
 
 /// Index of the first table entry keyed `cb`, or LAZY_LEN when absent.
@@ -1037,8 +1365,9 @@ unsafe fn lazy_count(cb: usize) -> usize {
 /// contained thunk without being walked into: whoever reaches it later
 /// consults its own table entry.
 unsafe fn measure(off: usize) -> (usize, usize) {
+    let off = unwrap_keyed(off);
     match *((off + DISC_OFFSET) as *const u8) {
-        TAG_LAZY => (lazy_count(read_u32(off) as usize), 1),
+        TAG_LAZY => (lazy_count(read_u32(off + LAZY_CB_OFFSET) as usize), 1),
         TAG_ELEMENT => {
             let children = read_u32(off + CHILDREN_OFFSET) as usize;
             let count = read_u32(off + CHILDREN_OFFSET + LIST_LEN_OFFSET) as usize;
@@ -1058,14 +1387,31 @@ unsafe fn measure(off: usize) -> (usize, usize) {
 /// Move the retained subtree of the entry keyed `old_cb` under `new_cb`
 /// (a hit: the new thunk denotes the same input). No-op when no entry is
 /// left under `old_cb` (the same shared thunk was already rekeyed at an
-/// earlier tree position).
+/// earlier tree position). The rekeyed entry is marked live: the new tree
+/// reaches it by definition, which is what lets the sweep skip its walk.
 unsafe fn lazy_rekey(old_cb: usize, new_cb: usize) {
-    let e = lazy_entry_idx(old_cb);
+    // Find and tombstone old_cb's slot in one probe.
+    let mut e = LAZY_LEN;
+    if LAZY_IDX_CAP != 0 {
+        let mut i = idx_hash(old_cb, LAZY_IDX_CAP);
+        loop {
+            let s = idx_slot(i);
+            if *s == IDX_EMPTY {
+                break;
+            }
+            if *s == old_cb as u32 {
+                e = *s.add(1) as usize;
+                *s = IDX_TOMB;
+                break;
+            }
+            i = (i + 1) & (LAZY_IDX_CAP - 1);
+        }
+    }
     if e >= LAZY_LEN {
         return;
     }
-    idx_remove(old_cb, e);
     *lazy_entry(e) = new_cb as u32;
+    *lazy_entry(e).add(2) = 1;
     // Same growth policy as idx_insert, but a rebuild reads the entries
     // array, which already holds new_cb, so it indexes the rewritten entry
     // itself. Only the non-rebuild path may insert, or the mapping would be
@@ -1108,6 +1454,7 @@ unsafe fn lazy_force(cb: usize) -> usize {
         core::ptr::null_mut(), // no allocation handed over for reuse
         &raw mut ret_desc,     // written and ignored: the Html layout is static
     );
+    LAZY_FORCES += 1;
     let my = LAZY_LEN;
     lazy_insert(cb, buf);
     // Measure once, now. Nested thunks force (and measure) during this
@@ -1116,18 +1463,43 @@ unsafe fn lazy_force(cb: usize) -> usize {
     let e = lazy_entry(my);
     *e.add(3) = nodes as u32;
     *e.add(4) = thunks as u32;
+    if thunks > 0 {
+        LAZY_NESTED += 1;
+    }
     buf
 }
 
-/// The node at `off`, with a `Lazy` node standing in for its forced
-/// subtree (which is what the DOM actually shows).
+/// The node at `off`, with Keyed wrappers unwrapped and a `Lazy` node
+/// standing in for its forced subtree (which is what the DOM actually
+/// shows). Forced content can itself be keyed or lazy (a thunk returning
+/// `Html.keyed` or another `Html.lazy`), so unwrapping and forcing loop
+/// until a concrete node comes out.
 #[inline]
 unsafe fn resolve(off: usize) -> usize {
-    if *((off + DISC_OFFSET) as *const u8) == TAG_LAZY {
-        lazy_force(read_u32(off) as usize)
-    } else {
-        off
+    let mut off = unwrap_keyed(off);
+    while *((off + DISC_OFFSET) as *const u8) == TAG_LAZY {
+        off = unwrap_keyed(lazy_force(read_u32(off + LAZY_CB_OFFSET) as usize));
     }
+    off
+}
+
+/// `resolve` for nodes of the NEW tree: every forced thunk's entry is
+/// marked live, hits included. A retained thunk can be reached only
+/// through a hit here (a model-held lazy moved so it pairs against a
+/// non-lazy node, or sits inside a freshly built subtree), and without
+/// the mark `lazy_sweep`'s fast path would free content the new tree and
+/// the just-emitted command buffer still reference. Inlined like
+/// `resolve`: both run at every diff level, and an extra frame there
+/// multiplies into the recursion depth the stack can hold.
+#[inline]
+unsafe fn resolve_live(off: usize) -> usize {
+    let mut off = unwrap_keyed(off);
+    while *((off + DISC_OFFSET) as *const u8) == TAG_LAZY {
+        let cb = read_u32(off + LAZY_CB_OFFSET) as usize;
+        off = unwrap_keyed(lazy_force(cb));
+        lazy_mark_entry(cb);
+    }
+    off
 }
 
 /// Do two thunks denote the same input? Same function pointer and
@@ -1138,6 +1510,13 @@ unsafe fn resolve(off: usize) -> usize {
 /// model slices by value, so equal bytes plus a pure render mean equal
 /// forced trees. Static thunk allocations carry no span header and fall
 /// out as a miss unless they are the same address.
+///
+/// The requested bytes still include the capture record's own trailing
+/// padding, which the compiler does not zero. Virgin wasm memory is
+/// zeroed, so a recycled allocation can carry garbage there and produce
+/// a spurious miss (observed once per thunk, when recycling first kicks
+/// in; the LIFO free list then repeats the same bytes). Safe and cheap:
+/// the re-forced tree is equal, so the diff emits nothing.
 unsafe fn lazy_same(a: usize, b: usize) -> bool {
     if a == b {
         return true;
@@ -1167,10 +1546,11 @@ unsafe fn lazy_same(a: usize, b: usize) -> bool {
 /// Duplicate-keyed entries hold byte-equal content, so descending through
 /// the first match covers the nested thunks of all of them.
 unsafe fn lazy_mark_live(off: usize) {
+    let off = unwrap_keyed(off);
     match *((off + DISC_OFFSET) as *const u8) {
         TAG_LAZY => {
             // Mark every entry keyed `cb` (duplicates share one probe path).
-            let cb = read_u32(off);
+            let cb = read_u32(off + LAZY_CB_OFFSET);
             let mut content = 0usize;
             let mut thunks = 0u32;
             if LAZY_IDX_CAP != 0 {
@@ -1219,10 +1599,14 @@ unsafe fn lazy_mark_live(off: usize) {
 /// diff (a full attribute patch or an OP_REFRESH_HANDLERS), so JS refreshes
 /// those references before the next dispatch.
 unsafe fn lazy_sweep() {
-    for i in 0..LAZY_LEN {
-        *lazy_entry(i).add(2) = 0;
+    // Live marks were cleared in lazy_diff_begin and set by the diff for
+    // every pair it skipped or rekeyed. That covers all reachable entries
+    // unless something the diff cannot vouch for happened this render (see
+    // the LAZY_NEW / LAZY_NESTED / SHARED_SKIP comments), in which case the
+    // tree walk fills in the rest.
+    if LAZY_NEW || LAZY_NESTED > 0 || SHARED_SKIP {
+        lazy_mark_live(&raw const ROOT as usize);
     }
-    lazy_mark_live(&raw const ROOT as usize);
     let mut removed = false;
     let mut i = 0;
     while i < LAZY_LEN {
@@ -1231,6 +1615,9 @@ unsafe fn lazy_sweep() {
             let node = *e.add(1) as usize;
             abi::roc_drop_view(*(node as *const abi::HtmlType99));
             roc_dealloc(node as *mut u8, 8);
+            if *e.add(4) > 0 {
+                LAZY_NESTED -= 1;
+            }
             let last = lazy_entry(LAZY_LEN - 1);
             *e = *last;
             *e.add(1) = *last.add(1);
@@ -1265,9 +1652,25 @@ unsafe fn attr_eq(a: usize, b: usize) -> bool {
         ATTR_BOOLEAN => {
             str_eq(a, b) && *((a + ATTR_BOOL_VAL) as *const u8) == *((b + ATTR_BOOL_VAL) as *const u8)
         }
-        ATTR_KEY => str_eq(a, b),
         _ => false,
     }
+}
+
+/// Is the attribute at `a` one whose set the runtime mirrors into a live
+/// DOM property (`value`, `checked`, `selected`)? Those properties drift
+/// from the model between renders (the user types, the browser toggles),
+/// so equality with the previous render proves nothing: only a fresh set
+/// pins the property back to what the model says. Every diff re-emits
+/// them.
+unsafe fn is_live_prop(a: usize) -> bool {
+    let (p, l) = str_at(a);
+    let name: &[u8] = match l {
+        5 => b"value",
+        7 => b"checked",
+        8 => b"selected",
+        _ => return false,
+    };
+    bytes_eq_len(p as usize, name.as_ptr() as usize, l as usize)
 }
 
 // Outcome of comparing two elements' attribute lists for the patch decision.
@@ -1283,7 +1686,8 @@ const ATTRS_CHANGED: u32 = 2; // anything else: full attribute patch
 /// attribute rewrite that would otherwise run for every handler-carrying
 /// element on every diff. File and visibility handlers stay on the full-patch
 /// path: they are rare, and their setup (input wiring, observers) lives in
-/// the runtime's attribute code.
+/// the runtime's attribute code. So do live-prop attributes (see
+/// is_live_prop), whose DOM property needs a re-pin every render.
 unsafe fn attrs_delta(old_off: usize, new_off: usize) -> u32 {
     let old_count = read_u32(old_off + ATTRS_OFFSET + LIST_LEN_OFFSET) as usize;
     let new_count = read_u32(new_off + ATTRS_OFFSET + LIST_LEN_OFFSET) as usize;
@@ -1301,8 +1705,10 @@ unsafe fn attrs_delta(old_off: usize, new_off: usize) -> u32 {
             return ATTRS_CHANGED;
         }
         match disc {
-            ATTR_STRING | ATTR_BOOLEAN | ATTR_KEY => {
-                if !attr_eq(a, b) {
+            ATTR_STRING | ATTR_BOOLEAN => {
+                // A live-prop attribute forces the full patch even when
+                // unchanged, so its property re-pin is emitted.
+                if !attr_eq(a, b) || is_live_prop(b) {
                     return ATTRS_CHANGED;
                 }
             }
@@ -1354,6 +1760,132 @@ unsafe fn attrs_delta(old_off: usize, new_off: usize) -> u32 {
     }
 }
 
+/// Push a string's bytes INTO the command buffer: a length word, then the
+/// bytes packed little-endian four per word. Used by the removal ops, whose
+/// names live in the OLD tree: that tree is dropped before JS reads the
+/// buffer, so a (ptr, len) reference would dangle where an inline copy
+/// cannot.
+unsafe fn push_inline_str(p: u32, l: u32) {
+    push(l);
+    let words = (l as usize + 3) / 4;
+    for w in 0..words {
+        let mut word: u32 = 0;
+        for b in 0..4 {
+            let idx = w * 4 + b;
+            if idx < l as usize {
+                word |= (*((p as usize + idx) as *const u8) as u32) << (8 * b);
+            }
+        }
+        push(word);
+    }
+}
+
+/// The DOM event name an attribute binds, or None for non-handler kinds.
+unsafe fn handler_event_name(a: usize) -> Option<(u32, u32)> {
+    match *((a + ATTR_DISC_OFFSET) as *const u8) {
+        ATTR_MSG_HANDLER | ATTR_PROPERTY_HANDLER | ATTR_KEY_HANDLER | ATTR_POINTER_HANDLER => {
+            Some(str_at(a))
+        }
+        ATTR_FILE_HANDLER => Some((FILE_EVENT_NAME.as_ptr() as u32, FILE_EVENT_NAME.len() as u32)),
+        _ => None,
+    }
+}
+static FILE_EVENT_NAME: &[u8] = b"change";
+
+/// Emit the difference between two attribute lists as precise ops: removals
+/// for what is gone, sets for what is new or changed, nothing for unchanged
+/// plain attributes. Handlers and visibility observers always re-emit (their
+/// boxes are fresh every render). This is the host-side diff that lets the
+/// runtime keep no record of which attributes a node has: string and bool
+/// attrs share the DOM attribute namespace, handlers share the event-name
+/// namespace across handler kinds, so a kind change still overwrites or
+/// removes correctly.
+unsafe fn emit_attr_diff(old_off: usize, new_off: usize) {
+    let old_attrs = read_u32(old_off + ATTRS_OFFSET) as usize;
+    let old_n = read_u32(old_off + ATTRS_OFFSET + LIST_LEN_OFFSET) as usize;
+    let new_attrs = read_u32(new_off + ATTRS_OFFSET) as usize;
+    let new_n = read_u32(new_off + ATTRS_OFFSET + LIST_LEN_OFFSET) as usize;
+
+    for i in 0..old_n {
+        let a = old_attrs + i * ATTR_STRIDE;
+        match *((a + ATTR_DISC_OFFSET) as *const u8) {
+            ATTR_STRING | ATTR_BOOLEAN => {
+                let mut found = false;
+                for j in 0..new_n {
+                    let b = new_attrs + j * ATTR_STRIDE;
+                    let bd = *((b + ATTR_DISC_OFFSET) as *const u8);
+                    if (bd == ATTR_STRING || bd == ATTR_BOOLEAN) && str_eq(a, b) {
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    let (kp, kl) = str_at(a);
+                    push(OP_REMOVE_ATTR);
+                    push_inline_str(kp, kl);
+                }
+            }
+            ATTR_VISIBILITY_HANDLER => {
+                let mut found = false;
+                for j in 0..new_n {
+                    if *((new_attrs + j * ATTR_STRIDE + ATTR_DISC_OFFSET) as *const u8)
+                        == ATTR_VISIBILITY_HANDLER
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    push(OP_REMOVE_VIS);
+                }
+            }
+            _ => {
+                if let Some((np, nl)) = handler_event_name(a) {
+                    let mut found = false;
+                    for j in 0..new_n {
+                        if let Some((bp, bl)) = handler_event_name(new_attrs + j * ATTR_STRIDE) {
+                            if bytes_eq(np, nl, bp, bl) {
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                    if !found {
+                        push(OP_REMOVE_EVENT);
+                        push_inline_str(np, nl);
+                    }
+                }
+            }
+        }
+    }
+
+    for j in 0..new_n {
+        let b = new_attrs + j * ATTR_STRIDE;
+        match *((b + ATTR_DISC_OFFSET) as *const u8) {
+            ATTR_STRING | ATTR_BOOLEAN => {
+                // The DOM's state for a name is whatever was set for it
+                // LAST, so compare against the last old attribute of that
+                // name, not any of them (duplicate names within one list
+                // are legal, if pointless). Live props always re-emit,
+                // see is_live_prop.
+                let mut same = false;
+                for i in (0..old_n).rev() {
+                    let a = old_attrs + i * ATTR_STRIDE;
+                    let ad = *((a + ATTR_DISC_OFFSET) as *const u8);
+                    if (ad == ATTR_STRING || ad == ATTR_BOOLEAN) && str_eq(a, b) {
+                        same = attr_eq(a, b);
+                        break;
+                    }
+                }
+                if !same || is_live_prop(b) {
+                    emit_attr(b);
+                }
+            }
+            _ => emit_attr(b),
+        }
+    }
+}
+
 /// Do two `List(Str)`s of key filters hold equal strings?
 unsafe fn key_lists_eq(a: usize, b: usize) -> bool {
     let la = &*(a as *const abi::RocList<RocStr>);
@@ -1391,9 +1923,7 @@ unsafe fn emit_refresh_handlers(my: usize, new_off: usize) {
             ATTR_KEY_HANDLER => read_u32(a + ATTR_KEY_HANDLER_CB),
             _ => continue,
         };
-        let (np, nl) = str_at(a);
-        push(np);
-        push(nl);
+        push_sref_str(a);
         push(id);
         n += 1;
     }
@@ -1410,10 +1940,27 @@ unsafe fn str_eq(a: usize, b: usize) -> bool {
     if ap == bp {
         return true;
     }
-    for i in 0..al as usize {
-        if *((ap as usize + i) as *const u8) != *((bp as usize + i) as *const u8) {
+    bytes_eq_len(ap as usize, bp as usize, al as usize)
+}
+
+/// Byte equality over `len` bytes, compared a word at a time with a byte
+/// tail. The reads are `read_unaligned`: the pointers land on arbitrary
+/// string bytes, and an unaligned read is the same single load on wasm.
+unsafe fn bytes_eq_len(a: usize, b: usize, len: usize) -> bool {
+    let mut i = 0;
+    while i + 4 <= len {
+        if core::ptr::read_unaligned((a + i) as *const u32)
+            != core::ptr::read_unaligned((b + i) as *const u32)
+        {
             return false;
         }
+        i += 4;
+    }
+    while i < len {
+        if *((a + i) as *const u8) != *((b + i) as *const u8) {
+            return false;
+        }
+        i += 1;
     }
     true
 }
@@ -1435,26 +1982,19 @@ unsafe fn bytes_eq(ap: u32, al: u32, bp: u32, bl: u32) -> bool {
     if al != bl {
         return false;
     }
-    for i in 0..al as usize {
-        if *((ap as usize + i) as *const u8) != *((bp as usize + i) as *const u8) {
-            return false;
-        }
-    }
-    true
+    bytes_eq_len(ap as usize, bp as usize, al as usize)
 }
 
-/// The Key attribute of the element at `off`, as (ptr, len) into its key
-/// string. Text nodes and unkeyed elements have none.
+/// The identity key of the node at `off`, as (ptr, len) into its key
+/// string: the payload of a Keyed wrapper, read without touching what it
+/// wraps (in particular without forcing a lazy child, which is what lets
+/// a whole keyed row live inside one lazy region). Anything unwrapped has
+/// none.
 unsafe fn node_key(off: usize) -> Option<(u32, u32)> {
-    if *((off + DISC_OFFSET) as *const u8) != TAG_ELEMENT {
-        return None;
-    }
-    let attrs = read_u32(off + ATTRS_OFFSET) as usize;
-    let n = read_u32(off + ATTRS_OFFSET + LIST_LEN_OFFSET) as usize;
-    for i in 0..n {
-        let a = attrs + i * ATTR_STRIDE;
-        if *((a + ATTR_DISC_OFFSET) as *const u8) == ATTR_KEY {
-            return Some(str_at(a));
+    if *((off + DISC_OFFSET) as *const u8) == TAG_KEYED {
+        let (kp, kl) = str_at(off + KEYED_KEY_OFFSET);
+        if kl > 0 {
+            return Some((kp, kl));
         }
     }
     None
@@ -1465,6 +2005,14 @@ unsafe fn node_key(off: usize) -> Option<(u32, u32)> {
 /// text match positionally (callers only ask about a shared position). A tag
 /// change on a matched pair is `diff`'s problem (it REPLACEs in place).
 unsafe fn same_identity(old_off: usize, new_off: usize) -> bool {
+    // Keys are judged first, on the raw offsets: resolving unwraps the
+    // Keyed wrapper and the key would be lost with it, silently degrading
+    // a keyed child to a positional match against an unkeyed one.
+    match (node_key(old_off), node_key(new_off)) {
+        (Some((ap, al)), Some((bp, bl))) => return bytes_eq(ap, al, bp, bl),
+        (None, None) => {}
+        _ => return false,
+    }
     let mut old_off = old_off;
     let mut new_off = new_off;
     let mut old_disc = *((old_off + DISC_OFFSET) as *const u8);
@@ -1477,26 +2025,23 @@ unsafe fn same_identity(old_off: usize, new_off: usize) -> bool {
     // in Html.lazy patches it in place instead of rebuilding it.
     if old_disc != new_disc {
         old_off = resolve(old_off);
-        new_off = resolve(new_off);
+        new_off = resolve_live(new_off);
         old_disc = *((old_off + DISC_OFFSET) as *const u8);
         new_disc = *((new_off + DISC_OFFSET) as *const u8);
     }
-    if old_disc != new_disc {
-        return false;
-    }
-    if old_disc == TAG_TEXT {
-        return true;
-    }
-    match (node_key(old_off), node_key(new_off)) {
-        (None, None) => true,
-        (Some((ap, al)), Some((bp, bl))) => bytes_eq(ap, al, bp, bl),
-        _ => false,
-    }
+    // Both sides are keyless (keys returned above), so identity reduces
+    // to the kinds lining up.
+    old_disc == new_disc
 }
 
 /// Diff `old`→`new` (both Html node offsets), emitting patch ops. `my` is the
 /// pre-order index of `old` in the previous tree.
 unsafe fn diff(old_off: usize, new_off: usize, my: usize) {
+    // Keyed wrappers carry identity for the child-list pairing, which has
+    // already happened by the time a pair reaches here: the child is the
+    // node.
+    let old_off = unwrap_keyed(old_off);
+    let new_off = unwrap_keyed(new_off);
     // A lazy pair is decided from the thunks alone, without forcing the new
     // one: same input → the retained subtree moves under the new thunk and
     // the whole region is skipped. A changed input forces the new thunk and
@@ -1505,9 +2050,10 @@ unsafe fn diff(old_off: usize, new_off: usize, my: usize) {
     if *((old_off + DISC_OFFSET) as *const u8) == TAG_LAZY
         && *((new_off + DISC_OFFSET) as *const u8) == TAG_LAZY
     {
-        let old_cb = read_u32(old_off) as usize;
-        let new_cb = read_u32(new_off) as usize;
+        let old_cb = read_u32(old_off + LAZY_CB_OFFSET) as usize;
+        let new_cb = read_u32(new_off + LAZY_CB_OFFSET) as usize;
         if old_cb == new_cb {
+            lazy_mark_entry(new_cb);
             return;
         }
         if lazy_same(old_cb, new_cb) {
@@ -1516,10 +2062,15 @@ unsafe fn diff(old_off: usize, new_off: usize, my: usize) {
         }
         // Changed input: the numbering pass wrote only this region's total
         // (see build_prev_counts), so fill the inner pre-order slots before
-        // descending into the forced trees.
+        // descending into the forced trees. The new entry is marked live
+        // by hand because a force HIT (a retained thunk paired against a
+        // different old thunk) inserts nothing and would otherwise leave
+        // the entry for the sweep to free.
         let old_content = lazy_force(old_cb);
         build_prev_counts(old_content, my);
-        diff(old_content, lazy_force(new_cb), my);
+        let new_content = lazy_force(new_cb);
+        lazy_mark_entry(new_cb);
+        diff(old_content, new_content, my);
         return;
     }
     // Mixed kinds (lazy on one side only): the forced content is the node.
@@ -1530,7 +2081,7 @@ unsafe fn diff(old_off: usize, new_off: usize, my: usize) {
     if old_was_lazy {
         build_prev_counts(old_off, my);
     }
-    let new_off = resolve(new_off);
+    let new_off = resolve_live(new_off);
     let old_disc = *((old_off + DISC_OFFSET) as *const u8);
     let new_disc = *((new_off + DISC_OFFSET) as *const u8);
 
@@ -1562,6 +2113,9 @@ unsafe fn diff(old_off: usize, new_off: usize, my: usize) {
         new_off as u32,
         DISC_OFFSET as u32,
     ) {
+        // The skipped region may hold lazy nodes the diff never visits, so
+        // this render's sweep cannot rely on diff-set live marks alone.
+        SHARED_SKIP = true;
         return;
     }
 
@@ -1586,11 +2140,7 @@ unsafe fn diff(old_off: usize, new_off: usize, my: usize) {
             let len_pos = CMD_LEN;
             push(0);
             let before = CMD_LEN;
-            let new_attrs = read_u32(new_off + ATTRS_OFFSET) as usize;
-            let n = read_u32(new_off + ATTRS_OFFSET + LIST_LEN_OFFSET) as usize;
-            for i in 0..n {
-                emit_attr(new_attrs + i * ATTR_STRIDE);
-            }
+            emit_attr_diff(old_off, new_off);
             set_word(len_pos, (CMD_LEN - before) as u32);
         }
     }
@@ -1599,6 +2149,17 @@ unsafe fn diff(old_off: usize, new_off: usize, my: usize) {
 }
 
 const NO_MATCH: u32 = 0xFFFF_FFFF;
+
+/// FNV-1a over a key's bytes, for the sibling-key table in `diff_children`.
+#[inline]
+unsafe fn key_hash(ptr: u32, len: u32) -> u32 {
+    let mut h: u32 = 2166136261;
+    for i in 0..len as usize {
+        h ^= *((ptr as usize + i) as *const u8) as u32;
+        h = h.wrapping_mul(16777619);
+    }
+    h
+}
 
 /// Reconcile an element's child list: pair up old and new children, emit one
 /// OP_REORDER when the list's shape changed (insert/remove/move/count), and
@@ -1614,13 +2175,36 @@ unsafe fn diff_children(parent_idx: usize, old_off: usize, new_off: usize) {
     if old_n == 0 && new_n == 0 {
         return;
     }
+    // Same list allocation: every pair is the same node, nothing to emit or
+    // walk (the old tree keeps the list alive through the diff, so it cannot
+    // have been mutated in place). Seamless slices share data at different
+    // lengths, those take the full pairing.
+    if old_data == new_data && old_n == new_n {
+        SHARED_SKIP = true;
+        return;
+    }
     let old_at = |j: usize| old_data + j * NODE_STRIDE;
     let new_at = |k: usize| new_data + k * NODE_STRIDE;
 
-    // Scratch, one allocation of u32 words: per old child [pre-order start,
-    // used flag], per new child [matched old position, stay flag, LIS tails,
-    // LIS prev links].
-    let scratch = roc_alloc((2 * old_n + 4 * new_n) * 4, 4) as *mut u32;
+    // Scratch of u32 words: per old child [pre-order start, used flag], per
+    // new child [matched old position, stay flag, LIS tails, LIS prev
+    // links]. Almost every parent has a handful of children, so a stack
+    // buffer serves those without touching the allocator (this runs once
+    // per element pair per render). Only wide lists heap-allocate.
+    // Uninitialized on purpose, like the heap path: every slot is written
+    // before it is read, and zeroing per element pair is not free.
+    // Sized with care: this frame is reserved at every level of the diff
+    // recursion, so the buffer multiplies into the nesting depth the stack
+    // can hold (check_stack_canary.mjs re-diffs at its budget depth and
+    // records the ceiling above it, both of which a 1 KB buffer already
+    // blows). 64 words covers ~10 children either side.
+    let words = 2 * old_n + 4 * new_n;
+    let mut small = core::mem::MaybeUninit::<[u32; 64]>::uninit();
+    let scratch = if words <= 64 {
+        small.as_mut_ptr() as *mut u32
+    } else {
+        roc_alloc(words * 4, 4) as *mut u32
+    };
     if scratch.is_null() {
         core::arch::wasm32::unreachable();
     }
@@ -1667,23 +2251,99 @@ unsafe fn diff_children(parent_idx: usize, old_off: usize, new_off: usize) {
         *old_used.add(e1) = 1;
     }
 
-    // 3. Match the middles by key (quadratic scan; middles are small in
-    // practice, and keys should be unique among siblings). Unkeyed middle
-    // children never match: old ones are removed, new ones built fresh.
-    for k in lo..e2 {
-        if let Some((np, nl)) = node_key(new_at(k)) {
-            for j in lo..e1 {
-                if *old_used.add(j) == 0 {
-                    if let Some((op, ol)) = node_key(old_at(j)) {
-                        if bytes_eq(np, nl, op, ol) {
-                            *m4n.add(k) = j as u32;
-                            *old_used.add(j) = 1;
+    // 3. Match the middles by key, through a hash table over the old
+    // middle's keyed children so a long middle costs one attribute scan per
+    // child, not one per (old, new) pair. Keys should be unique among
+    // siblings. A duplicate key keeps its first occurrence: later holders
+    // never match and are built fresh, which stays correct, just not
+    // minimal. Unkeyed middle children never match: old ones are removed,
+    // new ones built fresh.
+    let mid_old = e1 - lo;
+    if mid_old > 0 && e2 > lo && mid_old <= 8 {
+        // A tiny middle scans directly: the hash table below costs an
+        // allocation plus zeroing that a handful of children never pays
+        // back, and a stack buffer here would grow every diff frame (see
+        // the sizing note on `small` above). First-occurrence semantics
+        // match the table's: only the first old child holding a key can
+        // be matched.
+        for k in lo..e2 {
+            if let Some((np, nl)) = node_key(new_at(k)) {
+                for j in lo..e1 {
+                    if let Some((kp, kl)) = node_key(old_at(j)) {
+                        if bytes_eq(np, nl, kp, kl) {
+                            if *old_used.add(j) == 0 {
+                                *m4n.add(k) = j as u32;
+                                *old_used.add(j) = 1;
+                            }
                             break;
                         }
                     }
                 }
             }
         }
+    } else if mid_old > 0 && e2 > lo {
+        // Slots hold j+1 (0 = empty), alongside each keyed old child's
+        // cached (key_ptr, key_len). Unkeyed old children never enter the
+        // table, so their cache slots stay unwritten and unread.
+        let mut cap: usize = 4;
+        while cap < mid_old * 2 {
+            cap *= 2;
+        }
+        let kscratch = roc_alloc((2 * mid_old + cap) * 4, 4) as *mut u32;
+        if kscratch.is_null() {
+            core::arch::wasm32::unreachable();
+        }
+        let keys = kscratch;
+        let table = kscratch.add(2 * mid_old);
+        for s in 0..cap {
+            *table.add(s) = 0;
+        }
+        for j in lo..e1 {
+            let slot = keys.add(2 * (j - lo));
+            match node_key(old_at(j)) {
+                Some((kp, kl)) => {
+                    *slot = kp;
+                    *slot.add(1) = kl;
+                    let mut s = key_hash(kp, kl) as usize & (cap - 1);
+                    loop {
+                        let e = table.add(s);
+                        if *e == 0 {
+                            *e = (j - lo + 1) as u32;
+                            break;
+                        }
+                        // A duplicate key never overwrites its first holder.
+                        let held = keys.add(2 * (*e as usize - 1));
+                        if bytes_eq(kp, kl, *held, *held.add(1)) {
+                            break;
+                        }
+                        s = (s + 1) & (cap - 1);
+                    }
+                }
+                None => {}
+            }
+        }
+        for k in lo..e2 {
+            if let Some((np, nl)) = node_key(new_at(k)) {
+                let mut s = key_hash(np, nl) as usize & (cap - 1);
+                loop {
+                    let e = *table.add(s);
+                    if e == 0 {
+                        break;
+                    }
+                    let j = lo + e as usize - 1;
+                    let held = keys.add(2 * (e as usize - 1));
+                    if bytes_eq(np, nl, *held, *held.add(1)) {
+                        if *old_used.add(j) == 0 {
+                            *m4n.add(k) = j as u32;
+                            *old_used.add(j) = 1;
+                        }
+                        break;
+                    }
+                    s = (s + 1) & (cap - 1);
+                }
+            }
+        }
+        roc_dealloc(kscratch as *mut u8, 4);
     }
 
     // 4. Longest increasing subsequence of the middle's matched old
@@ -1733,10 +2393,20 @@ unsafe fn diff_children(parent_idx: usize, old_off: usize, new_off: usize) {
         }
     }
     if changed {
+        // How many descriptors reference an old child (STAY or MOVE). Zero
+        // means the whole child list is fresh, which the runtime turns into
+        // one clear + rebuild instead of per-node removals and inserts.
+        let mut kept: u32 = 0;
+        for k in 0..new_n {
+            if *m4n.add(k) != NO_MATCH {
+                kept += 1;
+            }
+        }
         push(OP_REORDER);
         push(parent_idx as u32);
         push(old_span as u32);
         push(new_n as u32);
+        push(kept);
         for k in 0..new_n {
             let m = *m4n.add(k);
             if m == NO_MATCH {
@@ -1766,7 +2436,9 @@ unsafe fn diff_children(parent_idx: usize, old_off: usize, new_off: usize) {
         }
     }
 
-    roc_dealloc(scratch as *mut u8, 4);
+    if words > 64 {
+        roc_dealloc(scratch as *mut u8, 4);
+    }
 }
 
 /// Render the current model into the command buffer, a full build the first
@@ -1807,10 +2479,13 @@ unsafe fn render_current() {
         let t2 = joy_bench_now();
         CMD_LEN = 0;
         push(MODE_PATCH);
+        // The bookkeeping reset comes FIRST: the counting pass below can
+        // force a previous-tree thunk it has not seen (a region a shared
+        // skip hid last render), and the LAZY_NEW that sets must survive
+        // into this render's sweep decision, not be cleared by the reset.
+        lazy_diff_begin();
         // Precompute the previous tree's pre-order subtree sizes once, so the
         // diff advances child indices by lookup instead of re-walking subtrees.
-        let prev_total = count_nodes(&raw const PREV_ROOT as usize);
-        ensure_prev_counts(prev_total);
         build_prev_counts(&raw const PREV_ROOT as usize, 0);
         diff(&raw const PREV_ROOT as usize, &raw const ROOT as usize, 0);
         // The dropper's Html got its own schema type id; same runtime type.
@@ -2801,9 +3476,13 @@ unsafe fn run_update(msg_box: usize) -> u32 {
 /// Initialise the app: hand the flags string JS wrote via `js_alloc` to the
 /// app's pure `init`, queue init's effects, then render. JS calls this once
 /// on mount. Pass (0, 0) for no flags.
+///
+/// The canary is written before anything can recurse, so there is no window
+/// where the band sits in the wrong place.
 #[no_mangle]
 pub extern "C" fn start(flags_ptr: usize, flags_len: usize) {
     unsafe {
+        write_stack_canary();
         // init_for_host : Str -> (Box(Model), List(Effect(Msg))): box _0, effects _1.
         let ret = abi::roc_init(str_from_parts(flags_ptr, flags_len));
         MODEL = ret._0 as usize;
@@ -2832,10 +3511,11 @@ pub extern "C" fn dispatch(msg_box: usize) -> u32 {
 // is a refcounted allocation whose data starts with `RocErasedCallablePayload
 // { callable_fn_ptr, on_drop }`; the closure's capture bytes live inline at
 // the generated `ROC_ERASED_CALLABLE_CAPTURE_OFFSET`. The function pointer has
-// the uniform shape `fn(host, ret, args, capture, reuse, out_desc)`. Compiled Roc code
-// carries no host context under the symbol ABI and passes null, so the host
-// does the same. `reuse` is null for the same reason. It would hand the callee
-// an owned reference to reuse in place, and the host has none to give.
+// the uniform shape `fn(host, ret, args, capture, reuse, out_desc)`. Compiled
+// Roc code carries no host context under the symbol ABI and passes null, so
+// the host does the same. `reuse` is null for the same reason. It would hand
+// the callee an owned reference to reuse in place, and the host has none to
+// give.
 
 /// Call the boxed callable with an args buffer, returning the produced
 /// `Box(Msg)` pointer.

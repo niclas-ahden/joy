@@ -1266,6 +1266,17 @@ const _: () = assert!(core::mem::size_of::<CmdType36>() == 80, "CmdType36 size m
 #[cfg(target_pointer_width = "32")]
 const _: () = assert!(core::mem::align_of::<CmdType36>() == 8, "CmdType36 alignment mismatch");
 
+/// Payload struct for the Keyed variant, shared by every Html schema
+/// duplicate: Keyed(Str key, Box(Html) child). The layout sorts by size,
+/// so the Str precedes the box pointer on both widths. The box points at
+/// a single boxed Html node.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HtmlKeyedPayload {
+    pub _0: RocStr,
+    pub _1: RocBox,
+}
+
 /// Payload struct for Element variant.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -1280,8 +1291,9 @@ pub struct HtmlType50ElementPayload {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HtmlType50Tag {
     Element = 0,
-    Lazy = 1,
-    Text = 2,
+    Keyed = 1,
+    Lazy = 2,
+    Text = 3,
 }
 
 /// Tag union: Html
@@ -1296,6 +1308,7 @@ pub struct HtmlType50 {
 #[derive(Clone, Copy)]
 pub union HtmlType50Payload {
     pub element: core::mem::ManuallyDrop<HtmlType50ElementPayload>,
+    pub keyed: core::mem::ManuallyDrop<HtmlKeyedPayload>,
     pub lazy: RocErasedCallable,
     pub text: core::mem::ManuallyDrop<RocStr>,
 }
@@ -1388,13 +1401,12 @@ pub struct AttributeType52VisibilityHandlerPayload {
 pub enum AttributeType52Tag {
     Boolean = 0,
     FileHandler = 1,
-    Key = 2,
-    KeyHandler = 3,
-    MsgHandler = 4,
-    PointerHandler = 5,
-    PropertyHandler = 6,
-    String = 7,
-    VisibilityHandler = 8,
+    KeyHandler = 2,
+    MsgHandler = 3,
+    PointerHandler = 4,
+    PropertyHandler = 5,
+    String = 6,
+    VisibilityHandler = 7,
 }
 
 /// Tag union: Attribute
@@ -1442,8 +1454,9 @@ pub struct HtmlType62ElementPayload {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HtmlType62Tag {
     Element = 0,
-    Lazy = 1,
-    Text = 2,
+    Keyed = 1,
+    Lazy = 2,
+    Text = 3,
 }
 
 /// Tag union: Html
@@ -1458,6 +1471,7 @@ pub struct HtmlType62 {
 #[derive(Clone, Copy)]
 pub union HtmlType62Payload {
     pub element: core::mem::ManuallyDrop<HtmlType62ElementPayload>,
+    pub keyed: core::mem::ManuallyDrop<HtmlKeyedPayload>,
     pub lazy: RocErasedCallable,
     pub text: core::mem::ManuallyDrop<RocStr>,
 }
@@ -1937,8 +1951,9 @@ pub struct HtmlType99ElementPayload {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HtmlType99Tag {
     Element = 0,
-    Lazy = 1,
-    Text = 2,
+    Keyed = 1,
+    Lazy = 2,
+    Text = 3,
 }
 
 /// Tag union: Html
@@ -1953,6 +1968,7 @@ pub struct HtmlType99 {
 #[derive(Clone, Copy)]
 pub union HtmlType99Payload {
     pub element: core::mem::ManuallyDrop<HtmlType99ElementPayload>,
+    pub keyed: core::mem::ManuallyDrop<HtmlKeyedPayload>,
     pub lazy: RocErasedCallable,
     pub text: core::mem::ManuallyDrop<RocStr>,
 }
@@ -2039,13 +2055,12 @@ pub struct AttributeType101VisibilityHandlerPayload {
 pub enum AttributeType101Tag {
     Boolean = 0,
     FileHandler = 1,
-    Key = 2,
-    KeyHandler = 3,
-    MsgHandler = 4,
-    PointerHandler = 5,
-    PropertyHandler = 6,
-    String = 7,
-    VisibilityHandler = 8,
+    KeyHandler = 2,
+    MsgHandler = 3,
+    PointerHandler = 4,
+    PropertyHandler = 5,
+    String = 6,
+    VisibilityHandler = 7,
 }
 
 /// Tag union: Attribute
@@ -2093,8 +2108,9 @@ pub struct HtmlType111ElementPayload {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HtmlType111Tag {
     Element = 0,
-    Lazy = 1,
-    Text = 2,
+    Keyed = 1,
+    Lazy = 2,
+    Text = 3,
 }
 
 /// Tag union: Html
@@ -2109,6 +2125,7 @@ pub struct HtmlType111 {
 #[derive(Clone, Copy)]
 pub union HtmlType111Payload {
     pub element: core::mem::ManuallyDrop<HtmlType111ElementPayload>,
+    pub keyed: core::mem::ManuallyDrop<HtmlKeyedPayload>,
     pub lazy: RocErasedCallable,
     pub text: core::mem::ManuallyDrop<RocStr>,
 }

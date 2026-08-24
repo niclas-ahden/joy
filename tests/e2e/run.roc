@@ -23,7 +23,15 @@ hooks = {
 			.spawn_leashed!(),
 	poll!: Cmd.Child.poll!,
 	kill_wait!: Cmd.Child.kill_wait!,
-	list_dir!: |dir| Path.list!(Path.utf8(dir)).map_ok(|entries| entries.map(Path.display)),
+	# tests/e2e/ itself, plus each directory example's own tests/
+	# (examples/todomvc/tests/): a directory example keeps its browser tests
+	# next to its app, and this runner spawns them all the same way.
+	list_dir!: |dir| {
+		base = Path.utf8(dir).list!()?.map(Path.display)
+		per_example = Path.utf8("examples").list!()?
+			.map_try!(|entry| Ok((Path.utf8("${Path.display(entry)}/tests").list!() ?? []).map(Path.display)))?
+		Ok(base.concat(per_example.join()))
+	},
 	print!: Stdout.line!,
 	utc_now!: Utc.now!,
 	sleep_millis!: Sleep.millis!,

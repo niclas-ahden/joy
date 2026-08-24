@@ -37,3 +37,20 @@ Port := [].{
 	send : Str, Str -> Effect(msg)
 	send = |name, value| Effect.port_send(name, value)
 }
+
+expect {
+	match Port.listen("prices", |s| "got:${s}") {
+		PortListen(r) => {
+			inner = Box.unbox(r.on_value)
+			r.name == "prices" and Box.unbox(inner("42")) == "got:42"
+		}
+		_ => Bool.False
+	}
+}
+
+expect {
+	match Port.send("level", "9") {
+		PortSend(name, value) => name == "level" and value == "9"
+		_ => Bool.False
+	}
+}

@@ -11,7 +11,7 @@ set -euo pipefail
 
 url=${1:?usage: point-at-bundle.sh <bundle-url>}
 
-apps=(examples/*.roc tests/apps/*.roc)
+apps=(examples/*.roc examples/*/app.roc tests/apps/*.roc)
 for src in "${apps[@]}"; do
   sed -i.bak \
     -e "s|\"\.\./\.\./platform/main\.roc\"|\"$url\"|" \

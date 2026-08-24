@@ -43,3 +43,72 @@ Keyboard := [].{
 	on_up_keys_prevent_default : List(Str), (Sub.KeyEvent -> msg) -> Sub(msg)
 	on_up_keys_prevent_default = |keys, to_msg| Sub.keyboard("keyup", keys, Bool.True, to_msg)
 }
+
+# Each helper is one Sub.keyboard call, so what can go wrong is the event
+# name, a swapped keys/prevent_default pair, or a dropped callback. Pin all
+# three per helper.
+
+key_event = |key| {
+	key: key,
+	code: key,
+	ctrl: Bool.False,
+	shift: Bool.False,
+	alt: Bool.False,
+	meta: Bool.False,
+	repeat: Bool.False,
+	is_composing: Bool.False,
+}
+
+expect {
+	match Keyboard.on_down(|e| "down:${e.key}") {
+		Keyboard(r) => {
+			inner = Box.unbox(r.on_key)
+			r.event == "keydown"
+				and r.keys == []
+					and r.prevent_default == Bool.False
+						and Box.unbox(inner(key_event("a"))) == "down:a"
+		}
+		_ => Bool.False
+	}
+}
+
+expect {
+	match Keyboard.on_down_keys(["a", "A"], |e| e.key) {
+		Keyboard(r) => r.event == "keydown" and r.keys == ["a", "A"] and r.prevent_default == Bool.False
+		_ => Bool.False
+	}
+}
+
+expect {
+	match Keyboard.on_down_keys_prevent_default(["Tab"], |e| e.key) {
+		Keyboard(r) => r.event == "keydown" and r.keys == ["Tab"] and r.prevent_default
+		_ => Bool.False
+	}
+}
+
+expect {
+	match Keyboard.on_up(|e| "up:${e.key}") {
+		Keyboard(r) => {
+			inner = Box.unbox(r.on_key)
+			r.event == "keyup"
+				and r.keys == []
+					and r.prevent_default == Bool.False
+						and Box.unbox(inner(key_event("Escape"))) == "up:Escape"
+		}
+		_ => Bool.False
+	}
+}
+
+expect {
+	match Keyboard.on_up_keys(["Enter"], |e| e.key) {
+		Keyboard(r) => r.event == "keyup" and r.keys == ["Enter"] and r.prevent_default == Bool.False
+		_ => Bool.False
+	}
+}
+
+expect {
+	match Keyboard.on_up_keys_prevent_default([" "], |e| e.key) {
+		Keyboard(r) => r.event == "keyup" and r.keys == [" "] and r.prevent_default
+		_ => Bool.False
+	}
+}

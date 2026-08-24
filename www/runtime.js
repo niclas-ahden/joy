@@ -14,11 +14,16 @@
 //   BOOL_ATTR(8) key flag | VALUE_EVENT(9) name prop pd sp handler_id
 //   KEY_EVENT(13) name pd sp handler_id n_keys (key)* | VISIBLE(11) margin key handler_id
 //   POINTER_EVENT(14) name pd sp handler_id | FILE_EVENT(15) handler_id
+// Tag/attr/event names and attr values are srefs (interned string refs, see
+// `sref` below). Text content and key filters are raw (ptr, len) pairs.
 // Patch ops:
 //   SET_TEXT(5) idx str | REPLACE(6) idx n_words <build ops...>
-//   PATCH_ATTRS(10) idx n_words <attr ops...>
-//   REORDER(12) parent_idx n_children <descriptors...>, which rewrites a child
-//     list. One descriptor per child of the new list, in order:
+//   PATCH_ATTRS(10) idx n_words <attr ops...>, a host-computed diff whose
+//     ops also include REMOVE_ATTR(17) key | REMOVE_EVENT(18) name |
+//     REMOVE_VIS(19). Removal names are embedded in the buffer (len word +
+//     packed bytes), not (ptr, len) references
+//   REORDER(12) parent_idx old_span n_children n_kept <descriptors...>, which
+//     rewrites a child list. One descriptor per child of the new list, in order:
 //       STAY(0) old_pos | MOVE(1) old_pos | NEW(2) n_words <build ops...>
 //     Old children not referenced by any descriptor are removed. STAY nodes
 //     are already in relative order (the host's LIS pass guarantees it), so
@@ -44,6 +49,9 @@ const OP_KEY_EVENT = 13;
 const OP_POINTER_EVENT = 14;
 const OP_FILE_EVENT = 15;
 const OP_REFRESH_HANDLERS = 16;
+const OP_REMOVE_ATTR = 17;
+const OP_REMOVE_EVENT = 18;
+const OP_REMOVE_VIS = 19;
 const REORDER_STAY = 0;
 const REORDER_MOVE = 1;
 const REORDER_NEW = 2;
@@ -66,7 +74,52 @@ export function makeRuntime(exports, dom, root) {
   let nodeList = []; // DOM nodes in pre-order, matching the host's node indices
 
   const words = () => new Uint32Array(memory.buffer, exports.cmd_ptr(), exports.cmd_len());
-  const str = (ptr, len) => decoder.decode(new Uint8Array(memory.buffer, ptr, len));
+
+  // One persistent view over the whole linear memory, refreshed when a
+  // memory.grow detaches it (the old buffer's views read as length 0). The
+  // memory.buffer getter and a fresh subview per string are real costs at
+  // this call rate.
+  let memU8 = new Uint8Array(memory.buffer);
+  const mem = () => {
+    if (memU8.byteLength === 0) memU8 = new Uint8Array(memory.buffer);
+    return memU8;
+  };
+
+  // Most protocol strings are short (tags, attribute names, row-sized text),
+  // and TextDecoder's per-call overhead dwarfs the decode at those sizes, so
+  // short ASCII runs decode by hand and only long or non-ASCII strings pay
+  // for the decoder.
+  const str = (ptr, len) => {
+    const m = mem();
+    if (len > 64) return decoder.decode(m.subarray(ptr, ptr + len));
+    let out = '';
+    for (let i = 0; i < len; i++) {
+      const b = m[ptr + i];
+      if (b > 0x7f) return decoder.decode(m.subarray(ptr, ptr + len));
+      out += String.fromCharCode(b);
+    }
+    return out;
+  };
+
+  // Interned protocol strings by host-assigned id. Tag/attribute/event names
+  // and attribute values arrive as "srefs": [0, ptr, len] raw, [id<<2|1] a
+  // known id, [id<<2|3, ptr, len] a new id to decode once and remember. The
+  // decoded string lands in `srefVal` and the call returns the next word
+  // index, so the hot path allocates nothing.
+  const strings = [];
+  let srefVal = '';
+  function sref(w, i) {
+    const head = w[i++];
+    const tag = head & 3;
+    if (tag === 1) {
+      srefVal = strings[head >> 2];
+      return i;
+    }
+    const s = str(w[i++], w[i++]);
+    if (tag === 3) strings[head >> 2] = s;
+    srefVal = s;
+    return i;
+  }
 
   // Ports the app subscribes to (via Port.listen): name -> the host's sub id.
   const ports = new Map();
@@ -97,81 +150,88 @@ export function makeRuntime(exports, dom, root) {
     debounces.delete(key);
   }
 
-  // Per-node attribute/handler bookkeeping, so a PATCH_ATTRS can remove what
-  // is no longer set. Event listeners are bound once per (node, event) and
-  // look their current handler up here, so re-renders never re-bind.
-  // `bound` outlives `events`: removing a handler only deletes its descriptor
-  // (the DOM listener stays attached but inert), so `bound` is what stops a
-  // later re-add from attaching a second listener.
-  const nodeState = new WeakMap(); // node -> { attrs:Set, bools:Set, events:Map(name -> {kind, id}), bound:Set, vis }
-  const stateFor = (node) => {
-    let s = nodeState.get(node);
-    if (!s) {
-      s = { attrs: new Set(), bools: new Set(), events: new Map(), bound: new Set(), vis: null };
-      nodeState.set(node, s);
-    }
-    return s;
-  };
+  // Per-node handler bookkeeping. Attribute state needs no record here: the
+  // host diffs the attribute lists itself and PATCH_ATTRS arrives as precise
+  // set/remove ops. Event listeners are bound once per (node, event) and
+  // look their current handler up here, so re-renders never re-bind. A
+  // removed handler leaves a null tombstone (the DOM listener stays attached
+  // but inert), which stops a later re-add from binding a second listener.
+  // An expando symbol rather than a WeakMap: property access is several
+  // times cheaper, and create-heavy paints hit this per handler element.
+  const EVENTS = Symbol('joyEvents'); // node[EVENTS]: Map(name -> {kind, id, ...} | null)
+  const eventsFor = (node) => (node[EVENTS] ??= new Map());
+  // Visibility observers are rare, so their state lives off to the side
+  // instead of widening every node's record.
+  const nodeVis = new WeakMap(); // node -> { margin, key, id, disconnect }
+
+  // Live visibility observers. cleanupSubtree exists only to disconnect
+  // these, and most apps never use on_visible, so the count lets every
+  // discard-time subtree walk be skipped outright.
+  let visCount = 0;
 
   // Attach or re-arm a visibility observer. A fresh observer reports the
   // current intersection state, so recreating it when the rearm key changes
   // re-checks visibility (see Attribute.on_visible in the platform).
   function setVisibility(node, margin, key, id) {
-    const s = stateFor(node);
-    if (s.vis && s.vis.margin === margin && s.vis.key === key) {
-      s.vis.id = id; // same observer, refreshed handler
+    const v = nodeVis.get(node);
+    if (v && v.margin === margin && v.key === key) {
+      v.id = id; // same observer, refreshed handler
       return;
     }
-    s.vis?.disconnect();
+    if (v) { v.disconnect(); visCount--; }
     const disconnect = dom.observeVisibility(node, margin, () => {
-      const v = stateFor(node).vis;
-      if (v) dispatch(v.id);
+      const cur = nodeVis.get(node);
+      if (cur) dispatch(cur.id);
     });
-    s.vis = { margin, key, id, disconnect };
+    nodeVis.set(node, { margin, key, id, disconnect });
+    visCount++;
   }
 
-  function setHandler(node, name, desc) {
-    const s = stateFor(node);
-    if (!s.bound.has(name)) {
-      s.bound.add(name);
-      dom.on(node, name, (domEvent) => {
-        // Patching the DOM can itself fire events synchronously: hiding or
-        // removing a focused element fires blur before the patch finishes.
-        // Dispatching mid-paint would re-enter the host against a nodeList
-        // that no longer matches the DOM (and a handler id the host already
-        // dropped), corrupting the page. Such events are echoes of the state
-        // change being painted, so they are dropped, not deferred.
-        if (painting) return;
-        const d = stateFor(node).events.get(name);
-        if (!d) return; // handler was removed by a later patch
-        // Stopping propagation is about this element swallowing the event, not
-        // about which msg it produces, so it runs before any per-kind work and
-        // independently of preventDefault. preventDefault stays per-kind
-        // because a key handler's filter must run first: an unmatched key
-        // passes through with its browser default intact. Every handler kind
-        // carries both flags except file, where they read as undefined.
-        if (d.stopPropagation) domEvent.stopPropagation?.();
-        if (d.kind === 'msg') {
-          if (d.preventDefault) domEvent.preventDefault?.(); // e.g. on_submit
-          dispatch(d.id);
-        } else if (d.kind === 'key') {
-          const info = dom.eventKeyInfo(domEvent);
-          if (d.keys.length > 0 && !d.keys.includes(info.key)) return;
-          if (d.preventDefault) domEvent.preventDefault?.();
-          dispatchKey(d.id, info);
-        } else if (d.kind === 'pointer') {
-          if (d.preventDefault) domEvent.preventDefault?.();
-          dispatchPointer(d.id, dom.eventPointerInfo(domEvent));
-        } else if (d.kind === 'file') {
-          const file = dom.eventFile(domEvent);
-          if (file) dispatchFile(d.id, file); // clearing the input is not a pick
-        } else {
-          if (d.preventDefault) domEvent.preventDefault?.();
-          dispatchValue(d.id, dom.eventProp(domEvent, d.prop));
-        }
-      });
+  // The one listener function every binding shares: the node and event name
+  // arrive as currentTarget and type, so binding allocates no closure.
+  const domListener = (domEvent) => {
+    // Patching the DOM can itself fire events synchronously: hiding or
+    // removing a focused element fires blur before the patch finishes.
+    // Dispatching mid-paint would re-enter the host against a nodeList
+    // that no longer matches the DOM (and a handler id the host already
+    // dropped), corrupting the page. Such events are echoes of the state
+    // change being painted, so they are dropped, not deferred.
+    if (painting) return;
+    const d = domEvent.currentTarget[EVENTS]?.get(domEvent.type);
+    if (!d) return; // handler was removed by a later patch
+    // Stopping propagation is about this element swallowing the event, not
+    // about which msg it produces, so it runs before any per-kind work and
+    // independently of preventDefault. preventDefault stays per-kind
+    // because a key handler's filter must run first: an unmatched key
+    // passes through with its browser default intact. Every handler kind
+    // carries both flags except file, where they read as undefined.
+    if (d.stopPropagation) domEvent.stopPropagation?.();
+    if (d.kind === 'msg') {
+      if (d.preventDefault) domEvent.preventDefault?.(); // e.g. on_submit
+      dispatch(d.id);
+    } else if (d.kind === 'key') {
+      const info = dom.eventKeyInfo(domEvent);
+      if (d.keys.length > 0 && !d.keys.includes(info.key)) return;
+      if (d.preventDefault) domEvent.preventDefault?.();
+      dispatchKey(d.id, info);
+    } else if (d.kind === 'pointer') {
+      if (d.preventDefault) domEvent.preventDefault?.();
+      dispatchPointer(d.id, dom.eventPointerInfo(domEvent));
+    } else if (d.kind === 'file') {
+      const file = dom.eventFile(domEvent);
+      if (file) dispatchFile(d.id, file); // clearing the input is not a pick
+    } else {
+      if (d.preventDefault) domEvent.preventDefault?.();
+      dispatchValue(d.id, dom.eventProp(domEvent, d.prop));
     }
-    s.events.set(name, desc);
+  };
+
+  function setHandler(node, name, desc) {
+    const m = eventsFor(node);
+    if (!m.has(name)) {
+      dom.on(node, name, domListener);
+    }
+    m.set(name, desc);
   }
 
   // Attributes the view is not allowed to set: `on*` attributes execute
@@ -191,45 +251,54 @@ export function makeRuntime(exports, dom, root) {
     return true;
   }
 
+  // Read a string embedded in the command buffer itself at word index `i`
+  // (a length word, then the bytes packed four per word). Returns [string,
+  // next word index]. Removal ops embed their names because the tree those
+  // names lived in is dropped before the paint runs.
+  function inlineStr(w, i) {
+    const len = w[i++];
+    const s = str(exports.cmd_ptr() + i * 4, len);
+    return [s, i + ((len + 3) >> 2)];
+  }
+
   // Apply the attr-op range [i, end) to `node`; returns the next index.
-  // `fresh` collects what was set, so patches can drop stale attrs after.
-  function applyAttrOps(w, i, end, node, fresh) {
+  // Sets and removals arrive exactly as needed (the host diffs the
+  // attribute lists), so nothing is recorded about plain attributes.
+  function applyAttrOps(w, i, end, node) {
     while (i < end) {
       const op = w[i++];
       if (op === OP_ATTR) {
-        const k = str(w[i++], w[i++]);
-        const v = str(w[i++], w[i++]);
-        if (attrAllowed(k, v)) {
-          dom.setAttr(node, k, v);
-          stateFor(node).attrs.add(k);
-          fresh?.attrs.add(k);
-        }
+        i = sref(w, i);
+        const k = srefVal;
+        i = sref(w, i);
+        const v = srefVal;
+        // A refused value also drops whatever the attribute held before:
+        // keeping a stale href would leave the link pointing somewhere the
+        // view no longer says.
+        if (attrAllowed(k, v)) dom.setAttr(node, k, v);
+        else dom.removeAttr(node, k);
       } else if (op === OP_BOOL_ATTR) {
-        const k = str(w[i++], w[i++]);
-        const on = w[i++] !== 0 && attrAllowed(k, '');
-        if (on) {
-          dom.setAttr(node, k, '');
-          stateFor(node).bools.add(k);
-          fresh?.bools.add(k);
-        } else {
-          dom.removeAttr(node, k);
-          stateFor(node).bools.delete(k);
-        }
+        i = sref(w, i);
+        const k = srefVal;
+        if (w[i++] !== 0 && attrAllowed(k, '')) dom.setAttr(node, k, '');
+        else dom.removeAttr(node, k);
       } else if (op === OP_MSG_EVENT) {
-        const name = str(w[i++], w[i++]);
+        i = sref(w, i);
+        const name = srefVal;
         const preventDefault = w[i++] !== 0;
         const stopPropagation = w[i++] !== 0;
         setHandler(node, name, { kind: 'msg', preventDefault, stopPropagation, id: w[i++] });
-        fresh?.events.add(name);
       } else if (op === OP_VALUE_EVENT) {
-        const name = str(w[i++], w[i++]);
-        const prop = str(w[i++], w[i++]);
+        i = sref(w, i);
+        const name = srefVal;
+        i = sref(w, i);
+        const prop = srefVal;
         const preventDefault = w[i++] !== 0;
         const stopPropagation = w[i++] !== 0;
         setHandler(node, name, { kind: 'value', prop, preventDefault, stopPropagation, id: w[i++] });
-        fresh?.events.add(name);
       } else if (op === OP_KEY_EVENT) {
-        const name = str(w[i++], w[i++]);
+        i = sref(w, i);
+        const name = srefVal;
         const preventDefault = w[i++] !== 0;
         const stopPropagation = w[i++] !== 0;
         const id = w[i++];
@@ -237,21 +306,34 @@ export function makeRuntime(exports, dom, root) {
         let nKeys = w[i++];
         while (nKeys-- > 0) keys.push(str(w[i++], w[i++]));
         setHandler(node, name, { kind: 'key', preventDefault, stopPropagation, keys, id });
-        fresh?.events.add(name);
       } else if (op === OP_POINTER_EVENT) {
-        const name = str(w[i++], w[i++]);
+        i = sref(w, i);
+        const name = srefVal;
         const preventDefault = w[i++] !== 0;
         const stopPropagation = w[i++] !== 0;
         setHandler(node, name, { kind: 'pointer', preventDefault, stopPropagation, id: w[i++] });
-        fresh?.events.add(name);
       } else if (op === OP_FILE_EVENT) {
         setHandler(node, 'change', { kind: 'file', id: w[i++] });
-        fresh?.events.add('change');
       } else if (op === OP_VISIBLE) {
-        const margin = str(w[i++], w[i++]);
-        const key = str(w[i++], w[i++]);
+        i = sref(w, i);
+        const margin = srefVal;
+        i = sref(w, i);
+        const key = srefVal;
         setVisibility(node, margin, key, w[i++]);
-        if (fresh) fresh.vis = true;
+      } else if (op === OP_REMOVE_ATTR) {
+        let k;
+        [k, i] = inlineStr(w, i);
+        dom.removeAttr(node, k);
+      } else if (op === OP_REMOVE_EVENT) {
+        let name;
+        [name, i] = inlineStr(w, i);
+        // Tombstone, not delete: the DOM listener stays attached, and the
+        // null is what tells a later re-add it must not bind a second one.
+        const m = node[EVENTS];
+        if (m && m.has(name)) m.set(name, null);
+      } else if (op === OP_REMOVE_VIS) {
+        const v = nodeVis.get(node);
+        if (v) { v.disconnect(); nodeVis.delete(node); visCount--; }
       } else {
         return i - 1; // not an attr op: caller resumes here
       }
@@ -259,38 +341,32 @@ export function makeRuntime(exports, dom, root) {
     return i;
   }
 
-  // Replace `node`'s attribute set with the ops in [i, end).
-  function patchAttrs(w, i, end, node) {
-    const s = stateFor(node);
-    const before = { attrs: new Set(s.attrs), bools: new Set(s.bools), events: new Set(s.events.keys()), hadVis: s.vis !== null };
-    const fresh = { attrs: new Set(), bools: new Set(), events: new Set(), vis: false };
-    applyAttrOps(w, i, end, node, fresh);
-    for (const k of before.attrs) if (!fresh.attrs.has(k)) { dom.removeAttr(node, k); s.attrs.delete(k); }
-    for (const k of before.bools) if (!fresh.bools.has(k)) { dom.removeAttr(node, k); s.bools.delete(k); }
-    for (const name of before.events) if (!fresh.events.has(name)) s.events.delete(name);
-    if (before.hadVis && !fresh.vis) { s.vis?.disconnect(); s.vis = null; }
-  }
-
-  // Build the balanced op range [start, end) into `parent`; return the next index.
-  function buildRange(w, start, end, parent) {
+  // Build the balanced op range [start, end) into `parent` and return the next
+  // index. Nodes are created in document pre-order, so when `out` is given
+  // every created node is pushed onto it, saving callers that need the
+  // subtree's pre-order (the node-list splice) a second walk.
+  function buildRange(w, start, end, parent, out) {
     const stack = [parent];
     const top = () => stack[stack.length - 1];
     let i = start;
     while (i < end) {
       const op = w[i];
       if (op === OP_ELEMENT_OPEN) {
-        i += 1;
-        const el = dom.createElement(str(w[i++], w[i++]));
+        i = sref(w, i + 1);
+        const el = dom.createElement(srefVal);
         dom.append(top(), el);
+        out?.push(el);
         stack.push(el);
       } else if (op === OP_ELEMENT_CLOSE) {
         i += 1;
         stack.pop();
       } else if (op === OP_TEXT) {
         i += 1;
-        dom.append(top(), dom.createText(str(w[i++], w[i++])));
+        const t = dom.createText(str(w[i++], w[i++]));
+        dom.append(top(), t);
+        out?.push(t);
       } else if (op === OP_ATTR || op === OP_BOOL_ATTR || op === OP_MSG_EVENT || op === OP_VALUE_EVENT || op === OP_KEY_EVENT || op === OP_POINTER_EVENT || op === OP_FILE_EVENT || op === OP_VISIBLE) {
-        i = applyAttrOps(w, i, end, top(), null);
+        i = applyAttrOps(w, i, end, top());
       } else {
         throw new Error(`unknown build op ${op} at word ${i}`);
       }
@@ -299,11 +375,17 @@ export function makeRuntime(exports, dom, root) {
   }
 
   // Disconnect visibility observers in a subtree that is about to be
-  // discarded (full rebuild or REPLACE), so they cannot fire or leak.
+  // discarded (full rebuild or REPLACE), so they cannot fire or leak. When
+  // no observer is live anywhere, the walk is skipped entirely.
   function cleanupSubtree(node) {
-    const s = nodeState.get(node);
-    if (s?.vis) { s.vis.disconnect(); s.vis = null; }
-    for (const c of dom.childrenOf(node)) cleanupSubtree(c);
+    if (visCount === 0) return;
+    cleanupVisWalk(node);
+  }
+
+  function cleanupVisWalk(node) {
+    const v = nodeVis.get(node);
+    if (v) { v.disconnect(); nodeVis.delete(node); visCount--; }
+    for (const c of dom.childrenOf(node)) cleanupVisWalk(c);
   }
 
   // Pre-order list of the DOM nodes under `root` (root itself excluded).
@@ -312,13 +394,6 @@ export function makeRuntime(exports, dom, root) {
     const visit = (n) => { out.push(n); for (const c of dom.childrenOf(n)) visit(c); };
     for (const c of dom.childrenOf(root)) visit(c);
     return out;
-  }
-
-  // Append a freshly built subtree's nodes in pre-order (for the REORDER
-  // splice, where only NEW children need an actual walk).
-  function collectPreorder(n, out) {
-    out.push(n);
-    for (const c of dom.childrenOf(n)) collectPreorder(c, out);
   }
 
   function paint() {
@@ -369,19 +444,19 @@ export function makeRuntime(exports, dom, root) {
         } else if (op === OP_PATCH_ATTRS) {
           const idx = w[i++];
           const n = w[i++];
-          patchAttrs(w, i, i + n, refs[idx]);
+          applyAttrOps(w, i, i + n, refs[idx]);
           i += n;
         } else if (op === OP_REFRESH_HANDLERS) {
           // The element's attributes are unchanged except that its handlers
           // were re-boxed by the render (they always are), so only the stored
           // handler ids move, with no attribute writes and no listener
           // rebinding.
-          const s = stateFor(refs[w[i++]]);
+          const m = eventsFor(refs[w[i++]]);
           const n = w[i++];
           for (let k = 0; k < n; k++) {
-            const name = str(w[i++], w[i++]);
+            i = sref(w, i);
+            const d = m.get(srefVal);
             const id = w[i++];
-            const d = s.events.get(name);
             if (d) d.id = id;
           }
         } else if (op === OP_REORDER) {
@@ -391,46 +466,66 @@ export function makeRuntime(exports, dom, root) {
           const oldSpan = w[i++];
           const parent = refs[parentIdx];
           const n = w[i++];
-          const oldChildren = [...dom.childrenOf(parent)];
-          // Resolve every descriptor to a node first (building NEW subtrees),
-          // so old positions are read before the DOM mutates. segNodes
-          // accumulates the segment's new pre-order for the splice.
-          const placed = [];
-          const used = new Set();
+          const kept = w[i++];
           const segNodes = [];
-          for (let k = 0; k < n; k++) {
-            const kind = w[i++];
-            if (kind === REORDER_NEW) {
+          if (kept === 0) {
+            // No old child survives: drop them all at once and rebuild into
+            // the emptied parent, where append order is document order. This
+            // is the clear and replace-all shape, and it skips the per-node
+            // removals and inserts of the general path entirely.
+            if (visCount > 0) for (const c of dom.childrenOf(parent)) cleanupVisWalk(c);
+            dom.clear(parent);
+            for (let k = 0; k < n; k++) {
+              i++; // kind is always NEW here
               const nw = w[i++];
-              const holder = dom.fragment();
-              buildRange(w, i, i + nw, holder);
+              buildRange(w, i, i + nw, parent, segNodes);
               i += nw;
-              const fresh = dom.childrenOf(holder)[0];
-              placed.push({ node: fresh, move: true });
-              collectPreorder(fresh, segNodes);
-            } else {
-              const pos = w[i++];
-              const start = w[i++];
-              const count = w[i++];
-              used.add(pos);
-              placed.push({ node: oldChildren[pos], move: kind === REORDER_MOVE });
-              for (let t = start; t < start + count; t++) segNodes.push(refs[t]);
+            }
+          } else {
+            const oldChildren = [...dom.childrenOf(parent)];
+            // Resolve every descriptor to a node first (building NEW
+            // subtrees), so old positions are read before the DOM mutates.
+            // segNodes accumulates the segment's new pre-order for the
+            // splice.
+            const placed = [];
+            const moved = [];
+            const used = new Uint8Array(oldChildren.length);
+            for (let k = 0; k < n; k++) {
+              const kind = w[i++];
+              if (kind === REORDER_NEW) {
+                const nw = w[i++];
+                const holder = dom.fragment();
+                const fresh = [];
+                buildRange(w, i, i + nw, holder, fresh);
+                i += nw;
+                placed.push(fresh[0]);
+                moved.push(true);
+                for (const node of fresh) segNodes.push(node);
+              } else {
+                const pos = w[i++];
+                const start = w[i++];
+                const count = w[i++];
+                used[pos] = 1;
+                placed.push(oldChildren[pos]);
+                moved.push(kind === REORDER_MOVE);
+                for (let t = start; t < start + count; t++) segNodes.push(refs[t]);
+              }
+            }
+            for (let pos = 0; pos < oldChildren.length; pos++) {
+              if (!used[pos]) {
+                cleanupSubtree(oldChildren[pos]);
+                dom.removeChild(parent, oldChildren[pos]);
+              }
+            }
+            // Right-to-left, inserting each MOVE/NEW before the node that
+            // ends up after it. STAY nodes are already in relative order.
+            let anchor = null;
+            for (let k = n - 1; k >= 0; k--) {
+              if (moved[k]) dom.insertBefore(parent, placed[k], anchor);
+              anchor = placed[k];
             }
           }
           splice = { at: parentIdx + 1, oldSpan, nodes: segNodes };
-          for (let pos = 0; pos < oldChildren.length; pos++) {
-            if (!used.has(pos)) {
-              cleanupSubtree(oldChildren[pos]);
-              dom.removeChild(parent, oldChildren[pos]);
-            }
-          }
-          // Right-to-left, inserting each MOVE/NEW before the node that ends
-          // up after it; STAY nodes are already in relative order.
-          let anchor = null;
-          for (let k = n - 1; k >= 0; k--) {
-            if (placed[k].move) dom.insertBefore(parent, placed[k].node, anchor);
-            anchor = placed[k].node;
-          }
         } else {
           throw new Error(`unknown patch op ${op} at word ${i - 1}`);
         }
@@ -580,6 +675,9 @@ export function makeRuntime(exports, dom, root) {
   // like busyMs, so a driver samples before/after and takes the difference.
   const perf = { enabled: false, busyMs: 0, entries: 0, updateMs: 0, renderMs: 0, diffMs: 0, paintMs: 0 };
 
+  const overflowError = () =>
+    new Error('Joy: the wasm shadow stack overflowed and memory is corrupt. The usual cause is unbounded recursion in update or render, or a view nested far deeper than any browser renders well.');
+
   // Every call into the host goes through here: call, drain logs, paint if
   // the view changed, then start any queued effects (whose completions
   // re-enter through here as well).
@@ -588,6 +686,12 @@ export function makeRuntime(exports, dom, root) {
     const t0 = perf.enabled ? performance.now() : 0;
     try {
       const changed = call();
+      // Stack overflow smashes the host's canary without trapping (see
+      // host.rs). Checked before logs, effects and paint so corrupt memory
+      // never reaches the page.
+      if (!exports.stack_canary_ok()) {
+        throw overflowError();
+      }
       drainLog();
       const effects = parseEffects();
       if (changed) {
@@ -598,7 +702,10 @@ export function makeRuntime(exports, dom, root) {
       for (const e of effects) runEffect(e);
     } catch (err) {
       alive = false;
-      throw err;
+      // The host's alloc-time overflow check smashes the canary before it
+      // traps (see host.rs), so a dead canary after a throw is the same
+      // overflow and gets the same error.
+      throw exports.stack_canary_ok() ? err : overflowError();
     } finally {
       if (perf.enabled) {
         perf.busyMs += performance.now() - t0;

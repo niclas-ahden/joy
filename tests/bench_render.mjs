@@ -2,10 +2,11 @@
 // the built bench_grid app at several grid sizes and times header-only
 // messages: each dispatch runs update + render + diff + paint synchronously,
 // so the wall time per dispatch is the cost of re-rendering a page whose
-// large card grid did not change. Run from the repo root:
-//   node tests/bench_render.mjs
+// large card grid did not change. Run from the repo root, naming the built
+// tree under test:
+//   JOY_OPT=speed node tests/bench_render.mjs
 // Compare a lazy grid by passing lazy flags once the app supports it:
-//   node tests/bench_render.mjs --lazy
+//   JOY_OPT=speed node tests/bench_render.mjs --lazy
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
 import { El, fakeDom, find } from './fakedom.mjs';

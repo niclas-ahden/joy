@@ -130,3 +130,165 @@ Http := [].{
 			|raw| on_result(to_try(raw)),
 		)
 }
+
+# The status decoding and the constructor wiring are pure, so pin them here.
+# A wrong wire field (say, a swapped start/len) would otherwise only show up
+# in the wasm harnesses.
+
+# Show a Try as a short string, so one helper covers every outcome a
+# callback can see.
+try_label = |result|
+	match result {
+		Ok(resp) => "ok:${resp.status.to_str()}"
+		Err(HttpErr(Timeout)) => "timeout"
+		Err(HttpErr(NetworkError)) => "network"
+		_ => "other"
+	}
+
+# Raw status 0 means the request never completed.
+expect try_label(to_try({ status: 0, headers: [], body: [] })) == "network"
+
+# Raw status 1 means the timeout ran out.
+expect try_label(to_try({ status: 1, headers: [], body: [] })) == "timeout"
+
+# Anything the server actually sent is Ok, 4xx and 5xx included.
+expect try_label(to_try({ status: 200, headers: [], body: [] })) == "ok:200"
+expect try_label(to_try({ status: 404, headers: [], body: [] })) == "ok:404"
+expect try_label(to_try({ status: 500, headers: [], body: [] })) == "ok:500"
+
+# 100 is the lowest real HTTP status, right above the transport band.
+expect try_label(to_try({ status: 100, headers: [], body: [] })) == "ok:100"
+
+# Ok passes the response through untouched.
+expect {
+	raw = { status: 200, headers: [{ name: "server", value: "test" }], body: [104, 105] }
+	to_try(raw) == Ok(raw)
+}
+
+expect Http.method_to_str(OPTIONS) == "OPTIONS"
+expect Http.method_to_str(GET) == "GET"
+expect Http.method_to_str(POST) == "POST"
+expect Http.method_to_str(PUT) == "PUT"
+expect Http.method_to_str(DELETE) == "DELETE"
+expect Http.method_to_str(HEAD) == "HEAD"
+expect Http.method_to_str(TRACE) == "TRACE"
+expect Http.method_to_str(CONNECT) == "CONNECT"
+expect Http.method_to_str(PATCH) == "PATCH"
+expect Http.method_to_str(EXTENSION("BREW")) == "BREW"
+
+expect Http.default_request == { method: GET, uri: "", headers: [], body: [], timeout_ms: NoTimeout }
+
+expect timeout_to_u64(NoTimeout) == 0
+expect timeout_to_u64(TimeoutMilliseconds(750)) == 750
+
+# get wires up a GET with no headers, body or timeout, and its callback runs
+# the raw response through to_try before the app sees it.
+expect {
+	match Http.get("/api/hats", try_label) {
+		HttpSend(method, url, headers, body, timeout, cb) => {
+			inner = Box.unbox(cb)
+			method == "GET"
+				and url == "/api/hats"
+					and headers == []
+						and body == []
+							and timeout == 0
+								and Box.unbox(inner({ status: 200, headers: [], body: [] })) == "ok:200"
+									and Box.unbox(inner({ status: 0, headers: [], body: [] })) == "network"
+		}
+		_ => Bool.False
+	}
+}
+
+# post carries the body and still decodes transport failures.
+expect {
+	match Http.post("/api/hats", "{}".to_utf8(), try_label) {
+		HttpSend(method, url, headers, body, timeout, cb) => {
+			inner = Box.unbox(cb)
+			method == "POST"
+				and url == "/api/hats"
+					and headers == []
+						and body == "{}".to_utf8()
+							and timeout == 0
+								and Box.unbox(inner({ status: 1, headers: [], body: [] })) == "timeout"
+		}
+		_ => Bool.False
+	}
+}
+
+# request passes every field through, method and timeout converted for the
+# wire.
+expect {
+	req = {
+		method: PATCH,
+		uri: "/api/hats/7",
+		headers: [{ name: "content-type", value: "application/json" }],
+		body: "{}".to_utf8(),
+		timeout_ms: TimeoutMilliseconds(2500),
+	}
+	match Http.request(req, try_label) {
+		HttpSend(method, url, headers, body, timeout, cb) => {
+			inner = Box.unbox(cb)
+			method == "PATCH"
+				and url == "/api/hats/7"
+					and headers == [{ name: "content-type", value: "application/json" }]
+						and body == "{}".to_utf8()
+							and timeout == 2500
+								and Box.unbox(inner({ status: 204, headers: [], body: [] })) == "ok:204"
+		}
+		_ => Bool.False
+	}
+}
+
+# post_file sends the whole file (start 0, len 0) with no timeout.
+expect {
+	match Http.post_file("/upload", 3, [{ name: "x-tag", value: "a" }], try_label) {
+		HttpSendFile(method, url, headers, file, start, len, timeout, cb) => {
+			inner = Box.unbox(cb)
+			method == "POST"
+				and url == "/upload"
+					and headers == [{ name: "x-tag", value: "a" }]
+						and file == 3
+							and start == 0
+								and len == 0
+									and timeout == 0
+										and Box.unbox(inner({ status: 201, headers: [], body: [] })) == "ok:201"
+		}
+		_ => Bool.False
+	}
+}
+
+expect {
+	match Http.put_file("/upload/7", 9, [], try_label) {
+		HttpSendFile(method, url, headers, file, start, len, timeout, _cb) =>
+			method == "PUT" and url == "/upload/7" and headers == [] and file == 9 and start == 0 and len == 0 and timeout == 0
+		_ => Bool.False
+	}
+}
+
+# request_file keeps the byte range and the timeout, the chunked upload
+# building block.
+expect {
+	req = {
+		method: EXTENSION("PATCH-CHUNK"),
+		uri: "/upload/7",
+		headers: [],
+		file: 4,
+		start: 65536,
+		len: 32768,
+		timeout_ms: TimeoutMilliseconds(9000),
+	}
+	match Http.request_file(req, try_label) {
+		HttpSendFile(method, url, headers, file, start, len, timeout, cb) => {
+			inner = Box.unbox(cb)
+			method == "PATCH-CHUNK"
+				and url == "/upload/7"
+					and headers == []
+						and file == 4
+							and start == 65536
+								and len == 32768
+									and timeout == 9000
+										and Box.unbox(inner({ status: 0, headers: [], body: [] })) == "network"
+		}
+		_ => Bool.False
+	}
+}

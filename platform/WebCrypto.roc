@@ -54,8 +54,8 @@ WebCrypto := [].{
 
 	## The conventional lowercase-hex rendering of a hash.
 	to_hex : List(U8) -> Str
-	to_hex = |bytes|
-		bytes.map(
+	to_hex = |bytes| {
+		pairs = bytes.map(
 			|b| {
 				digits = "0123456789abcdef".to_utf8()
 				hi = digits.get((b // 16).to_u64()) ?? '0'
@@ -63,10 +63,9 @@ WebCrypto := [].{
 				Str.from_utf8_lossy([hi, lo])
 			},
 		)
-			|> Str.join_with("")
+		Str.join_with(pairs, "")
+	}
 }
-
-# --- roc test (run via `roc test platform/main.roc`) ---
 
 expect WebCrypto.to_hex([]) == ""
 expect WebCrypto.to_hex([0x00]) == "00"

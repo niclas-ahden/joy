@@ -81,30 +81,47 @@ main! = |args| {
 app_dirs = ["examples", "tests/apps"]
 
 # The named app, in whichever directory holds it. `counter`,
-# `examples/counter.roc` and `tests/apps/vdom.roc` all work: the argument's
-# directory is dropped and only the name is looked up, so watch.roc can pass
-# whatever the user typed.
+# `examples/counter.roc`, `tests/apps/vdom.roc` and `examples/todomvc` all
+# work: the argument's directory is dropped and only the name is looked up,
+# so watch.roc can pass whatever the user typed. A flat app is
+# <dir>/<name>.roc, a directory app is <dir>/<name>/app.roc.
 find_source! = |name| {
 	found = app_dirs
-		.map(|dir| Path.utf8("${dir}/${name}.roc"))
+		.map(|dir| [Path.utf8("${dir}/${name}.roc"), Path.utf8("${dir}/${name}/app.roc")])
+		.join()
 		.map_try!(|path| path.is_file!().map_ok(|exists| { path, exists }))?
 		.keep_if(|candidate| candidate.exists)
 
 	match found.first() {
 		Ok(candidate) => Ok(candidate.path)
-		Err(_) => fail!("no such app: ${name}.roc (looked in ${Str.join_with(app_dirs, ", ")})")
+		Err(_) => fail!("no such app: ${name}.roc or ${name}/app.roc (looked in ${Str.join_with(app_dirs, ", ")})")
 	}
 }
 
-# Every app in every source directory.
+# Every app in every source directory. A flat app is one <dir>/<name>.roc
+# file; an app that brings a page, styles or tests of its own is a directory,
+# <dir>/<name>/, built from its app.roc (see examples/todomvc/).
 list_sources! = ||
 	app_dirs
-		.map_try!(
-			|dir|
-				Path.utf8(dir).list!()
-					.map_ok(|entries| entries.keep_if(|entry| Path.display(entry).ends_with(".roc"))),
-		)
+		.map_try!(|dir| sources_in!(dir))
 		.map_ok(|per_dir| per_dir.join())
+
+sources_in! = |dir| {
+	entries = Path.utf8(dir).list!()?
+	entries
+		.map_try!(
+			|entry| {
+				display = Path.display(entry)
+				if display.ends_with(".roc") {
+					Ok([entry])
+				} else {
+					nested = Path.utf8("${display}/app.roc")
+					nested.is_file!().map_ok(|exists| if exists [nested] else [])
+				}
+			},
+		)
+		.map_ok(|per_entry| per_entry.join())
+}
 
 # build/<opt>/<name>.wasm for examples/<name>.roc or tests/apps/<name>.roc.
 wasm_path : Path.Path, Str -> Str
@@ -153,16 +170,48 @@ build_example! = |path, opt| {
 	src = Path.display(path)
 	out = wasm_path(path, opt)
 
-	# The linker defaults to 64 MB of initial linear memory, which every page
-	# then carries as its memory floor before the first render (the host heap
-	# grows on demand past the initial region, so the default is pure waste).
-	# 4 MB initial fits the data segments plus the 2 MB stack. The allocator
-	# grows memory as the app actually needs it. The stack is not
-	# overflow-protected on wasm (no --stack-first), so if a build ever
-	# corrupts memory on deeply nested views, raise the stack first.
+	## Memory size
+	# `--wasm-memory=0` makes both `wasm-ld` and Roc's built-in linker
+	# automatically determine the necessary memory size. That'll roughly be the
+	# data section of the app (constants etc. from the user's app) plus the
+	# stack size. Since the data section is app-dependent we don't want to
+	# have to specify a fixed memory size.
+	#
+	## Stack size
+	# We are using a fixed stack size of 1 MiB, which by testing corresponds to
+	# roughly 10 000 levels of HTML nesting. Ergo, it _should_ not overflow, but
+	# if we learn we're wrong we can always increase it or make it user-definable.
+	#
+	# We can't use `--stack-first`, because Roc does not currently expose that to
+	# us, which means that if we overflow the stack we'll be corrupting the app's
+	# static data section.
+	#
+	# To manage that danger we have two countermeasures:
+	#
+	# a) A canary memory band at the stack floor. The host scans it after every
+	#    dispatch and fails loudly if any word was overwritten. Nothing fires at
+	#    write time, so detection waits for the dispatch boundary, and a single
+	#    frame larger than the band can step over it unseen.
+	#
+	# b) A stack pointer check in `roc_alloc` which traps as soon as the pointer
+	#    is below the floor. Every allocation goes through the host allocator, also
+	#    the ones Roc code makes, and render recursion allocates on nearly every
+	#    level, so this fires mid-dispatch and catches frames of any size. Its
+	#    blind spot is recursion that never allocates, which is covered by a).
+	#
+	# Both checks need the hardcoded stack size kept in
+	# sync in two spots: the `--wasm-stack-size` flag here and `STACK_SIZE` in
+	# host/host.rs.
+	#
+	# The engine's native call stack is a separate limit that backstops both.
+	#
+	# These checks _should_ give us loud errors on every stack overflow. They
+	# would also make `wasm-opt`'s `--low-memory-unused` optimization safe,
+	# should we ever run wasm-opt (nothing does today). We should probably
+	# switch to `--stack-first` if that becomes available in the future.
 	output = capture!(
 		Cmd.new_str("roc")
-			.args_str(["build", "--opt=${opt}", "--target=wasm32", "--wasm-memory=4194304", "--wasm-stack-size=2097152", "--no-cache", "--output=${out}", src]),
+			.args_str(["build", "--opt=${opt}", "--target=wasm32", "--wasm-memory=0", "--wasm-stack-size=1048576", "--no-cache", "--output=${out}", src]),
 	)?
 	lines = output.split_on("\n")
 	clean = match lines.keep_oks(summary_counts).last() {

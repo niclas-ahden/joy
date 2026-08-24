@@ -11,7 +11,7 @@
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     roc-src = {
-      url = "github:roc-lang/roc/90da19f2941b421f40081a0e26ed3c1a39f2f9d9";
+      url = "github:roc-lang/roc/697df03cc3c0cee2ca22bffbdca1515af315bd78";
       flake = false;
     };
   };
@@ -81,7 +81,20 @@
             # `--system` points Zig at the prevendored package set (looked up by
             # bare hash), so the build never touches the network. Zig still
             # wants writable cache dirs, so keep those under $TMPDIR.
+            #
+            # The version string names roc's cache dir under ~/.cache/roc. The
+            # nix src has no .git, so without the override every pin reports
+            # "release-fast-no-git" and they all share one cache, letting a
+            # stale entry from another pin leak into builds. Baking in the rev
+            # gives each pin its own cache.
             zig build roc -Doptimize=${optimize} \
+              -Dcompiler-version=${
+                {
+                  "ReleaseFast" = "release-fast";
+                  "ReleaseSafe" = "release-safe";
+                  "Debug" = "debug";
+                }.${optimize}
+              }-${roc-src.shortRev or "dirty"} \
               --system ${roc-deps} \
               --cache-dir $TMPDIR/zig-local-cache \
               --global-cache-dir $TMPDIR/zig-global-cache
@@ -134,6 +147,7 @@
                 cachix # pushes that compiler to the binary cache
                 zig
                 wabt # provides wasm2wat for debugging
+                binaryen # provides wasm-opt, shrinks the benchmarked wasm
                 rustToolchain # rustc + cargo + rustfmt, pinned, with wasm targets
                 rust-analyzer
                 lld
@@ -141,6 +155,7 @@
                 wasmtime # run standalone wasm32-wasip1 repros
                 simple-http-server
                 watchexec
+                caddy # serves the todomvc template's dev and test servers
                 nodejs_22 # runs the tests/check_*.mjs harnesses
                 # Testing
                 playwright-test

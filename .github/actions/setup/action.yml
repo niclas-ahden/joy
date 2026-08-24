@@ -132,6 +132,42 @@ runs:
         fi
         playwright --version
 
+    # The template suite (examples/todomvc/tests.roc) serves through caddy,
+    # so the browser legs need it. Keep in step with the devShell's caddy
+    # (`nix develop -c caddy version`).
+    - name: Install caddy
+      if: inputs.roc != 'pinned' && inputs.playwright == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+
+        case "$RUNNER_OS-$RUNNER_ARCH" in
+          Linux-X64)   asset=linux_amd64 ;;
+          Linux-ARM64) asset=linux_arm64 ;;
+          macOS-ARM64) asset=mac_arm64 ;;
+          macOS-X64)   asset=mac_amd64 ;;
+          *)
+            echo "error: no caddy asset for $RUNNER_OS-$RUNNER_ARCH" >&2
+            exit 1
+            ;;
+        esac
+
+        url=$(gh release view v2.11.4 --repo caddyserver/caddy --json assets \
+                -q ".assets[] | select(.name | endswith(\"${asset}.tar.gz\")) | .url")
+        [ -n "$url" ] || {
+          echo "error: no ${asset}.tar.gz asset on caddy v2.11.4" >&2
+          exit 1
+        }
+
+        curl -sSL -o caddy.tar.gz "$url"
+        mkdir -p "$RUNNER_TEMP/caddy"
+        tar -xzf caddy.tar.gz -C "$RUNNER_TEMP/caddy" caddy
+        rm caddy.tar.gz
+        echo "$RUNNER_TEMP/caddy" >> "$GITHUB_PATH"
+        "$RUNNER_TEMP/caddy/caddy" version
+
     # ----------------------------------------------------------------- both
     - name: Report the prefix and the compiler
       id: prefix

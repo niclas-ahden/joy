@@ -41,15 +41,18 @@ Util :: [].{
 		Err(Exit(1))
 	}
 
-	## The app name in `examples/counter.roc`, `counter.roc` or `counter`:
-	## everything after the last `/`, without the `.roc`. build.roc and
-	## watch.roc both take an app in any of those forms, and build.roc looks
-	## the name up in each of its source directories.
+	## The app name in `examples/counter.roc`, `counter.roc` or `counter`,
+	## and for directory examples in `examples/todomvc`, `examples/todomvc/`
+	## or `examples/todomvc/app.roc`: the last path segment that is not
+	## `app.roc`, without the `.roc`. build.roc and watch.roc both take an
+	## app in any of those forms, and build.roc looks the name up in each of
+	## its source directories.
 	example_name : Str -> Str
 	example_name = |arg| {
-		base = match arg.split_last("/") {
+		trimmed = arg.drop_suffix("/").drop_suffix("/app.roc")
+		base = match trimmed.split_last("/") {
 			Ok(split) => split.after
-			Err(_) => arg
+			Err(_) => trimmed
 		}
 		base.drop_suffix(".roc")
 	}

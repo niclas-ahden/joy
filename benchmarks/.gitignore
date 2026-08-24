@@ -1,0 +1,5 @@
+# The tooling is tracked. Measurement data stays local: the numbers are one
+# machine's under one governor setup and comparable only to each other.
+history.jsonl
+HISTORY.md
+runs/

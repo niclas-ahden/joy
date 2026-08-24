@@ -1,9 +1,10 @@
 name: Main
 
-# Every push to main. This is the only workflow allowed to build roc from
-# source. It warms the binary cache and then runs the same suite a PR runs.
-# Everything else only reads from that cache. Slow right after the roc-src
-# pin moves, then a cache hit until it moves again.
+# Every push to main. This is the only workflow that deliberately builds roc
+# from source to warm the binary cache, then runs the same suite a PR runs.
+# The other workflows expect cache hits (a cold cache still makes any of
+# them build from source, the setup action warns when that happens). Slow
+# right after the roc-src pin moves, then a cache hit until it moves again.
 
 on:
   push:

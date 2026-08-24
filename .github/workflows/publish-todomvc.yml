@@ -1,0 +1,109 @@
+name: Publish the TodoMVC starter
+
+# When a release is published, push examples/todomvc to
+# niclas-ahden/joy-todomvc with its platform line pointed at the released
+# bundle. The starter repo is a published copy: it is developed and tested in
+# this repo, and the release gate already drove its whole suite against the
+# drafted bundle, so this workflow only assembles, sanity-builds and pushes.
+#
+# Needs the TODOMVC_PUSH_TOKEN secret: a fine-grained token with contents
+# read and write on niclas-ahden/joy-todomvc.
+
+on:
+  release:
+    types: [published]
+  # Re-publish an existing release: pick its tag as the ref when dispatching.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-todomvc
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Push the starter to joy-todomvc
+    runs-on: ubuntu-24.04
+    steps:
+      # First, so a missing secret is one clear line instead of a failed
+      # push at the end.
+      - name: Require the push token
+        env:
+          TOKEN: ${{ secrets.TODOMVC_PUSH_TOKEN }}
+        run: |
+          [ -n "$TOKEN" ] || {
+            echo "error: the TODOMVC_PUSH_TOKEN secret is missing. Create a fine-grained token with contents read/write on niclas-ahden/joy-todomvc and add it to this repo's secrets." >&2
+            exit 1
+          }
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+
+      - id: setup
+        uses: ./.github/actions/setup
+        with:
+          roc: pinned
+          github-token: ${{ github.token }}
+
+      # git archive, so only tracked files travel: no build artifacts, no
+      # local litter.
+      - name: Assemble the starter against the released bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ github.event.release.tag_name || github.ref_name }}"
+
+          archive=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets \
+                      -q '.assets[].name | select(endswith(".tar.zst"))')
+          [ -n "$archive" ] && [ "$(wc -l <<<"$archive")" -eq 1 ] || {
+            echo "error: expected exactly one .tar.zst asset on $tag, got: '$archive'" >&2
+            exit 1
+          }
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/$archive"
+
+          mkdir staging
+          git archive HEAD examples/todomvc | tar -x --strip-components=2 -C staging
+
+          sed -i "s|\"\.\./\.\./platform/main\.roc\"|\"$url\"|" staging/app.roc
+          # A rewrite that silently matched nothing would publish a starter
+          # pointing at a platform directory its users do not have.
+          grep -q "platform \"$url\"" staging/app.roc || {
+            echo "error: the platform rewrite matched nothing in app.roc" >&2
+            exit 1
+          }
+
+      # roc downloads, hash-checks and unbundles the published asset itself,
+      # exactly like a user's first build, and build.roc copies runtime.js
+      # out of the package cache. Proves the published URL, not the draft.
+      - name: Build the starter against the published bundle
+        run: ${{ steps.setup.outputs.prefix }} sh -c 'cd staging && ./build.roc'
+
+      - name: Push to niclas-ahden/joy-todomvc
+        env:
+          TOKEN: ${{ secrets.TODOMVC_PUSH_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ github.event.release.tag_name || github.ref_name }}"
+
+          # The verification build's outputs are gitignored in the starter
+          # anyway, but leave nothing to chance.
+          rm -f staging/www/app.wasm staging/www/runtime.js
+
+          git clone "https://x-access-token:${TOKEN}@github.com/niclas-ahden/joy-todomvc" target
+          find target -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} +
+          cp -a staging/. target/
+
+          cd target
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "joy-todomvc is already up to date"
+          else
+            git commit -m "Update to Joy $tag"
+            git push
+          fi
