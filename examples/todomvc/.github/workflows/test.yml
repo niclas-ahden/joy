@@ -1,7 +1,8 @@
 name: Test
 
 # Run the browser tests on every push, with the Roc compiler the flake pins.
-# Testing against the latest Roc nightly is test-nightly-roc.yml's job.
+# Testing against the latest Roc nightly happens in the Joy repo, which also
+# moves the README's recommended nightly forward when it passes.
 
 on:
   push:

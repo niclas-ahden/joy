@@ -2,8 +2,8 @@ name: Test latest Joy release on latest nightly Roc
 
 # Every morning, test the latest published Joy bundle, by its real URL, on
 # the newest Roc nightly. Green moves the recommendation forward in the
-# README and in that release's notes. Red means we adapt to Roc or report a
-# bug.
+# READMEs (here and in the published joy-todomvc starter) and in that
+# release's notes. Red means we adapt to Roc or report a bug.
 #
 # Speed only, because dev and size must not hold back a recommendation.
 # Publishing does not trigger this. The release workflow already tested that
@@ -18,8 +18,8 @@ on:
 permissions:
   contents: read
 
-# Queue instead of cancel. The run ends by pushing to README and editing the
-# release notes, and a cancel between the two leaves them disagreeing.
+# Queue instead of cancel. The run ends by pushing to the READMEs and editing
+# the release notes, and a cancel between the two leaves them disagreeing.
 concurrency:
   group: nightly-roc
   cancel-in-progress: false
@@ -77,10 +77,11 @@ jobs:
       ref: ${{ needs.resolve.outputs.joy }}
       bundle-url: ${{ needs.resolve.outputs.bundle }}
 
-  # Green on every leg: recommend this nightly in the README (checkout
-  # builders) and in the tested release's notes (bundle users).
+  # Green on every leg: recommend this nightly in the READMEs (the checkout,
+  # the TodoMVC starter in-repo and as published) and in the tested release's
+  # notes (bundle users).
   update-recommendation:
-    name: Name ${{ needs.resolve.outputs.nightly }} in the README and release notes
+    name: Name ${{ needs.resolve.outputs.nightly }} in the READMEs and release notes
     needs: [resolve, test]
     runs-on: ubuntu-24.04
     permissions:
@@ -90,28 +91,97 @@ jobs:
         with:
           ref: main
 
-      - name: Name this nightly in the README
+      - name: Name this nightly in the READMEs
         env:
           NIGHTLY: ${{ needs.resolve.outputs.nightly }}
         run: |
           set -euo pipefail
 
-          # Find the currently recommended nightly in the README
-          current=$(sed -n 's|.*/roc-lang/nightlies/releases/tag/\(nightly-[^)]*\)).*|\1|p' README.md | head -1)
-          [ -n "$current" ] || {
-            echo "error: no roc nightly link in README.md to update" >&2
-            exit 1
-          }
-          if [ "$current" = "$NIGHTLY" ]; then
-            echo "README already names $NIGHTLY"
+          # Both files name a nightly for people who install roc themselves:
+          # the root README for anyone building the checkout, the TodoMVC
+          # starter's for everyone who clones it as a template.
+          files="README.md examples/todomvc/README.md"
+
+          for file in $files; do
+            # Find the currently recommended nightly in this README
+            current=$(sed -n 's|.*/roc-lang/nightlies/releases/tag/\(nightly-[^)]*\)).*|\1|p' "$file" | head -1)
+            [ -n "$current" ] || {
+              echo "error: no roc nightly link in $file to update" >&2
+              exit 1
+            }
+            if [ "$current" = "$NIGHTLY" ]; then
+              echo "$file already names $NIGHTLY"
+              continue
+            fi
+
+            # The tag is both the link text and the URL, so replace it wherever
+            # it appears and any wording around it survives.
+            sed -i "s|$current|$NIGHTLY|g" "$file"
+            if git diff --quiet "$file"; then
+              echo "error: rewrite of $file changed nothing" >&2
+              exit 1
+            fi
+            echo "$file now recommends $NIGHTLY (was $current)"
+          done
+
+          # One README may lag the other, so commit whatever actually moved.
+          if git diff --quiet; then
+            echo "every README already names $NIGHTLY"
             exit 0
           fi
 
-          # The tag is both the link text and the URL, so replace it wherever
-          # it appears and any wording around it survives.
+          git config user.name 'GitHub Actions'
+          git config user.email ''
+          git add $files
+          git commit -m "README: Update recommended Roc to $NIGHTLY"
+          # main may have moved since checkout, replay this one commit on top
+          # rather than failing the push.
+          git pull --rebase origin main
+          git push
+
+      # The published starter is a copy of examples/todomvc with no nightly
+      # CI of its own (people clone it as a template and should not inherit
+      # our maintenance jobs), so its README moves from here. Only when it
+      # pins the bundle this run tested: a starter that lags the latest
+      # release must not get a claim proven against another bundle. The next
+      # publish brings the two back in sync.
+      - name: Name this nightly in the published starter's README
+        env:
+          NIGHTLY: ${{ needs.resolve.outputs.nightly }}
+          BUNDLE: ${{ needs.resolve.outputs.bundle }}
+          TOKEN: ${{ secrets.TODOMVC_PUSH_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          [ -n "$TOKEN" ] || {
+            echo "error: the TODOMVC_PUSH_TOKEN secret is missing. Create a fine-grained token with contents read/write on niclas-ahden/joy-todomvc and add it to this repo's secrets." >&2
+            exit 1
+          }
+
+          git clone --depth=1 "https://x-access-token:${TOKEN}@github.com/niclas-ahden/joy-todomvc" starter
+          cd starter
+
+          if ! grep -qF "platform \"$BUNDLE\"" app.roc; then
+            pinned=$(sed -n 's|.*platform "\(https://[^"]*\)".*|\1|p' app.roc)
+            echo "::warning::joy-todomvc pins $pinned, not the tested $BUNDLE, so its README keeps its current claim"
+            exit 0
+          fi
+
+          current=$(sed -n 's|.*/roc-lang/nightlies/releases/tag/\(nightly-[^)]*\)).*|\1|p' README.md | head -1)
+          if [ -z "$current" ]; then
+            # A pre-starter README without a pinned nightly link. The next
+            # publish ships a README that has one.
+            echo "::warning::no roc nightly link in the starter's README.md, nothing to update"
+            exit 0
+          fi
+          if [ "$current" = "$NIGHTLY" ]; then
+            echo "the starter's README already names $NIGHTLY"
+            exit 0
+          fi
+
           sed -i "s|$current|$NIGHTLY|g" README.md
           if git diff --quiet README.md; then
-            echo "error: README rewrite changed nothing" >&2
+            echo "error: rewrite of the starter's README.md changed nothing" >&2
             exit 1
           fi
 
@@ -119,11 +189,8 @@ jobs:
           git config user.email ''
           git add README.md
           git commit -m "README: Update recommended Roc to $NIGHTLY"
-          # main may have moved since checkout, replay this one commit on top
-          # rather than failing the push.
-          git pull --rebase origin main
           git push
-          echo "README now recommends $NIGHTLY (was $current)"
+          echo "the starter's README now recommends $NIGHTLY (was $current)"
 
       - name: Name this nightly in the release notes
         env:
