@@ -4,7 +4,7 @@
 
 ## Run it
 
-You need [`caddy`](https://caddyserver.com/docs/install) and Roc on your PATH (we recommend [`roc nightly-2026-09-01-db83307`](https://github.com/roc-lang/nightlies/releases/tag/nightly-2026-09-01-db83307)). Download the archive for your platform from that page, extract it, and put the `roc` binary on your PATH. If you use Nix, `nix develop` hands you both instead.
+You need [`caddy`](https://caddyserver.com/docs/install) and Roc on your PATH (we recommend [`roc nightly-2026-09-02-d2609e2`](https://github.com/roc-lang/nightlies/releases/tag/nightly-2026-09-02-d2609e2)). Download the archive for your platform from that page, extract it, and put the `roc` binary on your PATH. If you use Nix, `nix develop` hands you both instead.
 
 Then:
 
