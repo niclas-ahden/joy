@@ -101,7 +101,7 @@ $ nix develop # Oh, lord, have mercy! This is great!
 
 If you don't want to use Nix then please install:
 
-* [`roc nightly-2026-09-03-62fcb65`](https://github.com/roc-lang/nightlies/releases/tag/nightly-2026-09-03-62fcb65)
+* [`roc nightly-2026-09-04-c125b82`](https://github.com/roc-lang/nightlies/releases/tag/nightly-2026-09-04-c125b82)
 * `rustc` (v1.94 + `wasm32-unknown-unknown`)
 * `node` (v22)
 * `watchexec`
