@@ -18,9 +18,14 @@ TodoPage :: [].{
 	## own (`roc tests/add_test.roc`) targets the ./watch.roc dev server.
 	## Every server answers under /todomvc/, so one URL fits them all.
 	open! = |{}| {
+		browser_type = match Env.var_str!("JOY_BROWSER") ?? "chromium" {
+			"firefox" => Firefox
+			"webkit" => WebKit
+			_ => Chromium(DefaultChannel)
+		}
 		{ browser, page } = Playwright.launch_page_with!(
 			{ new: Cmd.new_str, spawn!: Cmd.spawn_leashed! },
-			{ timeout: TimeoutMilliseconds(10000) },
+			{ browser_type, timeout: TimeoutMilliseconds(10000) },
 		)?
 		watch_port = Env.var_str!("JOY_WATCH_PORT") ?? "8000"
 		base = Env.var_str!("JOY_E2E_URL") ?? "http://localhost:${watch_port}"

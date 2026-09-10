@@ -28,7 +28,7 @@ main! = |_args| {
 	port = Env.var_str!("JOY_WATCH_PORT") ?? "8000"
 
 	# ./build.roc once up front so that Joy's assets are in place when the server starts
-	build = Cmd.new_str("./build.roc").exec_exit_code!()
+	build = Cmd.new_str("roc").args_str(["./build.roc"]).exec_exit_code!()
 
 	build_code = match build {
 		Ok(code) => code

@@ -72,7 +72,7 @@ jobs:
       label: Pinned
       opts: '["speed"]'
       extras: true
-      e2e: linux
+      e2e: all
 
   # Informational, see tests.yml. A red leg here reddens the run but gates
   # nothing.
@@ -84,3 +84,40 @@ jobs:
       roc: '["pinned"]'
       label: Advisory
       opts: '["dev", "size"]'
+      e2e: all
+
+  # The nightly the README recommends, as on a pull request (see tests.yml):
+  # the no-Nix route, which is also the Windows one. Speed blocks, the other
+  # opt levels inform.
+  readme-nightly:
+    name: Resolve the nightly named in the README
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.readme.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: readme
+        run: |
+          set -euo pipefail
+          tag=$(sed -n 's|.*/roc-lang/nightlies/releases/tag/\(nightly-[^)]*\)).*|\1|p' README.md | head -1)
+          [ -n "$tag" ] || { echo "error: no roc nightly link in README.md" >&2; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "README names $tag"
+
+  nightly:
+    needs: readme-nightly
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: '["${{ needs.readme-nightly.outputs.tag }}"]'
+      label: README nightly
+      opts: '["speed"]'
+      e2e: all
+
+  nightly-opts:
+    needs: readme-nightly
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: '["${{ needs.readme-nightly.outputs.tag }}"]'
+      label: README nightly
+      opts: '["dev", "size"]'
+      e2e: all

@@ -2,8 +2,8 @@ name: Set up the Joy toolchain
 description: >
   Put roc, node and rustc on PATH by one of Joy's two routes: the flake's
   from-source compiler (`nix develop`) or a downloaded nightly (the README's
-  no-Nix route). Outputs the command prefix a leg must use, so the same
-  matrix covers both routes.
+  no-Nix route, and the only one on Windows, where Nix does not run). Outputs
+  the command prefix a leg must use, so the same matrix covers both routes.
 
 inputs:
   roc:
@@ -18,8 +18,8 @@ inputs:
     default: ''
   playwright:
     description: >
-      Also provide the `playwright` CLI and a Chromium. The devShell has
-      both, so this only acts on the nightly route.
+      Also provide the `playwright` CLI and its Chromium, Firefox and WebKit.
+      The devShell has all of them, so this only acts on the nightly route.
     required: false
     default: 'false'
 
@@ -98,6 +98,7 @@ runs:
           Linux-ARM64) asset=linux_arm64 ;;
           macOS-ARM64) asset=macos_apple_silicon ;;
           macOS-X64)   asset=macos_x86_64 ;;
+          Windows-X64) asset=windows_x86_64 ;;
           *)
             echo "error: no roc nightly asset for $RUNNER_OS-$RUNNER_ARCH" >&2
             exit 1
@@ -111,24 +112,38 @@ runs:
           exit 1
         }
 
-        curl -sSL -o roc_nightly.tar.gz "$url"
-        mkdir -p "$RUNNER_TEMP/roc"
-        tar -xzf roc_nightly.tar.gz --strip-components=1 -C "$RUNNER_TEMP/roc"
-        rm roc_nightly.tar.gz
-        echo "$RUNNER_TEMP/roc" >> "$GITHUB_PATH"
+        # RUNNER_TEMP is a backslash path on Windows, which neither this bash
+        # nor tar reads as one. Forward slashes work everywhere, in the PATH
+        # entry too.
+        dest="${RUNNER_TEMP//\\//}/roc"
+        mkdir -p "$dest"
+        if [ "$RUNNER_OS" = Windows ]; then
+          # The Windows nightly is a zip, and a runner's bash can resolve
+          # `tar` to MSYS's, which cannot read one.
+          curl -sSL -o roc_nightly.zip "$url"
+          powershell -NoProfile -NonInteractive -Command \
+            "Expand-Archive -LiteralPath 'roc_nightly.zip' -DestinationPath 'roc_nightly_unzipped' -Force"
+          mv roc_nightly_unzipped/*/* "$dest"/
+          rm -rf roc_nightly_unzipped roc_nightly.zip
+        else
+          curl -sSL -o roc_nightly.tar.gz "$url"
+          tar -xzf roc_nightly.tar.gz --strip-components=1 -C "$dest"
+          rm roc_nightly.tar.gz
+        fi
+        echo "$dest" >> "$GITHUB_PATH"
 
     # Keep in step with the devShell's playwright-test
     # (`nix develop -c playwright --version`).
-    - name: Install playwright and Chromium
+    - name: Install playwright and its browsers
       if: inputs.roc != 'pinned' && inputs.playwright == 'true'
       shell: bash
       run: |
         set -euo pipefail
         npm install -g playwright@1.61.1
         if [ "$RUNNER_OS" = Linux ]; then
-          playwright install --with-deps chromium
+          playwright install --with-deps chromium firefox webkit
         else
-          playwright install chromium
+          playwright install chromium firefox webkit
         fi
         playwright --version
 
@@ -148,25 +163,34 @@ runs:
           Linux-ARM64) asset=linux_arm64 ;;
           macOS-ARM64) asset=mac_arm64 ;;
           macOS-X64)   asset=mac_amd64 ;;
+          Windows-X64) asset=windows_amd64 ;;
           *)
             echo "error: no caddy asset for $RUNNER_OS-$RUNNER_ARCH" >&2
             exit 1
             ;;
         esac
 
+        # Windows ships as a zip, every other system as a tarball.
+        if [ "$RUNNER_OS" = Windows ]; then archive=zip; else archive=tar.gz; fi
         url=$(gh release view v2.11.4 --repo caddyserver/caddy --json assets \
-                -q ".assets[] | select(.name | endswith(\"${asset}.tar.gz\")) | .url")
+                -q ".assets[] | select(.name | endswith(\"${asset}.${archive}\")) | .url")
         [ -n "$url" ] || {
-          echo "error: no ${asset}.tar.gz asset on caddy v2.11.4" >&2
+          echo "error: no ${asset}.${archive} asset on caddy v2.11.4" >&2
           exit 1
         }
 
-        curl -sSL -o caddy.tar.gz "$url"
-        mkdir -p "$RUNNER_TEMP/caddy"
-        tar -xzf caddy.tar.gz -C "$RUNNER_TEMP/caddy" caddy
-        rm caddy.tar.gz
-        echo "$RUNNER_TEMP/caddy" >> "$GITHUB_PATH"
-        "$RUNNER_TEMP/caddy/caddy" version
+        dest="${RUNNER_TEMP//\\//}/caddy"
+        mkdir -p "$dest"
+        curl -sSL -o "caddy.$archive" "$url"
+        if [ "$archive" = zip ]; then
+          powershell -NoProfile -NonInteractive -Command \
+            "Expand-Archive -LiteralPath 'caddy.zip' -DestinationPath '$dest' -Force"
+        else
+          tar -xzf caddy.tar.gz -C "$dest" caddy
+        fi
+        rm "caddy.$archive"
+        echo "$dest" >> "$GITHUB_PATH"
+        "$dest"/caddy version
 
     # ----------------------------------------------------------------- both
     - name: Report the prefix and the compiler

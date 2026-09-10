@@ -71,6 +71,7 @@ platform ""
 				"dealloc_miss",
 				"lazy_forces",
 				"lazy_entries",
+				"patch_ops",
 				"bench_phase_ms",
 			],
 		},

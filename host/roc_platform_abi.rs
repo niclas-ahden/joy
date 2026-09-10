@@ -1122,6 +1122,13 @@ pub struct CmdType36CryptoDigestFilePayload {
     pub _1: u32,
 }
 
+/// Payload struct for Focus variant.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CmdType36FocusPayload {
+    pub _0: RocStr,
+}
+
 /// Payload struct for HttpSend variant.
 /// Fields in layout order (sort key desc, name asc): the U64 timeout leads.
 #[repr(C)]
@@ -1218,16 +1225,17 @@ pub enum CmdType36Tag {
     ConsoleLog = 1,
     CryptoDigest = 2,
     CryptoDigestFile = 3,
-    HttpSend = 4,
-    HttpSendFile = 5,
-    Navigate = 6,
-    PortSend = 7,
-    PushUrl = 8,
-    ReplaceUrl = 9,
-    ShowModal = 10,
-    TimeAfter = 11,
-    TimeCancel = 12,
-    TimeDebounce = 13,
+    Focus = 4,
+    HttpSend = 5,
+    HttpSendFile = 6,
+    Navigate = 7,
+    PortSend = 8,
+    PushUrl = 9,
+    ReplaceUrl = 10,
+    ShowModal = 11,
+    TimeAfter = 12,
+    TimeCancel = 13,
+    TimeDebounce = 14,
 }
 
 /// Tag union: Cmd
@@ -1245,6 +1253,7 @@ pub union CmdType36Payload {
     pub console_log: core::mem::ManuallyDrop<CmdType36ConsoleLogPayload>,
     pub crypto_digest: core::mem::ManuallyDrop<CmdType36CryptoDigestPayload>,
     pub crypto_digest_file: core::mem::ManuallyDrop<CmdType36CryptoDigestFilePayload>,
+    pub focus: core::mem::ManuallyDrop<CmdType36FocusPayload>,
     pub http_send: core::mem::ManuallyDrop<CmdType36HttpSendPayload>,
     pub http_send_file: core::mem::ManuallyDrop<CmdType36HttpSendFilePayload>,
     pub navigate: core::mem::ManuallyDrop<CmdType36NavigatePayload>,
@@ -1567,6 +1576,13 @@ pub struct CmdType66CryptoDigestFilePayload {
     pub _1: u32,
 }
 
+/// Payload struct for Focus variant.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CmdType66FocusPayload {
+    pub _0: RocStr,
+}
+
 /// Payload struct for HttpSend variant.
 /// Fields in layout order (sort key desc, name asc): the U64 timeout leads.
 #[repr(C)]
@@ -1663,16 +1679,17 @@ pub enum CmdType66Tag {
     ConsoleLog = 1,
     CryptoDigest = 2,
     CryptoDigestFile = 3,
-    HttpSend = 4,
-    HttpSendFile = 5,
-    Navigate = 6,
-    PortSend = 7,
-    PushUrl = 8,
-    ReplaceUrl = 9,
-    ShowModal = 10,
-    TimeAfter = 11,
-    TimeCancel = 12,
-    TimeDebounce = 13,
+    Focus = 4,
+    HttpSend = 5,
+    HttpSendFile = 6,
+    Navigate = 7,
+    PortSend = 8,
+    PushUrl = 9,
+    ReplaceUrl = 10,
+    ShowModal = 11,
+    TimeAfter = 12,
+    TimeCancel = 13,
+    TimeDebounce = 14,
 }
 
 /// Tag union: Cmd
@@ -1690,6 +1707,7 @@ pub union CmdType66Payload {
     pub console_log: core::mem::ManuallyDrop<CmdType66ConsoleLogPayload>,
     pub crypto_digest: core::mem::ManuallyDrop<CmdType66CryptoDigestPayload>,
     pub crypto_digest_file: core::mem::ManuallyDrop<CmdType66CryptoDigestFilePayload>,
+    pub focus: core::mem::ManuallyDrop<CmdType66FocusPayload>,
     pub http_send: core::mem::ManuallyDrop<CmdType66HttpSendPayload>,
     pub http_send_file: core::mem::ManuallyDrop<CmdType66HttpSendFilePayload>,
     pub navigate: core::mem::ManuallyDrop<CmdType66NavigatePayload>,
@@ -1793,6 +1811,13 @@ pub struct CmdType84CryptoDigestFilePayload {
     pub _1: u32,
 }
 
+/// Payload struct for Focus variant.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CmdType84FocusPayload {
+    pub _0: RocStr,
+}
+
 /// Payload struct for HttpSend variant.
 /// Fields in layout order (sort key desc, name asc): the U64 timeout leads.
 #[repr(C)]
@@ -1889,16 +1914,17 @@ pub enum CmdType84Tag {
     ConsoleLog = 1,
     CryptoDigest = 2,
     CryptoDigestFile = 3,
-    HttpSend = 4,
-    HttpSendFile = 5,
-    Navigate = 6,
-    PortSend = 7,
-    PushUrl = 8,
-    ReplaceUrl = 9,
-    ShowModal = 10,
-    TimeAfter = 11,
-    TimeCancel = 12,
-    TimeDebounce = 13,
+    Focus = 4,
+    HttpSend = 5,
+    HttpSendFile = 6,
+    Navigate = 7,
+    PortSend = 8,
+    PushUrl = 9,
+    ReplaceUrl = 10,
+    ShowModal = 11,
+    TimeAfter = 12,
+    TimeCancel = 13,
+    TimeDebounce = 14,
 }
 
 /// Tag union: Cmd
@@ -1916,6 +1942,7 @@ pub union CmdType84Payload {
     pub console_log: core::mem::ManuallyDrop<CmdType84ConsoleLogPayload>,
     pub crypto_digest: core::mem::ManuallyDrop<CmdType84CryptoDigestPayload>,
     pub crypto_digest_file: core::mem::ManuallyDrop<CmdType84CryptoDigestFilePayload>,
+    pub focus: core::mem::ManuallyDrop<CmdType84FocusPayload>,
     pub http_send: core::mem::ManuallyDrop<CmdType84HttpSendPayload>,
     pub http_send_file: core::mem::ManuallyDrop<CmdType84HttpSendFilePayload>,
     pub navigate: core::mem::ManuallyDrop<CmdType84NavigatePayload>,
@@ -2174,6 +2201,13 @@ pub struct CmdType114CryptoDigestFilePayload {
     pub _1: u32,
 }
 
+/// Payload struct for Focus variant.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CmdType114FocusPayload {
+    pub _0: RocStr,
+}
+
 /// Payload struct for HttpSend variant.
 /// Fields in layout order (sort key desc, name asc): the U64 timeout leads.
 #[repr(C)]
@@ -2270,16 +2304,17 @@ pub enum CmdType114Tag {
     ConsoleLog = 1,
     CryptoDigest = 2,
     CryptoDigestFile = 3,
-    HttpSend = 4,
-    HttpSendFile = 5,
-    Navigate = 6,
-    PortSend = 7,
-    PushUrl = 8,
-    ReplaceUrl = 9,
-    ShowModal = 10,
-    TimeAfter = 11,
-    TimeCancel = 12,
-    TimeDebounce = 13,
+    Focus = 4,
+    HttpSend = 5,
+    HttpSendFile = 6,
+    Navigate = 7,
+    PortSend = 8,
+    PushUrl = 9,
+    ReplaceUrl = 10,
+    ShowModal = 11,
+    TimeAfter = 12,
+    TimeCancel = 13,
+    TimeDebounce = 14,
 }
 
 /// Tag union: Cmd
@@ -2297,6 +2332,7 @@ pub union CmdType114Payload {
     pub console_log: core::mem::ManuallyDrop<CmdType114ConsoleLogPayload>,
     pub crypto_digest: core::mem::ManuallyDrop<CmdType114CryptoDigestPayload>,
     pub crypto_digest_file: core::mem::ManuallyDrop<CmdType114CryptoDigestFilePayload>,
+    pub focus: core::mem::ManuallyDrop<CmdType114FocusPayload>,
     pub http_send: core::mem::ManuallyDrop<CmdType114HttpSendPayload>,
     pub http_send_file: core::mem::ManuallyDrop<CmdType114HttpSendFilePayload>,
     pub navigate: core::mem::ManuallyDrop<CmdType114NavigatePayload>,

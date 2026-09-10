@@ -19,6 +19,13 @@ main! = |_args| {
 	edit_input = "${TodoPage.row(1)} .edit"
 	assert!(page.find(edit_input).has_value("Buy milk")) ? |e| EditShouldStartFromTheTitle(Str.inspect(e))
 
+	# The field has the keyboard already: what is typed next lands in it
+	# without a click.
+	focused = page.evaluate!("document.activeElement ? document.activeElement.className : ''")?
+	Assert.eq(focused, "edit") ? |e| EditFieldShouldBeFocused(Str.inspect(e))
+	page.key_type_targetless!("!")?
+	assert!(page.find(edit_input).has_value("Buy milk!")) ? |e| TypingShouldLandInTheEditField(Str.inspect(e))
+
 	# has_text normalizes whitespace on both sides, so it cannot see a
 	# missing trim. Read the exact text instead.
 	page.find(edit_input).fill!("  Buy oat milk  ")?

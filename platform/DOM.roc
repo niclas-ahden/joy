@@ -1,7 +1,13 @@
-## Browser navigation and native dialogs. These are one-way effects with no
+## Browser navigation, focus, and native dialogs. These are one-way effects with no
 ## response: return them from `init` or `update` (e.g.
 ## `(model, [DOM.push_url("?q=1")])`) and the host performs them after
 ## the paint. Reacting to the user's Back/Forward buttons is a subscription.
+##
+## The effects addressed by a CSS selector (`focus`, `show_modal`,
+## `close_modal`) do nothing when the selector matches no element. That is
+## deliberate, so an app can focus a field only some pages have, and there
+## is no error to handle. The runtime does log a console warning naming the
+## effect and the selector, which is how a typo shows up in development.
 ##
 ## The three ways to change the URL:
 ##
@@ -29,6 +35,16 @@ DOM := [].{
 	## element's `close()`). No-op when it is not open.
 	close_modal : Str -> Effect(msg)
 	close_modal = |selector| Effect.close_modal(selector)
+
+	## Give keyboard focus to the element matching this CSS selector (the
+	## element's `focus()`). Runs after the paint, so the selector can name
+	## an element the same update just rendered or revealed: return
+	## `(model_with_editing, [DOM.focus(".edit")])` and the field is open and
+	## focused before the user's next keystroke. A text field gets its caret
+	## at the end, so typing continues the value. No-op when the selector
+	## matches nothing or the element cannot take focus (hidden, disabled).
+	focus : Str -> Effect(msg)
+	focus = |selector| Effect.focus(selector)
 
 	## A full page load. The app re-initialises, so the model is lost.
 	navigate : Str -> Effect(msg)
@@ -68,6 +84,13 @@ expect {
 expect {
 	match DOM.close_modal("#confirm") {
 		CloseModal(selector) => selector == "#confirm"
+		_ => Bool.False
+	}
+}
+
+expect {
+	match DOM.focus("#name") {
+		Focus(selector) => selector == "#name"
 		_ => Bool.False
 	}
 }

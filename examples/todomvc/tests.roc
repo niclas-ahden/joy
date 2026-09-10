@@ -29,7 +29,7 @@ import pf.Url
 main! : List(OsStr) => Try({}, _)
 main! = |forwarded| {
 	# Fresh wasm before any server starts serving www/
-	build!("./build.roc")?
+	build!("roc", ["./build.roc"])?
 
 	# systemd scope when available (ensures all descendant processes die with
 	# the run, browsers included). Fall back to a plain spawn in CI where no
@@ -62,9 +62,9 @@ main! = |forwarded| {
 
 # Run the build script with inherited stdio, so its diagnostics land in the
 # terminal. A failed build means there is nothing to test.
-build! : Str => Try({}, [BuildFailed, ..e])
-build! = |script|
-	match Cmd.new_str(script).exec_exit_code!() {
+build! : Str, List(Str) => Try({}, [BuildFailed, ..e])
+build! = |program, args|
+	match Cmd.new_str(program).args_str(args).exec_exit_code!() {
 		Ok(0) => Ok({})
 		_ => Err(BuildFailed)
 	}
@@ -94,7 +94,7 @@ smoke_watch! : {} => Try({}, _)
 smoke_watch! = |{}| {
 	Stdout.line!("Smoke testing ./watch.roc on port ${smoke_port}...")?
 
-	watch = Cmd.new_str("./watch.roc")
+	watch = Cmd.new_str("roc").args_str(["./watch.roc"])
 		.env_str("JOY_WATCH_PORT", smoke_port)
 		.spawn_leashed!() ? |e| CouldNotStartWatch(Str.inspect(e))
 

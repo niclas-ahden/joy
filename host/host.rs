@@ -1203,6 +1203,37 @@ pub extern "C" fn lazy_entries() -> u32 {
     unsafe { LAZY_LEN as u32 }
 }
 
+// Lifetime counts of the patch ops the differ emitted, one slot per kind.
+// Exported like the lazy counters so a harness can assert how much work a
+// dispatch decided to do, not only what the DOM looks like afterwards: a
+// text edit that emits a REPLACE, or a stable list that emits a REORDER,
+// fails a work-budget assertion while the rendered tree still looks right.
+// One increment per op, so cheap enough for every build.
+static mut PATCH_OPS: [u32; 5] = [0; 5];
+const PATCH_SET_TEXT: usize = 0;
+const PATCH_REPLACE: usize = 1;
+const PATCH_ATTRS: usize = 2;
+const PATCH_REORDER: usize = 3;
+const PATCH_REFRESH: usize = 4;
+
+#[inline]
+unsafe fn count_patch(kind: usize) {
+    let slot = (core::ptr::addr_of_mut!(PATCH_OPS) as *mut u32).add(kind);
+    *slot += 1;
+}
+
+/// How many patch ops of one kind the differ has emitted since boot: 0
+/// SET_TEXT, 1 REPLACE, 2 PATCH_ATTRS, 3 REORDER, 4 REFRESH_HANDLERS. Any
+/// other kind reads 0.
+#[no_mangle]
+pub extern "C" fn patch_ops(kind: u32) -> u32 {
+    let kind = kind as usize;
+    if kind >= 5 {
+        return 0;
+    }
+    unsafe { *(core::ptr::addr_of!(PATCH_OPS) as *const u32).add(kind) }
+}
+
 /// Reset the per-render lazy bookkeeping. Runs before the counting pass
 /// and the diff: clear every live mark (the diff and, if needed, the
 /// sweep's walk set them again).
@@ -1674,23 +1705,6 @@ unsafe fn attr_eq(a: usize, b: usize) -> bool {
     }
 }
 
-/// Is the attribute at `a` one whose set the runtime mirrors into a live
-/// DOM property (`value`, `checked`, `selected`)? Those properties drift
-/// from the model between renders (the user types, the browser toggles),
-/// so equality with the previous render proves nothing: only a fresh set
-/// pins the property back to what the model says. Every diff re-emits
-/// them.
-unsafe fn is_live_prop(a: usize) -> bool {
-    let (p, l) = str_at(a);
-    let name: &[u8] = match l {
-        5 => b"value",
-        7 => b"checked",
-        8 => b"selected",
-        _ => return false,
-    };
-    bytes_eq_len(p as usize, name.as_ptr() as usize, l as usize)
-}
-
 // Outcome of comparing two elements' attribute lists for the patch decision.
 const ATTRS_SAME: u32 = 0; // nothing to emit
 const ATTRS_REFRESH: u32 = 1; // only the handler boxes changed: refresh their ids
@@ -1704,8 +1718,9 @@ const ATTRS_CHANGED: u32 = 2; // anything else: full attribute patch
 /// attribute rewrite that would otherwise run for every handler-carrying
 /// element on every diff. File and visibility handlers stay on the full-patch
 /// path: they are rare, and their setup (input wiring, observers) lives in
-/// the runtime's attribute code. So do live-prop attributes (see
-/// is_live_prop), whose DOM property needs a re-pin every render.
+/// the runtime's attribute code. `value` and `checked` are ordinary
+/// attributes here: the runtime pins their DOM properties after the event
+/// that changed them (see restoreControl), so an unchanged one emits nothing.
 unsafe fn attrs_delta(old_off: usize, new_off: usize) -> u32 {
     let old_count = read_u32(old_off + ATTRS_OFFSET + LIST_LEN_OFFSET) as usize;
     let new_count = read_u32(new_off + ATTRS_OFFSET + LIST_LEN_OFFSET) as usize;
@@ -1724,9 +1739,7 @@ unsafe fn attrs_delta(old_off: usize, new_off: usize) -> u32 {
         }
         match disc {
             ATTR_STRING | ATTR_BOOLEAN => {
-                // A live-prop attribute forces the full patch even when
-                // unchanged, so its property re-pin is emitted.
-                if !attr_eq(a, b) || is_live_prop(b) {
+                if !attr_eq(a, b) {
                     return ATTRS_CHANGED;
                 }
             }
@@ -1884,8 +1897,7 @@ unsafe fn emit_attr_diff(old_off: usize, new_off: usize) {
                 // The DOM's state for a name is whatever was set for it
                 // LAST, so compare against the last old attribute of that
                 // name, not any of them (duplicate names within one list
-                // are legal, if pointless). Live props always re-emit,
-                // see is_live_prop.
+                // are legal, if pointless).
                 let mut same = false;
                 for i in (0..old_n).rev() {
                     let a = old_attrs + i * ATTR_STRIDE;
@@ -1895,7 +1907,7 @@ unsafe fn emit_attr_diff(old_off: usize, new_off: usize) {
                         break;
                     }
                 }
-                if !same || is_live_prop(b) {
+                if !same {
                     emit_attr(b);
                 }
             }
@@ -1925,6 +1937,7 @@ unsafe fn key_lists_eq(a: usize, b: usize) -> bool {
 /// Emit the compact handler-id refresh for an element whose attributes are
 /// unchanged apart from its freshly boxed handlers (see `attrs_delta`).
 unsafe fn emit_refresh_handlers(my: usize, new_off: usize) {
+    count_patch(PATCH_REFRESH);
     push(OP_REFRESH_HANDLERS);
     push(my as u32);
     let count_pos = CMD_LEN;
@@ -1986,6 +1999,7 @@ unsafe fn bytes_eq_len(a: usize, b: usize, len: usize) -> bool {
 /// Emit a REPLACE of node `idx` with a freshly built subtree, backpatching the
 /// subtree's word count so the runtime knows how many words to consume.
 unsafe fn replace(idx: usize, new_off: usize) {
+    count_patch(PATCH_REPLACE);
     push(OP_REPLACE);
     push(idx as u32);
     let len_pos = CMD_LEN;
@@ -2112,6 +2126,7 @@ unsafe fn diff(old_off: usize, new_off: usize, my: usize) {
     if new_disc == TAG_TEXT {
         if !str_eq(old_off, new_off) {
             let (ptr, len) = str_at(new_off);
+            count_patch(PATCH_SET_TEXT);
             push(OP_SET_TEXT);
             push(my as u32);
             push(ptr);
@@ -2153,6 +2168,7 @@ unsafe fn diff(old_off: usize, new_off: usize, my: usize) {
         ATTRS_SAME => {}
         ATTRS_REFRESH => emit_refresh_handlers(my, new_off),
         _ => {
+            count_patch(PATCH_ATTRS);
             push(OP_PATCH_ATTRS);
             push(my as u32);
             let len_pos = CMD_LEN;
@@ -2420,6 +2436,7 @@ unsafe fn diff_children(parent_idx: usize, old_off: usize, new_off: usize) {
                 kept += 1;
             }
         }
+        count_patch(PATCH_REORDER);
         push(OP_REORDER);
         push(parent_idx as u32);
         push(old_span as u32);
@@ -2626,6 +2643,7 @@ unsafe fn str_from_parts(ptr: usize, len: usize) -> RocStr {
 //   DIGEST:    [19, cb, alg_ptr, alg_len, data_ptr, data_len]
 //   DIGEST FILE: [20, cb, alg_ptr, alg_len, file_id,
 //                  start_lo, start_hi, len_lo, len_hi]
+//   FOCUS:     [21, sel_ptr, sel_len]
 // U64s cross as two u32 words, low first. Strings and bytes are pushed as
 // host-owned copies (the effect list that produced them is dropped right
 // after queuing); `effects_clear` frees them once JS has decoded the batch.
@@ -2635,6 +2653,7 @@ const CMD_CLOSE_MODAL: u8 = CmdTag::CloseModal as u8;
 const CMD_CONSOLE_LOG: u8 = CmdTag::ConsoleLog as u8;
 const CMD_CRYPTO_DIGEST: u8 = CmdTag::CryptoDigest as u8;
 const CMD_CRYPTO_DIGEST_FILE: u8 = CmdTag::CryptoDigestFile as u8;
+const CMD_FOCUS: u8 = CmdTag::Focus as u8;
 const CMD_HTTP_SEND: u8 = CmdTag::HttpSend as u8;
 const CMD_HTTP_SEND_FILE: u8 = CmdTag::HttpSendFile as u8;
 const CMD_NAVIGATE: u8 = CmdTag::Navigate as u8;
@@ -2723,6 +2742,7 @@ const EFFECT_TIME_CANCEL: u32 = 17; // [17, key_ptr, key_len]
 const EFFECT_HTTP_FILE: u32 = 18; // [18, cb, method, url, file_id, start x2, len x2, n_headers, (k, v) * n]
 const EFFECT_CRYPTO_DIGEST: u32 = 19; // [19, cb, alg_ptr, alg_len, data_ptr, data_len]
 const EFFECT_CRYPTO_DIGEST_FILE: u32 = 20; // [20, cb, alg, file_id, start x2, len x2]
+const EFFECT_FOCUS: u32 = 21; // [21, sel_ptr, sel_len]
 
 static mut EFFECTS_PTR: usize = 0;
 static mut EFFECTS_CAP: usize = 0;
@@ -2838,6 +2858,10 @@ unsafe fn run_cmds<T>(cmds: &abi::RocList<T>) {
             }
             CMD_CLOSE_MODAL => {
                 push_effect(EFFECT_CLOSE_MODAL);
+                push_effect_str(c); // CSS selector
+            }
+            CMD_FOCUS => {
+                push_effect(EFFECT_FOCUS);
                 push_effect_str(c); // CSS selector
             }
             CMD_TIME_CANCEL => {
@@ -3451,7 +3475,8 @@ pub extern "C" fn effects_clear() {
                 i += 5; // file id, start (2 words), len (2 words)
             } else {
                 // EFFECT_NAVIGATE / EFFECT_PUSH_URL / EFFECT_REPLACE_URL /
-                // EFFECT_SHOW_MODAL / EFFECT_CLOSE_MODAL / EFFECT_TIME_CANCEL
+                // EFFECT_SHOW_MODAL / EFFECT_CLOSE_MODAL / EFFECT_FOCUS /
+                // EFFECT_TIME_CANCEL
                 i = free_effect_copy(w, i); // url / selector / key
             }
         }

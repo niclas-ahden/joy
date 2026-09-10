@@ -10,25 +10,15 @@
 // node tests/check_lazy_padding.mjs
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
-import { El, fakeDom } from './fakedom.mjs';
+import { El, byId, fakeDom } from './fakedom.mjs';
 import { expect, wasmPath } from './harness.mjs';
 
 const bytes = readFileSync(wasmPath('lazy_padding'));
 
-function findId(node, id) {
-  if (!(node instanceof El)) return null;
-  if (node.attrs?.get('id') === id) return node;
-  for (const c of node.children) {
-    const hit = findId(c, id);
-    if (hit) return hit;
-  }
-  return null;
-}
-
 const root = new El('#root');
 const app = await mount({ wasm: bytes, root, flags: '', dom: fakeDom });
 const ex = app.instance.exports;
-const tick = findId(root, 'tick').listeners;
+const tick = byId(root, 'tick').listeners;
 const groups = ['tuple-bool', 'record-bool', 'u8-mix'];
 
 // Warm renders: one so every thunk has a retained entry, and two more to
@@ -40,11 +30,11 @@ for (let i = 0; i < 3; i++) tick.click();
 const entries = ex.lazy_entries();
 const forces = ex.lazy_forces();
 const before = {};
-for (const g of groups) before[g] = [...findId(root, g).children];
+for (const g of groups) before[g] = [...byId(root, g).children];
 for (let i = 0; i < 5; i++) tick.click();
 expect('unchanged captures never re-force', ex.lazy_forces(), forces);
 expect('the retained entries all survive', ex.lazy_entries(), entries);
 for (const g of groups) {
-  const now = findId(root, g).children;
+  const now = byId(root, g).children;
   expect(`${g}: the skipped DOM nodes survive`, now.every((n, i) => n === before[g][i]), true);
 }

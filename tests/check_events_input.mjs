@@ -3,17 +3,8 @@
 // Run from the repo root: node tests/check_events_input.mjs
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
-import { El, fakeDom, find, findTag, htmlBare } from './fakedom.mjs';
+import { El, byRole, fakeDom, find, findTag, htmlBare } from './fakedom.mjs';
 import { expect, wasmPath } from './harness.mjs';
-
-// All elements matching pred, pre-order.
-const collect = (node, pred, out = []) => {
-  if (node instanceof El) {
-    if (pred(node)) out.push(node);
-    for (const c of node.children) collect(c, pred, out);
-  }
-  return out;
-};
 
 // Spy on console.log to assert the Console.log command round trip.
 const logged = [];
@@ -25,7 +16,7 @@ await mount({ wasm: readFileSync(wasmPath('events_input')), root, flags: '', dom
 console.log = realLog;
 
 expect('heading rendered', find(root, 'Dear diary') !== null, true);
-const ta = findTag(root, 'textarea');
+const ta = byRole(root, 'textbox');
 expect('textarea attrs', `${ta.attrs.get('rows')},${ta.attrs.get('cols')}`, '10,30');
 
 // Fire input events with values; the boxed decoder turns them into Msgs.
@@ -52,7 +43,7 @@ expect('on_submit dispatched the msg', htmlBare(root).includes('Saved: Dear diar
 
 // on_check: the change event delivers the checkbox's live checked state as a
 // typed Bool, and the view re-renders from it.
-const cb = collect(root, (n) => n.tag === 'input' && n.attrs.get('type') === 'checkbox')[0];
+const cb = byRole(root, 'checkbox');
 expect('checkbox starts unchecked', cb.checked ?? false, false);
 cb.checked = true;
 cb.listeners.change({ target: cb });

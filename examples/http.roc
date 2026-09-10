@@ -18,51 +18,10 @@ Msg : [
 	GotQuote(Try(Http.Response, [HttpErr([Timeout, NetworkError])])),
 ]
 
-# No subscriptions
 subscriptions = |_model| []
 
 init : Str -> (Model, List(Effect(Msg)))
 init = |_| ({ quote: NotRequestedYet }, [])
-
-update : Model, Msg -> (Model, List(Effect(Msg)))
-update = |_model, msg|
-	match msg {
-		UserRequestedQuote => {
-			(
-				{ quote: Loading },
-				[
-					Console.log("Requesting a quote..."),
-					Http.get(
-						"https://ron-swanson-quotes.herokuapp.com/v2/quotes",
-						|result| GotQuote(result),
-					),
-				],
-			)
-		}
-
-		GotQuote(Ok(resp)) =>
-			if resp.status == 200 {
-				# The body is a JSON array of lines, like: ["A quote from Ron"]
-				match Json.parse(Str.from_utf8_lossy(resp.body)) {
-					Ok(lines) =>
-						(
-							{
-								quote: Loaded(Str.join_with(lines, "\n")),
-							},
-							[],
-						)
-					Err(e) => ({ quote: Error("Failed to decode the quote JSON: ${Str.inspect(e)}") }, [])
-				}
-			} else {
-				({ quote: Error("Request failed with status ${resp.status.to_str()}") }, [])
-			}
-
-		GotQuote(Err(HttpErr(Timeout))) =>
-			({ quote: Error("The request timed out") }, [])
-
-		GotQuote(Err(HttpErr(NetworkError))) =>
-			({ quote: Error("The request never completed") }, [])
-		}
 
 render : Model -> Html(Msg)
 render = |model|
@@ -104,3 +63,43 @@ request_quote_button =
 		[style([("display", "block")]), on_click(UserRequestedQuote)],
 		[text("Treat Yo Self")],
 	)
+
+update : Model, Msg -> (Model, List(Effect(Msg)))
+update = |_model, msg|
+	match msg {
+		UserRequestedQuote => {
+			(
+				{ quote: Loading },
+				[
+					Console.log("Requesting a quote..."),
+					Http.get(
+						"https://ron-swanson-quotes.herokuapp.com/v2/quotes",
+						|result| GotQuote(result),
+					),
+				],
+			)
+		}
+
+		GotQuote(Ok(resp)) =>
+			if resp.status == 200 {
+				# The body is a JSON array of lines, like: ["A quote from Ron"]
+				match Json.parse(Str.from_utf8_lossy(resp.body)) {
+					Ok(lines) =>
+						(
+							{
+								quote: Loaded(Str.join_with(lines, "\n")),
+							},
+							[],
+						)
+					Err(e) => ({ quote: Error("Failed to decode the quote JSON: ${Str.inspect(e)}") }, [])
+				}
+			} else {
+				({ quote: Error("Request failed with status ${resp.status.to_str()}") }, [])
+			}
+
+		GotQuote(Err(HttpErr(Timeout))) =>
+			({ quote: Error("The request timed out") }, [])
+
+		GotQuote(Err(HttpErr(NetworkError))) =>
+			({ quote: Error("The request never completed") }, [])
+		}

@@ -4,23 +4,27 @@ app [Model, Msg, init, update, render, subscriptions] {
 }
 
 import html.Html exposing [div, button, input, text]
-import html.Attribute exposing [id, type, value, on_input, on_click]
+import html.Attribute exposing [id, type, value, checked, on_input, on_check, on_click]
 import pf.Effect
 
-# Probe: `value` names a live DOM property that drifts as the user types.
-# A render that leaves the model's value unchanged must still re-pin the
-# property, or the DOM keeps text the model rejected. The update below
-# rejects anything containing "!", so a rejected keystroke is exactly the
-# unchanged-model render the re-pin exists for.
+# Probe: `value` and `checked` name live DOM properties that drift as the
+# user types or clicks. A dispatch that leaves the model unchanged renders
+# nothing for them, so the runtime pins the property back after the
+# control's own event, or the DOM keeps what the model rejected. The update
+# below rejects text containing "!" and refuses to un-agree, so a rejected
+# keystroke and a refused uncheck are exactly the unchanged-model dispatches
+# the pin exists for. "Pin" toggles whether the view declares `value` and
+# `checked` at all: undeclared, the controls are uncontrolled and the pin
+# must leave them alone, and declaring them again re-asserts the model.
 
-Model : { name : Str, ticks : U64 }
+Model : { name : Str, agreed : Bool, ticks : U64, pinned : Bool }
 
-Msg : [UserTyped(Str), UserClickedTick]
+Msg : [UserTyped(Str), UserToggledAgree(Bool), UserClickedTick, UserClickedPin]
 
 subscriptions = |_model| []
 
 init : Str -> (Model, List(Effect(Msg)))
-init = |_flags| ({ name: "init", ticks: 0 }, [])
+init = |_flags| ({ name: "init", agreed: Bool.False, ticks: 0, pinned: Bool.True }, [])
 
 update : Model, Msg -> (Model, List(Effect(Msg)))
 update = |model, msg|
@@ -32,15 +36,29 @@ update = |model, msg|
 				({ ..model, name: s }, [])
 			}
 
+		UserToggledAgree(now) =>
+			if now {
+				({ ..model, agreed: Bool.True }, [])
+			} else {
+				(model, [])
+			}
+
 		UserClickedTick => ({ ..model, ticks: model.ticks + 1 }, [])
+
+		UserClickedPin => ({ ..model, pinned: !model.pinned }, [])
 	}
 
 render : Model -> Html(Msg)
-render = |model|
+render = |model| {
+	value_attr = if model.pinned [value(model.name)] else []
+	checked_attr = if model.pinned [checked(model.agreed)] else []
 	div(
 		[],
 		[
-			input([id("name"), type("text"), value(model.name), on_input(|s| UserTyped(s))]),
+			input([id("name"), type("text"), on_input(|s| UserTyped(s))].concat(value_attr)),
+			input([id("agree"), type("checkbox"), on_check(|now| UserToggledAgree(now))].concat(checked_attr)),
 			button([id("tick"), on_click(UserClickedTick)], [text(model.ticks.to_str())]),
+			button([id("pin"), on_click(UserClickedPin)], [text(if model.pinned "pinned" else "unpinned")]),
 		],
 	)
+}

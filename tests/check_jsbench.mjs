@@ -6,7 +6,7 @@
 // Run from the repo root: node tests/check_jsbench.mjs
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
-import { El, fakeDom, findTag } from './fakedom.mjs';
+import { El, byId, fakeDom, findTag } from './fakedom.mjs';
 import { expect, wasmPath } from './harness.mjs';
 
 const wasm = {
@@ -15,26 +15,16 @@ const wasm = {
 };
 
 // First element with the given id attribute (pre-order).
-function findId(node, id) {
-  if (!(node instanceof El)) return null;
-  if (node.attrs?.get('id') === id) return node;
-  for (const c of node.children) {
-    const hit = findId(c, id);
-    if (hit) return hit;
-  }
-  return null;
-}
-
 async function checkBracket(keyed) {
   const tag = keyed ? 'keyed' : 'non-keyed';
   const root = new El('#root');
   await mount({ wasm: keyed ? wasm.keyed : wasm.nonkeyed, root, flags: '', dom: fakeDom });
 
-  const tbody = findId(root, 'tbody');
+  const tbody = byId(root, 'tbody');
   const rows = () => tbody.children;
   const rowId = (tr) => tr.children[0].children[0].text;
   const rowLabel = (tr) => tr.children[1].children[0].children[0].text;
-  const click = (id) => findId(root, id).listeners.click();
+  const click = (id) => byId(root, id).listeners.click();
 
   expect(`${tag}: starts empty`, rows().length, 0);
 

@@ -36,6 +36,9 @@ Effect(msg) := [
 	## on_hash (called with the hash bytes; empty on failure/unknown file)
 	CryptoDigestFile(Str, U32, U64, U64, Box((List(U8) -> Box(msg)))),
 
+	## CSS selector of the element to give keyboard focus (see `DOM.focus`)
+	Focus(Str),
+
 	## method, url, headers, body, timeout in ms (0 = no timeout),
 	## on_response. The raw status doubles as the transport channel: 0 means
 	## the request never completed and 1 means it timed out (real HTTP
@@ -109,6 +112,7 @@ Effect(msg) := [
 						},
 					),
 				)
+			Focus(selector) => Focus(selector)
 			HttpSend(method, url, headers, body, timeout, cb) =>
 				HttpSend(
 					method,
@@ -173,6 +177,9 @@ Effect(msg) := [
 
 	console_log : Str -> Effect(msg)
 	console_log = |message| ConsoleLog(message)
+
+	focus : Str -> Effect(msg)
+	focus = |selector| Focus(selector)
 
 	crypto_digest : Str, List(U8), (List(U8) -> msg) -> Effect(msg)
 	crypto_digest = |algorithm, bytes, on_hash|
@@ -333,6 +340,13 @@ expect {
 expect {
 	match Effect.show_modal("#confirm").map(|s| "${s}!") {
 		ShowModal(selector) => selector == "#confirm"
+		_ => Bool.False
+	}
+}
+
+expect {
+	match Effect.focus("#name").map(|s| "${s}!") {
+		Focus(selector) => selector == "#name"
 		_ => Bool.False
 	}
 }

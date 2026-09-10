@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   # What a PR has to pass. Speed on every system, plus the small-buffers leg
-  # and the browser E2E suite on linux.
+  # and the browser E2E suite in every engine on every system.
   required:
     uses: ./.github/workflows/suite.yml
     with:
@@ -29,7 +29,7 @@ jobs:
       label: Pinned
       opts: '["speed"]'
       extras: true
-      e2e: linux
+      e2e: all
 
   # Informational and not branch-protected. dev is red on open roc bugs.
   # Running it anyway means we see the day it goes green.
@@ -39,6 +39,7 @@ jobs:
       roc: '["pinned"]'
       label: Advisory
       opts: '["dev", "size"]'
+      e2e: all
 
   # The compiler in flake.nix is not the one the README tells people without
   # Nix to install. This leg is the one that says the README's instructions
@@ -66,3 +67,16 @@ jobs:
       roc: '["${{ needs.readme-nightly.outputs.tag }}"]'
       label: README nightly
       opts: '["speed"]'
+      e2e: all
+
+  # The other opt levels on that same nightly, on every system and in every
+  # browser. Informational like `advisory`: dev is red on open roc bugs, and
+  # a known-red leg must not block a pull request.
+  nightly-opts:
+    needs: readme-nightly
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: '["${{ needs.readme-nightly.outputs.tag }}"]'
+      label: README nightly
+      opts: '["dev", "size"]'
+      e2e: all

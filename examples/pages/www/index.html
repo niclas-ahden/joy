@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Joy pages</title>
+  <style>body { font: 20px sans-serif; padding: 20px } button { font-size: 20px; margin: 0 8px } nav a { margin-right: 12px } nav a.current { font-weight: bold }</style>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { mount } from './runtime.js';
+
+    window.app = await mount({
+      wasm: './app.wasm',
+      root: document.getElementById('app'),
+      // The app picks its page from the path, so the path is the flags. A
+      // server rendering the page would pass the same thing.
+      flags: location.pathname,
+    });
+  </script>
+</body>
+</html>

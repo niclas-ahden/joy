@@ -4,22 +4,14 @@
 // Run from the repo root: node tests/check_pointer.mjs
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
-import { El, fakeDom, htmlBare } from './fakedom.mjs';
+import { El, byId, fakeDom, htmlBare } from './fakedom.mjs';
 import { expect, wasmPath } from './harness.mjs';
 
 const bytes = readFileSync(wasmPath('pointer'));
 
-function findById(node, id) {
-  if (node instanceof El) {
-    if (node.attrs?.get('id') === id) return node;
-    for (const c of node.children) { const hit = findById(c, id); if (hit) return hit; }
-  }
-  return null;
-}
-
 const root = new El('#root');
 await mount({ wasm: bytes, root, flags: '', dom: fakeDom });
-const pad = findById(root, 'pad');
+const pad = byId(root, 'pad');
 
 expect('pad rendered', pad !== null, true);
 expect('initially idle', htmlBare(root).includes('(idle)'), true);

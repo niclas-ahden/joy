@@ -1,9 +1,10 @@
 // Joy runtime: drive the WASM loop and paint its command buffer into the DOM.
 //
 // The host renders internally (start()/dispatch()/dispatch_value() fill the
-// command buffer). The first paint is a full build. Later paints are diffs:
-// the host emits patch ops addressing nodes by their pre-order index, which
-// the runtime tracks in a retained `nodeList`.
+// command buffer). The first paint is a full build, or, when mounted with
+// `hydrate: true`, a claim walk over the server-rendered DOM (see "Hydration"
+// below). Later paints are diffs: the host emits patch ops addressing nodes
+// by their pre-order index, which the runtime tracks in a retained `nodeList`.
 //
 // Command buffer: word 0 is the mode; the rest are ops.
 //   MODE_FULL (0): build ops build the whole tree
@@ -67,11 +68,51 @@ const MODE_PATCH = 1;
 //   eventKeyInfo(domEvent) -> {key, code, ctrl, shift, alt, meta, repeat}
 //   eventPointerInfo(domEvent) -> {clientX..offsetY, button, buttons, ctrl..meta}
 //   eventFile(domEvent) -> File | null ; showModal(sel) ; closeModal(sel)
-export function makeRuntime(exports, dom, root) {
+//   elementTag(node) -> tag | null ; getAttr(node, k) -> string | null
+//   getProp(node, k) ; setProp(node, k, v) ; radioGroup(node) -> node[]
+// Hydration additionally needs (only checked when `hydrate` is set):
+//   textValue(node) -> string | null
+//   splitText(textNode, offset) -> the new following text node
+//   clearParsedTemplate(node), optional (see hydrateRange)
+export function makeRuntime(exports, dom, root, hydrate = false) {
   const { memory } = exports;
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   let nodeList = []; // DOM nodes in pre-order, matching the host's node indices
+
+  // Armed by mount({hydrate: true}) and spent on the first full paint: that
+  // one paint claims the server-rendered nodes instead of building fresh
+  // ones. A later MODE_FULL (there is none today) would rebuild normally.
+  let hydrateFirstPaint = !!hydrate;
+  // The adapter methods that only some paths reach are checked up front,
+  // so a custom adapter fails at mount rather than at the first event
+  // (restoreControl) or the first claim.
+  const needed = ['elementTag', 'getAttr', 'getProp', 'setProp', 'radioGroup'];
+  if (hydrate) needed.push('textValue', 'splitText');
+  for (const m of needed) {
+    if (typeof dom[m] !== 'function') {
+      throw new TypeError(`mount: the dom adapter needs ${m}(), see the \`dom\` interface notes`);
+    }
+  }
+
+  // True while hydrateRange claims nodes. applyAttrOps reads it to skip
+  // attribute writes the server-rendered markup already carries.
+  let claiming = false;
+
+  // The first repair hydrateRange had to make, kept for one console.warn
+  // after the walk: a mismatch means the server and the client disagree
+  // about the first render, which the page recovers from (the mismatched
+  // nodes are rebuilt) but the developer should hear about.
+  let hydrateMismatch = null;
+  const noteMismatch = (what) => { hydrateMismatch ??= what; };
+
+  // The walk's outcome, readable through the app handle's hydration() so a
+  // test or a monitor can assert on it instead of scraping the console:
+  // null until the claim walk has run (always, without `hydrate`), then
+  // { claimed, mismatch }. `claimed` is false when the root was empty and
+  // the walk was a plain build; `mismatch` repeats the warning's cause, or
+  // null for a clean claim.
+  let hydrateOutcome = null;
 
   const words = () => new Uint32Array(memory.buffer, exports.cmd_ptr(), exports.cmd_len());
 
@@ -160,6 +201,56 @@ export function makeRuntime(exports, dom, root) {
   // times cheaper, and create-heavy paints hit this per handler element.
   const EVENTS = Symbol('joyEvents'); // node[EVENTS]: Map(name -> {kind, id, ...} | null)
   const eventsFor = (node) => (node[EVENTS] ??= new Map());
+  // The boolean live props the view declares on a node, recorded as their
+  // attribute ops are applied: node[LIVE] = {checked, selected} holding the
+  // declared true/false. A declared-false checkbox and one the view never
+  // mentions look the same in the DOM (no attribute), and only the declared
+  // one may be pinned back by restoreControl.
+  const LIVE = Symbol('joyLive');
+
+  // After an event from `node`, pin its live properties back to what the
+  // view declares. The differ writes `value`, `checked` and `selected` only
+  // when the view changes them, while typing and clicking change the DOM
+  // property without touching the view. So a dispatch whose update rejects
+  // the input, leaving the view as it was, would otherwise leave the
+  // property showing what the model refused. The `value` attribute is the
+  // view's truth (setAttr writes both), the bool props come from node[LIVE].
+  // Writes happen only on drift: the common accepted keystroke, whose
+  // render already wrote the new value, costs a read here. A write keeps
+  // the caret where the user had it (see writeValue in browserDom). A
+  // radio's group-mates and a select's options change state
+  // without an event of their own, so they are pinned with the element
+  // that fired. Running after the dispatch, this also covers inputs inside
+  // a lazy region the render skipped.
+  const CONTROLS = new Set(['input', 'textarea', 'select']);
+  function pinProp(node, k, want) {
+    if (dom.getProp(node, k) !== want) dom.setProp(node, k, want);
+  }
+  function pinChecked(node) {
+    const declared = node[LIVE]?.checked;
+    if (declared !== undefined) pinProp(node, 'checked', declared);
+  }
+  function pinOptions(node) {
+    for (const c of dom.childrenOf(node)) {
+      const declared = c[LIVE]?.selected;
+      if (declared !== undefined) pinProp(c, 'selected', declared);
+      else if (dom.elementTag(c) === 'optgroup') pinOptions(c);
+    }
+  }
+  function restoreControl(node) {
+    const tag = dom.elementTag(node);
+    if (!CONTROLS.has(tag)) return;
+    const value = dom.getAttr(node, 'value');
+    if (value !== null) pinProp(node, 'value', value);
+    if (tag === 'input') {
+      pinChecked(node);
+      if (node[LIVE]?.checked !== undefined && dom.getAttr(node, 'type') === 'radio') {
+        for (const mate of dom.radioGroup(node)) if (mate !== node) pinChecked(mate);
+      }
+    } else if (tag === 'select') {
+      pinOptions(node);
+    }
+  }
   // Visibility observers are rare, so their state lives off to the side
   // instead of widening every node's record.
   const nodeVis = new WeakMap(); // node -> { margin, key, id, disconnect }
@@ -206,6 +297,7 @@ export function makeRuntime(exports, dom, root) {
     // passes through with its browser default intact. Every handler kind
     // carries both flags except file, where they read as undefined.
     if (d.stopPropagation) domEvent.stopPropagation?.();
+    const node = domEvent.currentTarget;
     if (d.kind === 'msg') {
       if (d.preventDefault) domEvent.preventDefault?.(); // e.g. on_submit
       dispatch(d.id);
@@ -220,16 +312,43 @@ export function makeRuntime(exports, dom, root) {
     } else if (d.kind === 'file') {
       const file = dom.eventFile(domEvent);
       if (file) dispatchFile(d.id, file); // clearing the input is not a pick
+      return; // a file input's value is the pick itself, never pinned
     } else {
       if (d.preventDefault) domEvent.preventDefault?.();
       dispatchValue(d.id, dom.eventProp(domEvent, d.prop));
+      // Text under IME composition is provisional, and writing the property
+      // would end the composition, so the pin waits for compositionend
+      // (bound next to every on_input, see setHandler). Whichever order the
+      // engine fires the two in, the last of them runs the pin against the
+      // final text.
+      if (domEvent.isComposing) return;
     }
+    restoreControl(node);
+  };
+  // Engines disagree on the order at the end of a composition. Chromium
+  // fires the last `input` (isComposing) before compositionend. Firefox
+  // fires compositionend first and the `input` carrying the text after it.
+  // Firefox's own IME typing still fires `input` with isComposing during
+  // the composition, while Playwright's fill on Firefox takes the same
+  // ending with no `input` during the composition at all, which is what
+  // the e2e suite drives. Pinning first would revert text the app has not
+  // seen, so the composed value is delivered through the input handler
+  // here and pinned after. Where the input came first the value is
+  // already in the model and the delivery changes nothing, and the
+  // trailing Firefox input then carries the settled value.
+  const compositionListener = (domEvent) => {
+    if (painting) return;
+    const node = domEvent.currentTarget;
+    const d = node[EVENTS]?.get('input');
+    if (d?.kind === 'value') dispatchValue(d.id, dom.eventProp({ target: node }, d.prop));
+    restoreControl(node);
   };
 
   function setHandler(node, name, desc) {
     const m = eventsFor(node);
     if (!m.has(name)) {
       dom.on(node, name, domListener);
+      if (name === 'input' && desc.kind === 'value') dom.on(node, 'compositionend', compositionListener);
     }
     m.set(name, desc);
   }
@@ -275,13 +394,24 @@ export function makeRuntime(exports, dom, root) {
         // A refused value also drops whatever the attribute held before:
         // keeping a stale href would leave the link pointing somewhere the
         // view no longer says.
-        if (attrAllowed(k, v)) dom.setAttr(node, k, v);
-        else dom.removeAttr(node, k);
+        //
+        // While claiming, a value the markup already carries is not
+        // rewritten. Beyond saving the write, this leaves live form-control
+        // state alone: setAttr('value') also sets the property, and the
+        // user may have typed into the field before the app booted.
+        if (attrAllowed(k, v)) {
+          if (!claiming || dom.getAttr(node, k) !== v) dom.setAttr(node, k, v);
+        } else dom.removeAttr(node, k);
       } else if (op === OP_BOOL_ATTR) {
         i = sref(w, i);
         const k = srefVal;
-        if (w[i++] !== 0 && attrAllowed(k, '')) dom.setAttr(node, k, '');
-        else dom.removeAttr(node, k);
+        const flag = w[i++] !== 0;
+        if (k === 'checked' || k === 'selected') (node[LIVE] ??= {})[k] = flag;
+        // Bare boolean attributes parse to "", which is also what setAttr
+        // writes, so presence is the whole comparison while claiming.
+        if (flag && attrAllowed(k, '')) {
+          if (!claiming || dom.getAttr(node, k) == null) dom.setAttr(node, k, '');
+        } else if (!claiming || dom.getAttr(node, k) != null) dom.removeAttr(node, k);
       } else if (op === OP_MSG_EVENT) {
         i = sref(w, i);
         const name = srefVal;
@@ -324,6 +454,7 @@ export function makeRuntime(exports, dom, root) {
         let k;
         [k, i] = inlineStr(w, i);
         dom.removeAttr(node, k);
+        if (node[LIVE] !== undefined) node[LIVE][k] = undefined; // no longer declared
       } else if (op === OP_REMOVE_EVENT) {
         let name;
         [name, i] = inlineStr(w, i);
@@ -374,6 +505,158 @@ export function makeRuntime(exports, dom, root) {
     return i;
   }
 
+  // --- Hydration ---
+  //
+  // Claim the server-rendered DOM instead of building it: walk the same
+  // balanced build-op range a full build would execute, but advance a cursor
+  // through the existing children in lockstep, adopting each node the ops
+  // expect. Handlers attach and handler ids record exactly as in a build;
+  // attribute values the markup already carries are skipped (see
+  // applyAttrOps). The result must be indistinguishable from a fresh build,
+  // node for node, because every later patch addresses nodes by pre-order
+  // index, so the walk also fixes what HTML serialization cannot express:
+  //
+  //   * adjacent text vnodes serialize as one merged text node, so the DOM
+  //     node is split and the front claimed (splitText)
+  //   * empty text vnodes serialize as nothing, so an empty text node is
+  //     inserted where the ops expect one
+  //   * comments (and anything else that is neither element nor text) never
+  //     came from a view, so they are dropped on sight
+  //
+  // A genuine mismatch, where the markup disagrees with the app's first
+  // render, is repaired locally: the expected node is built fresh in place,
+  // its whole subtree with it (a frame with kids === null builds fresh
+  // without further matching), and children the ops never claimed are
+  // removed when their parent closes. The page always ends up showing the
+  // app's own render; the first repair is remembered and warned once,
+  // because the fix belongs on the server.
+  function hydrateRange(w, start, end) {
+    // One frame per open element: the element and a cursor (kids, idx) into
+    // its pre-existing children. Fresh (repaired) elements carry kids ===
+    // null, so their subtrees skip matching entirely. An empty root gets the
+    // fresh treatment from the start: nothing was server-rendered, which is
+    // a plain build and not a mismatch, so one loader serves both cases.
+    const rootKids = [...dom.childrenOf(root)];
+    const hadKids = rootKids.length !== 0; // the walk splices rootKids, so decide now
+    const frames = [{ parent: root, kids: hadKids ? rootKids : null, idx: 0 }];
+    const top = () => frames[frames.length - 1];
+
+    // Remove comment-ish nodes at the cursor: neither element nor text, so
+    // no view produced them and no op will ever claim them.
+    const dropJunk = (f) => {
+      let cand = f.kids[f.idx];
+      while (cand !== undefined && dom.elementTag(cand) === null && dom.textValue(cand) === null) {
+        dom.removeChild(f.parent, cand);
+        f.kids.splice(f.idx, 1);
+        cand = f.kids[f.idx];
+      }
+    };
+
+    // Put a freshly built node where the cursor stands. It is claimed by
+    // construction and never enters `kids`, so the leftover sweep in
+    // closeFrame cannot touch it.
+    const insertFresh = (f, node) => {
+      dom.insertBefore(f.parent, node, f.kids === null ? null : f.kids[f.idx] ?? null);
+    };
+
+    // Children the ops never claimed are not in the app's first render:
+    // remove them. Elements and text are real divergence worth the warning;
+    // stray junk is not.
+    const closeFrame = (f) => {
+      if (f.kids === null) return;
+      for (let k = f.idx; k < f.kids.length; k++) {
+        if (dom.elementTag(f.kids[k]) !== null || dom.textValue(f.kids[k]) !== null) {
+          noteMismatch(`the server rendered more inside <${dom.elementTag(f.parent) ?? 'the root'}> than the app's first render has`);
+        }
+        dom.removeChild(f.parent, f.kids[k]);
+      }
+    };
+
+    const hydrateText = (f, s) => {
+      if (f.kids !== null) {
+        dropJunk(f);
+        const cand = f.kids[f.idx];
+        const t = cand === undefined ? null : dom.textValue(cand);
+        if (t !== null) {
+          if (t === s) {
+            f.idx++;
+            return;
+          }
+          if (s.length < t.length && t.startsWith(s)) {
+            // The serializer merged this vnode with the text after it: cut
+            // ours off the front and leave the rest for the next op. Also
+            // covers an expected-empty text in front of a real one
+            // (splitText at 0).
+            const rest = dom.splitText(cand, s.length);
+            f.kids.splice(f.idx + 1, 0, rest);
+            f.idx++;
+            return;
+          }
+          if (s.length > 0) {
+            noteMismatch(`expected the text ${JSON.stringify(s)} but the server rendered ${JSON.stringify(t)}`);
+            dom.setText(cand, s);
+            f.idx++;
+            return;
+          }
+        }
+        if (s.length > 0) noteMismatch(`expected the text ${JSON.stringify(s)}`);
+      }
+      // Nothing claimable here: the vnode is empty text (which HTML cannot
+      // express), the tree diverged, or this subtree is fresh anyway.
+      insertFresh(f, dom.createText(s));
+    };
+
+    let i = start;
+    while (i < end) {
+      const op = w[i];
+      if (op === OP_ELEMENT_OPEN) {
+        i = sref(w, i + 1);
+        const tag = srefVal;
+        const f = top();
+        let el = null;
+        if (f.kids !== null) {
+          dropJunk(f);
+          const cand = f.kids[f.idx];
+          // Case-insensitive: HTML tags parse caselessly, and SVG localName
+          // keeps camelCase (feGaussianBlur) while views may not.
+          if (cand !== undefined && dom.elementTag(cand)?.toLowerCase() === tag.toLowerCase()) {
+            el = cand;
+            f.idx++;
+          } else if (cand !== undefined) {
+            noteMismatch(`expected <${tag}> but the server rendered ${dom.elementTag(cand) === null ? 'text' : `<${dom.elementTag(cand)}>`}`);
+          } else {
+            noteMismatch(`expected <${tag}> but the server rendered nothing there`);
+          }
+        }
+        if (el !== null) {
+          // The parser moves a template's children into its inert
+          // `.content` fragment; the ops build them as regular children
+          // (like createElement does), so the parsed copies would linger
+          // unseen. Dropping them keeps one copy.
+          dom.clearParsedTemplate?.(el);
+          frames.push({ parent: el, kids: [...dom.childrenOf(el)], idx: 0 });
+        } else {
+          const fresh = dom.createElement(tag);
+          insertFresh(f, fresh);
+          frames.push({ parent: fresh, kids: null, idx: 0 });
+        }
+      } else if (op === OP_ELEMENT_CLOSE) {
+        i += 1;
+        closeFrame(frames.pop());
+      } else if (op === OP_TEXT) {
+        const s = str(w[i + 1], w[i + 2]);
+        i += 3;
+        hydrateText(top(), s);
+      } else if (op === OP_ATTR || op === OP_BOOL_ATTR || op === OP_MSG_EVENT || op === OP_VALUE_EVENT || op === OP_KEY_EVENT || op === OP_POINTER_EVENT || op === OP_FILE_EVENT || op === OP_VISIBLE) {
+        i = applyAttrOps(w, i, end, top().parent);
+      } else {
+        throw new Error(`unknown build op ${op} at word ${i}`);
+      }
+    }
+    closeFrame(frames.pop()); // the root's own leftovers
+    return hadKids; // whether there was server-rendered DOM to claim
+  }
+
   // Disconnect visibility observers in a subtree that is about to be
   // discarded (full rebuild or REPLACE), so they cannot fire or leak. When
   // no observer is live anywhere, the walk is skipped entirely.
@@ -420,9 +703,24 @@ export function makeRuntime(exports, dom, root) {
     let splice = null;
     if (w[0] === MODE_FULL) {
       structural = true;
-      cleanupSubtree(root);
-      dom.clear(root);
-      buildRange(w, 1, w.length, root);
+      if (hydrateFirstPaint) {
+        hydrateFirstPaint = false;
+        claiming = true;
+        let claimed = false;
+        try {
+          claimed = hydrateRange(w, 1, w.length);
+        } finally {
+          claiming = false;
+        }
+        hydrateOutcome = { claimed, mismatch: hydrateMismatch };
+        if (hydrateMismatch) {
+          console.warn(`Joy hydrate: the server-rendered HTML did not match the app's first render (${hydrateMismatch}). The mismatched nodes were rebuilt, so the page is correct, but the server view and the client's init disagree and hydration paid for both.`);
+        }
+      } else {
+        cleanupSubtree(root);
+        dom.clear(root);
+        buildRange(w, 1, w.length, root);
+      }
     } else {
       const refs = nodeList;
       let i = 1;
@@ -614,6 +912,8 @@ export function makeRuntime(exports, dom, root) {
         effects.push({ kind: 'urlStart', id: w[i++] });
       } else if (kind === 14 || kind === 15) { // SHOW / CLOSE MODAL
         effects.push({ kind: kind === 14 ? 'showModal' : 'closeModal', selector: str(w[i++], w[i++]) });
+      } else if (kind === 21) { // FOCUS
+        effects.push({ kind: 'focus', selector: str(w[i++], w[i++]) });
       } else if (kind === 16) { // DEBOUNCE (keyed one-shot timer)
         effects.push({ kind: 'debounce', cb: w[i++], ms: w[i++], key: str(w[i++], w[i++]) });
       } else if (kind === 17) { // TIME CANCEL (discard a pending debounce)
@@ -748,6 +1048,14 @@ export function makeRuntime(exports, dom, root) {
       );
   }
 
+  // A selector-addressed effect that matched nothing is a no-op by design
+  // (the app may focus a field only some pages have), so this is
+  // information for the developer, not an error: it is how a typo in the
+  // selector, or an effect that ran before its element existed, shows up.
+  function warnUnmatched(effect, selector) {
+    console.warn(`Joy ${effect}: nothing on the page matches "${selector}", so it did nothing.`);
+  }
+
   function runEffect(e) {
     if (e.kind === 'http') {
       fetchHttp(e, e.body);
@@ -779,9 +1087,11 @@ export function makeRuntime(exports, dom, root) {
     } else if (e.kind === 'portSend') {
       outPorts.get(e.name)?.(e.value); // unregistered names are a no-op
     } else if (e.kind === 'showModal') {
-      dom.showModal(e.selector);
+      if (!dom.showModal(e.selector)) warnUnmatched('DOM.show_modal', e.selector);
     } else if (e.kind === 'closeModal') {
-      dom.closeModal(e.selector);
+      if (!dom.closeModal(e.selector)) warnUnmatched('DOM.close_modal', e.selector);
+    } else if (e.kind === 'focus') {
+      if (!dom.focus(e.selector)) warnUnmatched('DOM.focus', e.selector);
     } else if (e.kind === 'debounce') {
       dropDebounce(e.key); // re-arm: discard the pending timer and its callback
       const handle = setTimeout(() => {
@@ -970,10 +1280,10 @@ export function makeRuntime(exports, dom, root) {
     files.clear();
   }
 
-  return { start, dispatch, dispatchValue, sendPort, onPort, unmount, perf };
+  return { start, dispatch, dispatchValue, sendPort, onPort, unmount, perf, hydration: () => hydrateOutcome };
 }
 
-const MOUNT_OPTIONS = ['wasm', 'root', 'flags', 'dom', 'setup'];
+const MOUNT_OPTIONS = ['wasm', 'root', 'flags', 'dom', 'setup', 'hydrate'];
 
 // Start an app and return a handle on it.
 //
@@ -986,8 +1296,15 @@ const MOUNT_OPTIONS = ['wasm', 'root', 'flags', 'dom', 'setup'];
 //          one to drive an app with no browser around.
 //   setup  runs before the app starts, so outgoing-port handlers can be
 //          registered in time to receive sends from `init`.
+//   hydrate  claim the server-rendered children of `root` on the first paint
+//          instead of clearing them. The server must have rendered the same
+//          view the app's init produces (SSR with joy-html); mismatches are
+//          repaired and warned about. An empty root hydrates as a plain
+//          build, so one loader serves both cases. The returned handle's
+//          hydration() reports the outcome ({ claimed, mismatch }, or null
+//          when hydrate was off), for tests and monitoring.
 export async function mount(options) {
-  const { wasm, root, flags, dom = browserDom, setup = null } = options ?? {};
+  const { wasm, root, flags, dom = browserDom, setup = null, hydrate = false } = options ?? {};
 
   // Named options make a typo silent by default, and each of these would fail
   // far from its cause: a misspelled `flags` looks like empty flags, and a
@@ -1002,8 +1319,8 @@ export async function mount(options) {
   if (typeof flags !== 'string') throw new TypeError('mount: `flags` is required, the string passed to init ("" when unused)');
 
   const instance = await instantiate(wasm);
-  const rt = makeRuntime(instance.exports, dom, root);
-  const app = { instance, dispatch: rt.dispatch, dispatchValue: rt.dispatchValue, sendPort: rt.sendPort, onPort: rt.onPort, unmount: rt.unmount, perf: rt.perf };
+  const rt = makeRuntime(instance.exports, dom, root, hydrate);
+  const app = { instance, dispatch: rt.dispatch, dispatchValue: rt.dispatchValue, sendPort: rt.sendPort, onPort: rt.onPort, unmount: rt.unmount, perf: rt.perf, hydration: rt.hydration };
   setup?.(app);
   rt.start(flags);
   return app;
@@ -1030,6 +1347,28 @@ async function instantiate(wasm) {
   return WebAssembly.instantiate(await WebAssembly.compile(await res.arrayBuffer()), imports);
 }
 
+// Write a text control's value and keep the caret where the user had it.
+// A bare assignment moves the caret to the end. The write happens only on
+// drift: the common case, the view taking what the user typed, already
+// matches, and an assignment would also end an IME composition. The
+// selection offsets shift by the length difference, which is what an edit
+// before the caret amounts to: a refused insertion of k characters at p
+// left the caret at p+k and goes back to p, a refused backspace goes
+// forward again, and a normalized value of the same length keeps its
+// caret. Clamped to the new value, and a plain assignment for the input
+// types (email, number) that expose no selection.
+function writeValue(node, v) {
+  const before = node.value;
+  if (before === v) return;
+  let start = null, end = null, dir = null;
+  try { start = node.selectionStart; end = node.selectionEnd; dir = node.selectionDirection; } catch {}
+  node.value = v;
+  if (typeof before !== 'string' || typeof start !== 'number' || typeof node.setSelectionRange !== 'function') return;
+  const shift = before.length - v.length;
+  const clamp = (n) => Math.max(0, Math.min(v.length, n - shift));
+  try { node.setSelectionRange(clamp(start), clamp(end ?? start), dir ?? undefined); } catch {}
+}
+
 // Browser DOM adapter.
 export const browserDom = {
   createElement: (tag) => document.createElement(tag),
@@ -1047,7 +1386,7 @@ export const browserDom = {
     node.setAttribute(k, v);
     // Live form-control state follows the property, not the attribute: once
     // the user has interacted, the attribute only describes the default.
-    if (k === 'value' && 'value' in node) node.value = v;
+    if (k === 'value' && 'value' in node) writeValue(node, v);
     else if (k === 'checked' && 'checked' in node) node.checked = true;
     else if (k === 'selected' && 'selected' in node) node.selected = true;
   },
@@ -1094,10 +1433,26 @@ export const browserDom = {
   showModal: (selector) => {
     const el = document.querySelector(selector);
     if (el && typeof el.showModal === 'function' && !el.open) el.showModal();
+    return el !== null;
   },
   closeModal: (selector) => {
     const el = document.querySelector(selector);
     if (el && typeof el.close === 'function' && el.open) el.close();
+    return el !== null;
+  },
+  // These three report whether the selector matched at all, so the
+  // runtime can warn about the ones that did nothing.
+  focus: (selector) => {
+    const el = document.querySelector(selector);
+    if (!el || typeof el.focus !== 'function') return el !== null;
+    el.focus();
+    // A text field gets its caret at the end, where typing continues the
+    // value (a bare focus() leaves it at the start). Some input types
+    // (email, number) refuse setSelectionRange, which is fine to ignore.
+    if (typeof el.setSelectionRange === 'function' && typeof el.value === 'string') {
+      try { el.setSelectionRange(el.value.length, el.value.length); } catch {}
+    }
+    return true;
   },
   onGlobal: (event, fn) => {
     document.addEventListener(event, fn);
@@ -1121,4 +1476,25 @@ export const browserDom = {
     observer.observe(node);
     return () => observer.disconnect();
   },
+  // The hydration probes: what a node is (localName keeps SVG's camelCase,
+  // the claim walk compares caselessly), what a text node holds, splitting a
+  // text node the serializer merged, and reading an attribute back so
+  // matching values skip the write.
+  elementTag: (n) => (n.nodeType === 1 ? n.localName : null),
+  textValue: (n) => (n.nodeType === 3 ? n.nodeValue : null),
+  splitText: (n, offset) => n.splitText(offset),
+  getAttr: (n, k) => n.getAttribute(k),
+  getProp: (n, k) => n[k],
+  setProp: (n, k, v) => { if (k === 'value' && 'value' in n) writeValue(n, v); else n[k] = v; },
+  // Every radio sharing the node's name within its form (or the document
+  // when it has none): the set the browser toggles together.
+  radioGroup: (n) => {
+    if (!n.name) return [];
+    const scope = n.form ?? n.ownerDocument;
+    return Array.from(scope.querySelectorAll('input[type="radio"]')).filter((r) => r.name === n.name);
+  },
+  // The parser parks a template's children in its content fragment, where
+  // the claim walk (which builds them as regular children, like
+  // createElement) would leave them duplicated.
+  clearParsedTemplate: (n) => { if (n.content) n.content.replaceChildren(); },
 };

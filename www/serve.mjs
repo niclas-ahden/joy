@@ -64,7 +64,12 @@ function routeFor(app, rest) {
     case '/app.wasm':
       return { file: `build/${opt}/${app}.wasm`, type: 'application/wasm' };
     default:
-      return null;
+      // An app with a URL per page, like examples/pages/, gets its shell
+      // for every one-segment path under it, so /clock boots the same page
+      // as / and the app reads the path from location. Deeper paths and
+      // anything with an extension still miss, so a missing file stays a
+      // missing file.
+      return /^\/[a-z0-9_-]+$/i.test(rest) ? routeFor(app, '/') : null;
   }
 }
 

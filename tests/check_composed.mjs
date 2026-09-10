@@ -5,17 +5,8 @@
 // Run from the repo root: node tests/check_composed.mjs
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
-import { El, fakeDom, htmlBare } from './fakedom.mjs';
+import { El, byRoleAll, fakeDom, htmlBare } from './fakedom.mjs';
 import { expect, wasmPath } from './harness.mjs';
-
-// All elements matching pred, pre-order.
-const collect = (node, pred, out = []) => {
-  if (node instanceof El) {
-    if (pred(node)) out.push(node);
-    for (const c of node.children) collect(c, pred, out);
-  }
-  return out;
-};
 
 // Captured timers (the boot Effect uses setTimeout, the tick Sub setInterval).
 const timeouts = [];
@@ -46,8 +37,8 @@ expect('ticks keep routing left', counters(), '2,1');
 
 // Html.map: the two embedded views produce identical CounterMsgs; each must
 // arrive wrapped for its own instance.
-const [leftMinus, rightMinus] = collect(root, (n) => n.tag === 'button' && n.children[0]?.text === '-');
-const [leftPlus, rightPlus] = collect(root, (n) => n.tag === 'button' && n.children[0]?.text === '+');
+const [leftMinus, rightMinus] = byRoleAll(root, 'button', '-');
+const [leftPlus, rightPlus] = byRoleAll(root, 'button', '+');
 leftPlus.listeners.click();
 expect('left + routes to the left instance', counters(), '3,1');
 rightMinus.listeners.click();

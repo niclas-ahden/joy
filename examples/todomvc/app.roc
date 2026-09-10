@@ -5,6 +5,7 @@ app [Model, Msg, init, update, render, subscriptions] {
 
 import html.Html exposing [a, button, div, footer, h1, header, input, label, li, p, section, span, strong, text, ul]
 import html.Attribute exposing [autofocus, checked, class, class_list, for_, id, on, on_check, on_click, on_input, on_key, placeholder, type, value]
+import pf.DOM
 import pf.Effect
 
 # TodoMVC (https://todomvc.com) as a client-side Joy app. All state lives in
@@ -91,8 +92,10 @@ update = |model, msg|
 		UserClickedClearCompleted =>
 			({ ..model, todos: model.todos.keep_if(|t| !t.done) }, [])
 
+		# The edit field is revealed by this render and focused right after
+		# it, so typing can start without a second click.
 		UserDoubleClickedTodo(todo_id, title) =>
-			({ ..model, editing: Editing(todo_id, title) }, [])
+			({ ..model, editing: Editing(todo_id, title) }, [DOM.focus(".todo-list li.editing .edit")])
 
 		UserTypedEdit(edit_text) =>
 			match model.editing {
