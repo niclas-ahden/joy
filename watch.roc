@@ -63,7 +63,7 @@ main! = |args| {
 # The rebuild loop: watchexec reruns build.roc whenever a source file changes.
 watchexec_cmd = |opt, full_name|
 	Cmd.new_str("watchexec")
-		.args_str(["--no-global-ignore", "--restart", "--print-events", "--debounce", "500ms", "--exts", "roc,rs,html,css,js,mjs,toml", "--", "./build.roc", "--", "--opt=${opt}", full_name])
+		.args_str(["--no-global-ignore", "--restart", "--print-events", "--debounce", "500ms", "--exts", "roc,rs,html,css,js,mjs,toml", "--", "roc", "./build.roc", "--", "--opt=${opt}", full_name])
 
 # Check that watchexec is installed
 check_watchexec! = |probe|

@@ -49,7 +49,9 @@ Util :: [].{
 	## its source directories.
 	example_name : Str -> Str
 	example_name = |arg| {
-		trimmed = arg.drop_suffix("/").drop_suffix("/app.roc")
+		# A Windows path listing separates with backslashes; the name is the
+		# same either way.
+		trimmed = arg.replace_each("\\", "/").drop_suffix("/").drop_suffix("/app.roc")
 		base = match trimmed.split_last("/") {
 			Ok(split) => split.after
 			Err(_) => trimmed

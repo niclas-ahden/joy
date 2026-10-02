@@ -183,3 +183,103 @@ expect('on_check reached the app', chk.attrs.has('checked'), false);
   }
   expect('a probe-less adapter fails loudly', threw, 'TypeError: true');
 }
+
+// --- What the user typed before boot reaches the model ---
+
+{
+  const r = new El('#root');
+  fakeDom.append(r, ssrDom(model));
+  const [, , input, , add, ul] = r.children[0].children;
+  input.value = 'hi there';
+  await hydrateMount(r, model);
+  add.listeners.click();
+  expect('the typed-ahead draft was delivered to the app', ul.children.map((li) => li.children[0].text).join(','), 'milk,eggs,hi there');
+}
+
+// --- Attributes: the markup has to carry exactly what the view declares ---
+
+// Stage the fixture's markup, let `perturb` spoil it, hydrate, and report
+// the outcome next to the page.
+async function attrCase(perturb, ssrModel = model, appModel = ssrModel) {
+  const r = new El('#root');
+  fakeDom.append(r, ssrDom(ssrModel));
+  perturb(r.children[0]);
+  const m = await hydrateMount(r, appModel);
+  return { r, m, mismatch: m.app.hydration().mismatch };
+}
+
+{
+  const { r, mismatch } = await attrCase((d) => fakeDom.setAttr(d.children[0], 'class', 'inc OLD'));
+  expect('a stale value is reported', mismatch, 'expected class="inc" on <button> but the server rendered class="inc OLD"');
+  expect('and rewritten', r.children[0].children[0].attrs.get('class'), 'inc');
+  expect('page equals the client render', html(r), freshHtml);
+}
+
+{
+  const { r, m, mismatch } = await attrCase((d) => fakeDom.setAttr(d.children[1], 'data-stale', '1'));
+  expect('an attribute the view never declares is reported', mismatch, 'the server rendered data-stale="1" on <span>, which the app\'s first render does not have');
+  expect('and swept', r.children[0].children[1].attrs.has('data-stale'), false);
+  expect('one warning for it', m.counts.warns.length, 1);
+  expect('page equals the client render', html(r), freshHtml);
+}
+
+{
+  // The bug this guards: a stale `disabled` from the server would outlive
+  // every render, because the host diff never knew about it.
+  const { r, mismatch } = await attrCase((d) => fakeDom.setAttr(d.children[4], 'disabled', ''));
+  const add = r.children[0].children[4];
+  expect('a stray boolean is reported', mismatch, 'the server rendered disabled="" on <button>, which the app\'s first render does not have');
+  expect('and removed', add.attrs.has('disabled'), false);
+  add.listeners.click();
+  r.children[0].children[0].listeners.click();
+  expect('it stays removed through later renders', add.attrs.has('disabled'), false);
+}
+
+{
+  const { r, mismatch } = await attrCase((d) => fakeDom.removeAttr(d.children[1], 'class'));
+  expect('a missing attribute is reported', mismatch, 'expected class="greet" on <span> but the server rendered no class');
+  expect('and added', r.children[0].children[1].attrs.get('class'), 'greet');
+}
+
+{
+  // The app starts with the box off, the server rendered it ticked.
+  const { r, mismatch } = await attrCase(() => {}, model, { ...model, on: false });
+  const chk = r.children[0].children[3];
+  expect('a boolean the view declares off is reported', mismatch, 'the server rendered checked on <input>, which the app\'s first render leaves off');
+  expect('the attribute is gone', chk.attrs.has('checked'), false);
+  expect('and the box is unticked', chk.checked, false);
+}
+
+{
+  // The app starts with the box on, the server left it off.
+  const { r, mismatch } = await attrCase(() => {}, { ...model, on: false }, model);
+  const chk = r.children[0].children[3];
+  expect('a boolean the view declares on but the server left off is reported', mismatch, 'expected checked on <input> but the server rendered it without');
+  expect('and the box is ticked', `${chk.attrs.has('checked')} ${chk.checked}`, 'true true');
+}
+
+{
+  // An inline handler in the markup (a server that does not filter them)
+  // never survives the claim: Joy refuses to set it, so it is reported and
+  // removed rather than left live.
+  const { r, mismatch } = await attrCase((d) => fakeDom.setAttr(d.children[5], 'onmouseover', 'steal()'));
+  expect('a refused attribute from the server is reported', mismatch, 'the server rendered onmouseover="steal()" on <ul>, which Joy refuses to set (event handler attributes and javascript: URLs)');
+  expect('and removed', r.children[0].children[5].attrs.has('onmouseover'), false);
+  expect('page equals the client render', html(r), freshHtml);
+}
+
+{
+  // Two problems: the first is the one reported, and both are repaired.
+  const { r, mismatch } = await attrCase((d) => {
+    fakeDom.setAttr(d.children[0], 'title', 'stale');
+    fakeDom.setAttr(d.children[4], 'class', 'add OLD');
+  });
+  expect('the first problem is the one reported', mismatch, 'the server rendered title="stale" on <button>, which the app\'s first render does not have');
+  expect('both were repaired', html(r), freshHtml);
+}
+
+{
+  // A very long value is cut in the report.
+  const { mismatch } = await attrCase((d) => fakeDom.setAttr(d.children[1], 'data-big', 'x'.repeat(200)));
+  expect('long values are clipped in the report', mismatch.includes(`"${'x'.repeat(57)}..."`), true);
+}

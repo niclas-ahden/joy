@@ -47,11 +47,12 @@ const isAppName = (app) => /^[a-z0-9_]+$/i.test(app);
 // The whole URL space, relative to an app's root.
 function routeFor(app, rest) {
   switch (rest) {
-    // A directory example with a page of its own, like examples/todomvc/,
-    // gets it; every other app shares the plain shell. Both are complete
-    // copyable pages.
+    // A server-rendered page from the app's build comes first (see
+    // render_pages! in build.roc). Then a directory example with a page of
+    // its own, like examples/todomvc/, gets it, and every other app shares
+    // the plain shell. Both of those are complete copyable pages.
     case '/':
-      return { files: [`examples/${app}/www/index.html`, 'www/index.html'], type: 'text/html' };
+      return { files: [`build/${opt}/ssr/${app}/index.html`, `examples/${app}/www/index.html`, 'www/index.html'], type: 'text/html' };
     // Only a page that links it requests it, so most apps never hit this.
     case '/style.css':
       return { file: `examples/${app}/www/style.css`, type: 'text/css' };
@@ -64,12 +65,18 @@ function routeFor(app, rest) {
     case '/app.wasm':
       return { file: `build/${opt}/${app}.wasm`, type: 'application/wasm' };
     default:
-      // An app with a URL per page, like examples/pages/, gets its shell
-      // for every one-segment path under it, so /clock boots the same page
-      // as / and the app reads the path from location. Deeper paths and
-      // anything with an extension still miss, so a missing file stays a
-      // missing file.
-      return /^\/[a-z0-9_-]+$/i.test(rest) ? routeFor(app, '/') : null;
+      // An app with a URL per page, like examples/pages/, gets its page for
+      // every one-segment path under it, so /clock boots the same page as /
+      // and the app reads the path from location. Only an app that brings a
+      // page of its own opts in: the shared shell is not a candidate here,
+      // so for every other app, and for a prefix that names no app at all,
+      // a missing file stays a missing file. So do deeper paths and
+      // anything with an extension.
+      // An app whose build renders pages on the server side (see
+      // render_pages! in build.roc) gets the page by that name first.
+      return /^\/[a-z0-9_-]+$/i.test(rest)
+        ? { files: [`build/${opt}/ssr/${app}${rest}.html`, `examples/${app}/www/index.html`], type: 'text/html' }
+        : null;
   }
 }
 

@@ -59,20 +59,151 @@ const REORDER_NEW = 2;
 const MODE_FULL = 0;
 const MODE_PATCH = 1;
 
+// --- Namespaces ---
+//
+// A server-rendered page goes through the HTML parser, which puts <svg> and
+// everything under it in the SVG namespace, <math> in MathML's, and fixes
+// the case of the SVG names it lowercased on the way in (viewbox becomes
+// viewBox, lineargradient becomes linearGradient). A client build has to end
+// up with the same nodes, or an icon the client draws after boot is an
+// unknown HTML element that renders nothing, and a claimed page would not
+// match a fresh one. So the runtime follows the parser's rules for
+// well-formed markup: which namespace a child gets from its parent, and
+// which names it adjusts. Markup the parser restructures (a <div> inside
+// <svg> breaks out of it) is a view bug, and the claim walk reports it as a
+// mismatch like any other.
+//
+// Namespaces travel as the keys 'html', 'svg' and 'math'. The adapter maps
+// them to URIs (see browserDom).
+export const NS = {
+  html: 'http://www.w3.org/1999/xhtml',
+  svg: 'http://www.w3.org/2000/svg',
+  math: 'http://www.w3.org/1998/Math/MathML',
+  xlink: 'http://www.w3.org/1999/xlink',
+  xml: 'http://www.w3.org/XML/1998/namespace',
+  xmlns: 'http://www.w3.org/2000/xmlns/',
+};
+
+// The namespace an element named `tag` starts when its parent is HTML (or an
+// integration point that hands its children back to HTML).
+function rootNs(tag) {
+  if (tag === 'svg') return 'svg';
+  if (tag === 'math') return 'math';
+  // Views spell tags in lowercase, so the case-folding compare only runs for
+  // the two lengths that could still match.
+  if (tag.length === 3 || tag.length === 4) {
+    const t = tag.toLowerCase();
+    if (t === 'svg') return 'svg';
+    if (t === 'math') return 'math';
+  }
+  return 'html';
+}
+
+// SVG elements whose children are HTML again, and MathML's text elements,
+// whose children are HTML except for the two MathML glyph elements.
+const SVG_HTML_POINTS = new Set(['foreignobject', 'desc', 'title']);
+const MATH_TEXT_POINTS = new Set(['mi', 'mo', 'mn', 'ms', 'mtext']);
+
+// The namespace of an element named `tag` whose parent has namespace `pNs`
+// and lowercased tag `pTag`. `encoding` is the parent's encoding attribute,
+// which matters only for MathML's annotation-xml: its children are HTML
+// when it says it carries HTML.
+export function childNamespace(pNs, pTag, tag, encoding = null) {
+  if (pNs === 'html') return rootNs(tag);
+  if (pNs === 'svg') return SVG_HTML_POINTS.has(pTag) ? rootNs(tag) : 'svg';
+  const t = tag.toLowerCase();
+  if (MATH_TEXT_POINTS.has(pTag)) return t === 'mglyph' || t === 'malignmark' ? 'math' : rootNs(tag);
+  if (pTag === 'annotation-xml') {
+    const enc = (encoding ?? '').toLowerCase();
+    if (enc === 'text/html' || enc === 'application/xhtml+xml') return rootNs(tag);
+    return t === 'svg' ? 'svg' : 'math';
+  }
+  return 'math';
+}
+
+// The parser's "adjust SVG tag names" table: lowercased name to the name an
+// SVG element actually has.
+const SVG_TAGS = new Map([
+  'altGlyph', 'altGlyphDef', 'altGlyphItem', 'animateColor', 'animateMotion', 'animateTransform',
+  'clipPath', 'feBlend', 'feColorMatrix', 'feComponentTransfer', 'feComposite', 'feConvolveMatrix',
+  'feDiffuseLighting', 'feDisplacementMap', 'feDistantLight', 'feDropShadow', 'feFlood', 'feFuncA',
+  'feFuncB', 'feFuncG', 'feFuncR', 'feGaussianBlur', 'feImage', 'feMerge', 'feMergeNode',
+  'feMorphology', 'feOffset', 'fePointLight', 'feSpecularLighting', 'feSpotLight', 'feTile',
+  'feTurbulence', 'foreignObject', 'glyphRef', 'linearGradient', 'radialGradient', 'textPath',
+].map((name) => [name.toLowerCase(), name]));
+
+// The name an element gets in namespace `ns`: HTML and MathML names are
+// lowercase, SVG names go through the table.
+export function foreignTagName(ns, tag) {
+  const t = tag.toLowerCase();
+  return ns === 'svg' ? SVG_TAGS.get(t) ?? t : t;
+}
+
+// The parser's "adjust SVG attributes" table, its one MathML adjustment, and
+// its "adjust foreign attributes" table (the prefixed names that live in the
+// XLink, XML and XMLNS namespaces), for both SVG and MathML elements.
+const SVG_ATTRS = new Map([
+  'attributeName', 'attributeType', 'baseFrequency', 'baseProfile', 'calcMode', 'clipPathUnits',
+  'diffuseConstant', 'edgeMode', 'filterUnits', 'glyphRef', 'gradientTransform', 'gradientUnits',
+  'kernelMatrix', 'kernelUnitLength', 'keyPoints', 'keySplines', 'keyTimes', 'lengthAdjust',
+  'limitingConeAngle', 'markerHeight', 'markerUnits', 'markerWidth', 'maskContentUnits', 'maskUnits',
+  'numOctaves', 'pathLength', 'patternContentUnits', 'patternTransform', 'patternUnits', 'pointsAtX',
+  'pointsAtY', 'pointsAtZ', 'preserveAlpha', 'preserveAspectRatio', 'primitiveUnits', 'refX', 'refY',
+  'repeatCount', 'repeatDur', 'requiredExtensions', 'requiredFeatures', 'specularConstant',
+  'specularExponent', 'spreadMethod', 'startOffset', 'stdDeviation', 'stitchTiles', 'surfaceScale',
+  'systemLanguage', 'tableValues', 'targetX', 'targetY', 'textLength', 'viewBox', 'viewTarget',
+  'xChannelSelector', 'yChannelSelector', 'zoomAndPan',
+].map((name) => [name.toLowerCase(), name]));
+const FOREIGN_ATTRS = new Map([
+  ...['actuate', 'arcrole', 'href', 'role', 'show', 'title', 'type'].map((l) => [`xlink:${l}`, NS.xlink]),
+  ['xml:lang', NS.xml],
+  ['xml:space', NS.xml],
+  ['xmlns', NS.xmlns],
+  ['xmlns:xlink', NS.xmlns],
+]);
+
+// How an attribute named `key` is stored on an element in namespace `ns`:
+// { name, ns } where `name` is the qualified name the element reports (what
+// getAttribute and getAttributeNames use) and `ns` is the attribute's own
+// namespace URI, null for the plain ones. HTML elements need none of this
+// (the DOM lowercases their names itself), so callers skip it for them.
+const foreignAttrCache = { svg: new Map(), math: new Map() };
+export function foreignAttr(ns, key) {
+  const cache = foreignAttrCache[ns];
+  let a = cache.get(key);
+  if (a === undefined) {
+    const lower = key.toLowerCase();
+    const attrNs = FOREIGN_ATTRS.get(lower) ?? null;
+    const name = attrNs !== null ? lower
+      : ns === 'svg' ? SVG_ATTRS.get(lower) ?? lower
+      : lower === 'definitionurl' ? 'definitionURL' : lower;
+    a = { name, ns: attrNs };
+    cache.set(key, a);
+  }
+  return a;
+}
+
 // `dom` interface:
-//   createElement(tag) -> node ; createText(s) -> node ; fragment() -> node
+//   createElement(tag, ns) -> node, ns being 'html', 'svg' or 'math'
+//   nsOf(node) -> the element's namespace key ; parentOf(node) -> node | null
+//   createText(s) -> node ; fragment() -> node
 //   append(parent, child) ; clear(node) ; on(node, event, fn)
 //   setText(textNode, s) ; childrenOf(node) -> node[] ; replaceNode(old, new)
 //   insertBefore(parent, node, anchorOrNull) ; removeChild(parent, node)
-//   setAttr(node, k, v) ; removeAttr(node, k) ; eventProp(domEvent, prop) -> string
+//   setAttr(node, k, v) ; removeAttr(node, k, exact) ; eventProp(domEvent, prop) -> string
 //   eventKeyInfo(domEvent) -> {key, code, ctrl, shift, alt, meta, repeat}
 //   eventPointerInfo(domEvent) -> {clientX..offsetY, button, buttons, ctrl..meta}
 //   eventFile(domEvent) -> File | null ; showModal(sel) ; closeModal(sel)
-//   elementTag(node) -> tag | null ; getAttr(node, k) -> string | null
+//   elementTag(node) -> tag | null ; getAttr(node, k, exact) -> string | null
+//   (exact: k is a qualified name as attrNames reports it, not a view's)
 //   getProp(node, k) ; setProp(node, k, v) ; radioGroup(node) -> node[]
 // Hydration additionally needs (only checked when `hydrate` is set):
 //   textValue(node) -> string | null
 //   splitText(textNode, offset) -> the new following text node
+//   attrNames(node) -> the qualified names of the attributes it carries
+//   attrName(node, k) -> the qualified name setAttr(node, k) would store
+//   userChanged(control) -> whether the user changed the form control
+//   controlState(control) -> its live state ; restoreControlState(control, s)
 //   clearParsedTemplate(node), optional (see hydrateRange)
 export function makeRuntime(exports, dom, root, hydrate = false) {
   const { memory } = exports;
@@ -87,17 +218,27 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
   // The adapter methods that only some paths reach are checked up front,
   // so a custom adapter fails at mount rather than at the first event
   // (restoreControl) or the first claim.
-  const needed = ['elementTag', 'getAttr', 'getProp', 'setProp', 'radioGroup'];
-  if (hydrate) needed.push('textValue', 'splitText');
+  const needed = ['elementTag', 'getAttr', 'getProp', 'setProp', 'radioGroup', 'nsOf', 'parentOf'];
+  if (hydrate) {
+    needed.push('textValue', 'splitText', 'attrNames', 'attrName', 'userChanged', 'controlState', 'restoreControlState');
+  }
   for (const m of needed) {
     if (typeof dom[m] !== 'function') {
       throw new TypeError(`mount: the dom adapter needs ${m}(), see the \`dom\` interface notes`);
     }
   }
 
-  // True while hydrateRange claims nodes. applyAttrOps reads it to skip
-  // attribute writes the server-rendered markup already carries.
-  let claiming = false;
+  // Set by hydrateRange while it applies the attribute ops of a node it
+  // claimed: that node's frame, which collects the keys the view declares
+  // so the claim can compare them with the markup and sweep what the view
+  // never declared. Null everywhere else, including the fresh nodes a claim
+  // builds to repair a mismatch.
+  let claimFrame = null;
+
+  // Form controls whose state the user changed before the app booted, in
+  // claim order. The claim keeps what they typed or picked, and start()
+  // delivers it to the app's handlers once the first render is on the page.
+  let typedAhead = [];
 
   // The first repair hydrateRange had to make, kept for one console.warn
   // after the walk: a mismatch means the server and the client disagree
@@ -370,6 +511,57 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
     return true;
   }
 
+  // Attribute values in mismatch reports, cut so one long URL or style
+  // cannot flood the console.
+  const clip = (s) => JSON.stringify(s.length > 60 ? `${s.slice(0, 57)}...` : s);
+
+  // The claim side of an attribute op on a server-rendered node. The server
+  // rendered the same view, so the markup should already carry the value:
+  // a match costs a read, and anything else is rewritten to what the view
+  // says and reported. Skipping the matching writes also leaves the live
+  // state of a form control alone (setAttr('value') writes the property
+  // too), though the claim snapshots and restores that state regardless
+  // (see claimControl).
+  function claimAttr(node, k, v) {
+    claimFrame.declared.push(k);
+    const cur = dom.getAttr(node, k);
+    if (!attrAllowed(k, v)) {
+      if (cur !== null) {
+        noteMismatch(`the server rendered ${k}=${clip(cur)} on <${dom.elementTag(node)}>, which Joy refuses to set (event handler attributes and javascript: URLs)`);
+        dom.removeAttr(node, k);
+      }
+      return;
+    }
+    if (cur === v) return;
+    // HTML has no value attribute for a textarea, so the server writes the
+    // value as its text instead. The text is checked when the textarea's
+    // frame closes, and the attribute's absence here is no difference.
+    if (cur === null && k === 'value' && claimFrame.tag === 'textarea') {
+      claimFrame.textareaValue = v;
+    } else {
+      noteMismatch(cur === null
+        ? `expected ${k}=${clip(v)} on <${dom.elementTag(node)}> but the server rendered no ${k}`
+        : `expected ${k}=${clip(v)} on <${dom.elementTag(node)}> but the server rendered ${k}=${clip(cur)}`);
+    }
+    dom.setAttr(node, k, v);
+  }
+
+  // Bare boolean attributes parse to "", which is also what setAttr writes,
+  // so presence is the whole comparison.
+  function claimBool(node, k, flag) {
+    claimFrame.declared.push(k);
+    const present = dom.getAttr(node, k) !== null;
+    if (flag && attrAllowed(k, '')) {
+      if (!present) {
+        noteMismatch(`expected ${k} on <${dom.elementTag(node)}> but the server rendered it without`);
+        dom.setAttr(node, k, '');
+      }
+    } else if (present) {
+      noteMismatch(`the server rendered ${k} on <${dom.elementTag(node)}>, which the app's first render leaves off`);
+      dom.removeAttr(node, k);
+    }
+  }
+
   // Read a string embedded in the command buffer itself at word index `i`
   // (a length word, then the bytes packed four per word). Returns [string,
   // next word index]. Removal ops embed their names because the tree those
@@ -394,24 +586,17 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
         // A refused value also drops whatever the attribute held before:
         // keeping a stale href would leave the link pointing somewhere the
         // view no longer says.
-        //
-        // While claiming, a value the markup already carries is not
-        // rewritten. Beyond saving the write, this leaves live form-control
-        // state alone: setAttr('value') also sets the property, and the
-        // user may have typed into the field before the app booted.
-        if (attrAllowed(k, v)) {
-          if (!claiming || dom.getAttr(node, k) !== v) dom.setAttr(node, k, v);
-        } else dom.removeAttr(node, k);
+        if (claimFrame !== null) claimAttr(node, k, v);
+        else if (attrAllowed(k, v)) dom.setAttr(node, k, v);
+        else dom.removeAttr(node, k);
       } else if (op === OP_BOOL_ATTR) {
         i = sref(w, i);
         const k = srefVal;
         const flag = w[i++] !== 0;
         if (k === 'checked' || k === 'selected') (node[LIVE] ??= {})[k] = flag;
-        // Bare boolean attributes parse to "", which is also what setAttr
-        // writes, so presence is the whole comparison while claiming.
-        if (flag && attrAllowed(k, '')) {
-          if (!claiming || dom.getAttr(node, k) == null) dom.setAttr(node, k, '');
-        } else if (!claiming || dom.getAttr(node, k) != null) dom.removeAttr(node, k);
+        if (claimFrame !== null) claimBool(node, k, flag);
+        else if (flag && attrAllowed(k, '')) dom.setAttr(node, k, '');
+        else dom.removeAttr(node, k);
       } else if (op === OP_MSG_EVENT) {
         i = sref(w, i);
         const name = srefVal;
@@ -472,25 +657,54 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
     return i;
   }
 
+  // The namespace key and lowercased tag the children of element `el` take
+  // their own namespace from (see childNamespace). An HTML parent's tag
+  // never matters, so it is left out.
+  function nsFrame(el) {
+    const ns = dom.nsOf(el);
+    return { ns, tag: ns === 'html' ? '' : (dom.elementTag(el) ?? '').toLowerCase() };
+  }
+
+  // The namespace of a new element named `tag` under a parent with
+  // namespace `pNs` and lowercased tag `pTag`. The HTML case, nearly every
+  // element of nearly every app, is the first test.
+  function nsUnder(pNs, pTag, pEl, tag) {
+    if (pNs === 'html') return rootNs(tag);
+    return childNamespace(pNs, pTag, tag, pTag === 'annotation-xml' ? dom.getAttr(pEl, 'encoding') : null);
+  }
+
   // Build the balanced op range [start, end) into `parent` and return the next
   // index. Nodes are created in document pre-order, so when `out` is given
   // every created node is pushed onto it, saving callers that need the
-  // subtree's pre-order (the node-list splice) a second walk.
-  function buildRange(w, start, end, parent, out) {
+  // subtree's pre-order (the node-list splice) a second walk. `ctx` is the
+  // element the range lands under, whose namespace the new elements start
+  // from: `parent` itself, unless that is a detached fragment standing in
+  // for it.
+  function buildRange(w, start, end, parent, out, ctx = parent) {
     const stack = [parent];
     const top = () => stack[stack.length - 1];
+    const ctxFrame = nsFrame(ctx);
+    const nsStack = [ctxFrame.ns];
+    const tagStack = [ctxFrame.tag];
     let i = start;
     while (i < end) {
       const op = w[i];
       if (op === OP_ELEMENT_OPEN) {
         i = sref(w, i + 1);
-        const el = dom.createElement(srefVal);
+        const tag = srefVal;
+        const d = nsStack.length - 1;
+        const ns = nsUnder(nsStack[d], tagStack[d], d === 0 ? ctx : stack[d], tag);
+        const el = dom.createElement(tag, ns);
         dom.append(top(), el);
         out?.push(el);
         stack.push(el);
+        nsStack.push(ns);
+        tagStack.push(ns === 'html' ? '' : tag.toLowerCase());
       } else if (op === OP_ELEMENT_CLOSE) {
         i += 1;
         stack.pop();
+        nsStack.pop();
+        tagStack.pop();
       } else if (op === OP_TEXT) {
         i += 1;
         const t = dom.createText(str(w[i++], w[i++]));
@@ -510,11 +724,13 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
   // Claim the server-rendered DOM instead of building it: walk the same
   // balanced build-op range a full build would execute, but advance a cursor
   // through the existing children in lockstep, adopting each node the ops
-  // expect. Handlers attach and handler ids record exactly as in a build;
-  // attribute values the markup already carries are skipped (see
-  // applyAttrOps). The result must be indistinguishable from a fresh build,
-  // node for node, because every later patch addresses nodes by pre-order
-  // index, so the walk also fixes what HTML serialization cannot express:
+  // expect. Handlers attach and handler ids record exactly as in a build,
+  // and attribute values the markup already carries are not rewritten (see
+  // claimAttr). The result must be indistinguishable from a fresh build,
+  // node for node and attribute for attribute, because every later patch
+  // addresses nodes by pre-order index and diffs only the attributes the
+  // view declares, so the walk also fixes what HTML serialization cannot
+  // express:
   //
   //   * adjacent text vnodes serialize as one merged text node, so the DOM
   //     node is split and the front claimed (splitText)
@@ -522,6 +738,15 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
   //     inserted where the ops expect one
   //   * comments (and anything else that is neither element nor text) never
   //     came from a view, so they are dropped on sight
+  //   * a textarea's value serializes as its text, which is taken back out
+  //     (see closeFrame)
+  //   * what the user typed, ticked or picked before the app booted lives
+  //     only in the controls' live state, which is kept and then delivered
+  //     to the app (see deliverTypedAhead)
+  //
+  // An attribute the markup carries that the view does not declare, or a
+  // value that differs, is a mismatch like a wrong node: rewritten to the
+  // view's and reported.
   //
   // A genuine mismatch, where the markup disagrees with the app's first
   // render, is repaired locally: the expected node is built fresh in place,
@@ -536,9 +761,18 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
     // null, so their subtrees skip matching entirely. An empty root gets the
     // fresh treatment from the start: nothing was server-rendered, which is
     // a plain build and not a mismatch, so one loader serves both cases.
+    //
+    // A claimed element's frame also carries what its own closing needs:
+    // `declared`, the attribute keys its ops set (null on the root and on
+    // fresh elements, which have nothing to sweep), `control`, a snapshot
+    // of a form control's live state taken before any op touched it, and
+    // `textareaValue`, the value a textarea's server-rendered text has to
+    // match. `ns` and `nsTag` are what its children take their namespace
+    // from (see nsFrame).
     const rootKids = [...dom.childrenOf(root)];
     const hadKids = rootKids.length !== 0; // the walk splices rootKids, so decide now
-    const frames = [{ parent: root, kids: hadKids ? rootKids : null, idx: 0 }];
+    const rootNsFrame = nsFrame(root);
+    const frames = [{ parent: root, kids: hadKids ? rootKids : null, idx: 0, ns: rootNsFrame.ns, nsTag: rootNsFrame.tag, tag: '', declared: null, control: null, textareaValue: undefined }];
     const top = () => frames[frames.length - 1];
 
     // Remove comment-ish nodes at the cursor: neither element nor text, so
@@ -561,14 +795,55 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
 
     // Children the ops never claimed are not in the app's first render:
     // remove them. Elements and text are real divergence worth the warning;
-    // stray junk is not.
+    // stray junk is not. Then a claimed element settles what only its close
+    // can: a textarea's server-rendered value, the attributes the view never
+    // declared, and a form control's live state.
     const closeFrame = (f) => {
       if (f.kids === null) return;
-      for (let k = f.idx; k < f.kids.length; k++) {
+      let k = f.idx;
+      // A textarea whose ops set its value and build no children of their
+      // own: its text is the server's rendering of that value, not a child
+      // of the app's render.
+      if (f.textareaValue !== undefined && f.idx === 0) {
+        let text = '';
+        for (; k < f.kids.length && dom.textValue(f.kids[k]) !== null; k++) {
+          text += dom.textValue(f.kids[k]);
+          dom.removeChild(f.parent, f.kids[k]);
+        }
+        if (text !== f.textareaValue) {
+          noteMismatch(`expected the <textarea> to hold ${clip(f.textareaValue)} but the server rendered ${clip(text)}`);
+        }
+      }
+      for (; k < f.kids.length; k++) {
         if (dom.elementTag(f.kids[k]) !== null || dom.textValue(f.kids[k]) !== null) {
           noteMismatch(`the server rendered more inside <${dom.elementTag(f.parent) ?? 'the root'}> than the app's first render has`);
         }
         dom.removeChild(f.parent, f.kids[k]);
+      }
+      if (f.declared !== null) {
+        // An attribute the view never declares would outlive every later
+        // render, since the host's diff only ever touches the ones it knows
+        // about. A stale `disabled` would disable the button for good.
+        const declared = new Set(f.declared.map((key) => dom.attrName(f.parent, key)));
+        for (const name of dom.attrNames(f.parent)) {
+          if (!declared.has(name)) {
+            noteMismatch(`the server rendered ${name}=${clip(dom.getAttr(f.parent, name, true) ?? '')} on <${dom.elementTag(f.parent)}>, which the app's first render does not have`);
+            dom.removeAttr(f.parent, name, true);
+          }
+        }
+      }
+      if (f.control !== null) {
+        // What the user typed, ticked or picked before the app booted wins
+        // over the server's defaults: put it back (a rewrite above may have
+        // replaced it) and let start() tell the app. An untouched control
+        // gets the view's state, which the markup may not express (a
+        // select's value attribute, say).
+        if (f.control.dirty) {
+          dom.restoreControlState(f.parent, f.control.state);
+          typedAhead.push(f.parent);
+        } else {
+          restoreControl(f.parent);
+        }
       }
     };
 
@@ -612,33 +887,47 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
       if (op === OP_ELEMENT_OPEN) {
         i = sref(w, i + 1);
         const tag = srefVal;
+        const lower = tag.toLowerCase();
         const f = top();
+        const ns = nsUnder(f.ns, f.nsTag, f.parent, tag);
         let el = null;
         if (f.kids !== null) {
           dropJunk(f);
           const cand = f.kids[f.idx];
+          const candTag = cand === undefined ? null : dom.elementTag(cand);
           // Case-insensitive: HTML tags parse caselessly, and SVG localName
-          // keeps camelCase (feGaussianBlur) while views may not.
-          if (cand !== undefined && dom.elementTag(cand)?.toLowerCase() === tag.toLowerCase()) {
+          // keeps camelCase (feGaussianBlur) while views may not. The
+          // namespace has to match too: an svg <title> is not an HTML one.
+          if (candTag !== null && candTag.toLowerCase() === lower && dom.nsOf(cand) === ns) {
             el = cand;
             f.idx++;
+          } else if (candTag !== null && candTag.toLowerCase() === lower) {
+            noteMismatch(`expected <${tag}> in the ${ns} namespace but the server's <${candTag}> is in the ${dom.nsOf(cand)} one`);
           } else if (cand !== undefined) {
-            noteMismatch(`expected <${tag}> but the server rendered ${dom.elementTag(cand) === null ? 'text' : `<${dom.elementTag(cand)}>`}`);
+            // The one rewrite of well-formed-looking markup that views hit
+            // most: the parser wraps rows that sit directly in a table.
+            const hint = lower === 'tr' && candTag?.toLowerCase() === 'tbody'
+              ? ' (the HTML parser puts a <tr> that sits directly in a <table> inside a <tbody>, so give the rows a tbody of their own)'
+              : '';
+            noteMismatch(`expected <${tag}> but the server rendered ${candTag === null ? 'text' : `<${candTag}>`}${hint}`);
           } else {
             noteMismatch(`expected <${tag}> but the server rendered nothing there`);
           }
         }
+        const nsTag = ns === 'html' ? '' : lower;
         if (el !== null) {
           // The parser moves a template's children into its inert
           // `.content` fragment; the ops build them as regular children
           // (like createElement does), so the parsed copies would linger
           // unseen. Dropping them keeps one copy.
           dom.clearParsedTemplate?.(el);
-          frames.push({ parent: el, kids: [...dom.childrenOf(el)], idx: 0 });
+          // A control's state is read before its own ops can rewrite it.
+          const control = CONTROLS.has(lower) ? { dirty: dom.userChanged(el), state: dom.controlState(el) } : null;
+          frames.push({ parent: el, kids: [...dom.childrenOf(el)], idx: 0, ns, nsTag, tag: lower, declared: [], control, textareaValue: undefined });
         } else {
-          const fresh = dom.createElement(tag);
+          const fresh = dom.createElement(tag, ns);
           insertFresh(f, fresh);
-          frames.push({ parent: fresh, kids: null, idx: 0 });
+          frames.push({ parent: fresh, kids: null, idx: 0, ns, nsTag, tag: lower, declared: null, control: null, textareaValue: undefined });
         }
       } else if (op === OP_ELEMENT_CLOSE) {
         i += 1;
@@ -648,7 +937,13 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
         i += 3;
         hydrateText(top(), s);
       } else if (op === OP_ATTR || op === OP_BOOL_ATTR || op === OP_MSG_EVENT || op === OP_VALUE_EVENT || op === OP_KEY_EVENT || op === OP_POINTER_EVENT || op === OP_FILE_EVENT || op === OP_VISIBLE) {
-        i = applyAttrOps(w, i, end, top().parent);
+        const f = top();
+        claimFrame = f.declared !== null ? f : null;
+        try {
+          i = applyAttrOps(w, i, end, f.parent);
+        } finally {
+          claimFrame = null;
+        }
       } else {
         throw new Error(`unknown build op ${op} at word ${i}`);
       }
@@ -705,16 +1000,10 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
       structural = true;
       if (hydrateFirstPaint) {
         hydrateFirstPaint = false;
-        claiming = true;
-        let claimed = false;
-        try {
-          claimed = hydrateRange(w, 1, w.length);
-        } finally {
-          claiming = false;
-        }
+        const claimed = hydrateRange(w, 1, w.length);
         hydrateOutcome = { claimed, mismatch: hydrateMismatch };
         if (hydrateMismatch) {
-          console.warn(`Joy hydrate: the server-rendered HTML did not match the app's first render (${hydrateMismatch}). The mismatched nodes were rebuilt, so the page is correct, but the server view and the client's init disagree and hydration paid for both.`);
+          console.warn(`Joy hydrate: the server-rendered HTML did not match the app's first render (${hydrateMismatch}). The mismatched nodes and attributes were repaired, so the page is correct, but the server view and the client's init disagree and hydration paid for both.`);
         }
       } else {
         cleanupSubtree(root);
@@ -735,7 +1024,9 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
           const idx = w[i++];
           const n = w[i++];
           const holder = dom.fragment();
-          buildRange(w, i, i + n, holder);
+          // Built detached, but in the namespace of the parent it replaces
+          // into: a node swapped inside an <svg> stays SVG.
+          buildRange(w, i, i + n, holder, undefined, dom.parentOf(refs[idx]) ?? root);
           i += n;
           cleanupSubtree(refs[idx]);
           dom.replaceNode(refs[idx], dom.childrenOf(holder)[0]);
@@ -794,7 +1085,7 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
                 const nw = w[i++];
                 const holder = dom.fragment();
                 const fresh = [];
-                buildRange(w, i, i + nw, holder, fresh);
+                buildRange(w, i, i + nw, holder, fresh, parent);
                 i += nw;
                 placed.push(fresh[0]);
                 moved.push(true);
@@ -1255,6 +1546,34 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
       exports.start(fp, fl);
       return true; // first render is always a paint
     });
+    deliverTypedAhead();
+  }
+
+  // Tell the app what the user typed, ticked or picked in a server-rendered
+  // control before the wasm arrived (the claim kept it on the page, see
+  // closeFrame). Each control goes through the handler a real input or
+  // change event would have reached, so the app sees an ordinary message
+  // and may refuse it like any other, which the pin after it then shows. A
+  // radio reports only from the one now checked, as the browser's own
+  // change event would, and a control with no value handler keeps the
+  // input with nobody told, like any input the app does not listen to.
+  function deliverTypedAhead() {
+    const controls = typedAhead;
+    typedAhead = [];
+    for (const node of controls) {
+      if (!alive) return;
+      // An earlier delivery may have re-rendered this control away, and the
+      // handler ids of a dropped node are the host's no longer.
+      if (!nodeList.includes(node)) continue;
+      if (dom.getAttr(node, 'type') === 'radio' && !dom.getProp(node, 'checked')) continue;
+      const m = node[EVENTS];
+      const input = m?.get('input');
+      const change = m?.get('change');
+      const d = input?.kind === 'value' ? input : change?.kind === 'value' ? change : null;
+      if (d === null) continue;
+      dispatchValue(d.id, dom.eventProp({ target: node }, d.prop));
+      restoreControl(node);
+    }
   }
 
   // Register a JS handler for an outgoing port (Port.send in the app).
@@ -1370,8 +1689,27 @@ function writeValue(node, v) {
 }
 
 // Browser DOM adapter.
+// An attribute on a non-HTML element, the way the HTML parser would have
+// stored it (see foreignAttr).
+const foreignAttrOf = (node, k) => foreignAttr(node.namespaceURI === NS.svg ? 'svg' : 'math', k);
+
+// The option index a single-row select shows when nobody has touched it: the
+// last option the markup marks selected, else the first enabled one. Used
+// to tell a user's pick from the default.
+function defaultOptionIndex(select) {
+  const options = Array.from(select.options);
+  for (let k = options.length - 1; k >= 0; k--) if (options[k].defaultSelected) return k;
+  if (select.size > 1) return -1;
+  return options.findIndex((o) => !o.disabled);
+}
+
 export const browserDom = {
-  createElement: (tag) => document.createElement(tag),
+  createElement: (tag, ns) =>
+    ns === 'svg' || ns === 'math'
+      ? document.createElementNS(NS[ns], foreignTagName(ns, tag))
+      : document.createElement(tag),
+  nsOf: (n) => (n.namespaceURI === NS.svg ? 'svg' : n.namespaceURI === NS.math ? 'math' : 'html'),
+  parentOf: (n) => n.parentNode,
   createText: (s) => document.createTextNode(s),
   fragment: () => document.createDocumentFragment(),
   append: (parent, child) => parent.appendChild(child),
@@ -1383,6 +1721,12 @@ export const browserDom = {
   insertBefore: (parent, node, anchor) => parent.insertBefore(node, anchor),
   removeChild: (parent, node) => parent.removeChild(node),
   setAttr: (node, k, v) => {
+    if (node.namespaceURI !== NS.html) {
+      const a = foreignAttrOf(node, k);
+      if (a.ns === null) node.setAttribute(a.name, v);
+      else node.setAttributeNS(a.ns, a.name, v);
+      return;
+    }
     node.setAttribute(k, v);
     // Live form-control state follows the property, not the attribute: once
     // the user has interacted, the attribute only describes the default.
@@ -1390,7 +1734,20 @@ export const browserDom = {
     else if (k === 'checked' && 'checked' in node) node.checked = true;
     else if (k === 'selected' && 'selected' in node) node.selected = true;
   },
-  removeAttr: (node, k) => {
+  // `exact` takes `k` as the qualified name the element reports (from
+  // attrNames) rather than a name a view wrote, so a stray lowercase viewbox
+  // is removed without touching the viewBox the adjustment would point at.
+  removeAttr: (node, k, exact = false) => {
+    if (node.namespaceURI !== NS.html) {
+      if (exact) {
+        node.removeAttribute(k);
+        return;
+      }
+      const a = foreignAttrOf(node, k);
+      if (a.ns === null) node.removeAttribute(a.name);
+      else node.removeAttributeNS(a.ns, a.name.slice(a.name.indexOf(':') + 1));
+      return;
+    }
     node.removeAttribute(k);
     if (k === 'value' && 'value' in node) node.value = '';
     else if (k === 'checked' && 'checked' in node) node.checked = false;
@@ -1483,7 +1840,32 @@ export const browserDom = {
   elementTag: (n) => (n.nodeType === 1 ? n.localName : null),
   textValue: (n) => (n.nodeType === 3 ? n.nodeValue : null),
   splitText: (n, offset) => n.splitText(offset),
-  getAttr: (n, k) => n.getAttribute(k),
+  getAttr: (n, k, exact = false) => n.getAttribute(exact || n.namespaceURI === NS.html ? k : foreignAttrOf(n, k).name),
+  attrNames: (n) => n.getAttributeNames(),
+  attrName: (n, k) => (n.namespaceURI === NS.html ? k.toLowerCase() : foreignAttrOf(n, k).name),
+  // Whether the user changed a server-rendered control before the app
+  // booted: its live state against the default the markup gave it.
+  userChanged: (n) => {
+    if (n.localName === 'select') {
+      if (n.multiple) return Array.from(n.options).some((o) => o.selected !== o.defaultSelected);
+      const def = defaultOptionIndex(n);
+      return Array.from(n.options).some((o, k) => o.selected !== (k === def));
+    }
+    if (n.type === 'checkbox' || n.type === 'radio') return n.checked !== n.defaultChecked;
+    if (n.type === 'file') return false;
+    return n.value !== n.defaultValue;
+  },
+  controlState: (n) =>
+    n.localName === 'select' ? Array.from(n.options, (o) => o.selected) : { value: n.value, checked: n.checked },
+  restoreControlState: (n, s) => {
+    if (Array.isArray(s)) {
+      Array.from(n.options).forEach((o, k) => { if (k < s.length && o.selected !== s[k]) o.selected = s[k]; });
+    } else if (n.type === 'checkbox' || n.type === 'radio') {
+      if (n.checked !== s.checked) n.checked = s.checked;
+    } else if (n.type !== 'file') {
+      writeValue(n, s.value);
+    }
+  },
   getProp: (n, k) => n[k],
   setProp: (n, k, v) => { if (k === 'value' && 'value' in n) writeValue(n, v); else n[k] = v; },
   // Every radio sharing the node's name within its form (or the document

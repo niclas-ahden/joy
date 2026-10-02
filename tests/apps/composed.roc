@@ -37,15 +37,12 @@ counter_update = |count, msg|
 	}
 
 # An effect the component wants run at boot (an immediate timer), and the
-# recurring event source it owns. Both are functions rather than top-level
-# constants: a constant Effect/Sub holds a boxed closure, and the compiler
-# segfaults materializing a closure as static data now that every value the
-# constant reaches is pure.
-counter_boot : {} -> Effect(CounterMsg)
-counter_boot = |_| Time.after(5, |_| Increment)
+# recurring event source it owns.
+counter_boot : Effect(CounterMsg)
+counter_boot = Time.after(5, |_| Increment)
 
-counter_ticks : {} -> Sub(CounterMsg)
-counter_ticks = |_| Time.every(1000, |_| Increment)
+counter_ticks : Sub(CounterMsg)
+counter_ticks = Time.every(1000, |_| Increment)
 
 # --- The parent app: two independent counters ---
 
@@ -57,12 +54,12 @@ Msg : [
 ]
 
 # Only the left counter auto-ticks; Sub.map routes its ticks to it.
-subscriptions = |_model| [Sub.map(counter_ticks({}), |m| Left(m))]
+subscriptions = |_model| [Sub.map(counter_ticks, |m| Left(m))]
 
 init : Str -> (Model, List(Effect(Msg)))
 init = |_|
 # Effect.map routes the component's boot effect to the right counter.
-	({ left: 0, right: 0 }, [Effect.map(counter_boot({}), |m| Right(m))])
+	({ left: 0, right: 0 }, [Effect.map(counter_boot, |m| Right(m))])
 
 update : Model, Msg -> (Model, List(Effect(Msg)))
 update = |model, msg|

@@ -25,20 +25,13 @@ update = |model, msg|
 		Next => ({ count: model.count + 1 }, [])
 	}
 
-# A named helper rather than `element(...)` inline in the match arm: joining
-# a direct `element` call with a `text` call in one arm crashes roc build
-# with an out-of-bounds panic in the solved-type digest, a known compiler
-# bug. Routing the element through a top-level function sidesteps it.
-odd_view : Str -> Html(Msg)
-odd_view = |label| element("b", [], [text("odd ${label}")])
-
 render : Model -> Html(Msg)
 render = |model| {
 	label = model.count.to_str()
 	child =
 		match model.count % 2 {
 			0 => text("even ${label}")
-			_ => odd_view(label)
+			_ => element("b", [], [text("odd ${label}")])
 		}
 	div([], [button([on_click(Next)], [text("next")]), child])
 }

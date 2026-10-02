@@ -1,0 +1,3 @@
+# Roc, JS and the fixtures compare bytes, so every checkout gets LF,
+# Windows included.
+* text=auto eol=lf

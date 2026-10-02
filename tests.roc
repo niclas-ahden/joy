@@ -36,7 +36,7 @@ main! = |args| {
 	run!("roc", ["test", "platform/main.roc"])?
 
 	Stdout.line!("== building and testing with --opt=${opt}")?
-	run!("./build.roc", ["--", "--opt=${opt}"])?
+	run!("roc", ["./build.roc", "--", "--opt=${opt}"])?
 
 	# node:test runs each harness in its own child process (concurrently) and
 	# keeps going past a failing file, so one broken harness can't hide the

@@ -21,17 +21,11 @@ Model : {
 	upload : Str,
 }
 
-# GotUploadResponse carries a small decoded payload rather than the usual
-# `Try(Http.Response, ...)`: an app that creates both a file callable
-# (`on_file`) and an http callback whose Msg embeds the response types
-# crashes roc build with an out-of-bounds panic while unifying solved-type
-# digests of erased callables, a known compiler bug. Decoding the Try inside
-# the callback keeps those types out of Msg and sidesteps it.
 Msg : [
 	UserPickedFile(Attribute.FileInfo),
 	GotHash(List(U8)),
 	UserClickedUpload,
-	GotUploadResponse([UploadedWithStatus(U16), UploadFailed]),
+	GotUploadResponse(Try(Http.Response, [HttpErr([Timeout, NetworkError])])),
 ]
 
 subscriptions = |_model| []
@@ -62,20 +56,17 @@ update = |model, msg|
 								"/upload",
 								info.id,
 								[{ name: "x-file-name", value: info.name }],
-								|r| match r {
-									Ok(resp) => GotUploadResponse(UploadedWithStatus(resp.status))
-									Err(HttpErr(_)) => GotUploadResponse(UploadFailed)
-								},
+								|r| GotUploadResponse(r),
 							),
 						],
 					)
 				NoFile => (model, [])
 			}
 
-		GotUploadResponse(UploadedWithStatus(status)) =>
-			({ ..model, upload: "upload status ${status.to_str()}" }, [])
+		GotUploadResponse(Ok(resp)) =>
+			({ ..model, upload: "upload status ${resp.status.to_str()}" }, [])
 
-		GotUploadResponse(UploadFailed) =>
+		GotUploadResponse(Err(_)) =>
 			({ ..model, upload: "upload failed" }, [])
 		}
 

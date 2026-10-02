@@ -129,13 +129,14 @@ wasm_path = |src, opt| "build/${opt}/${example_name(Path.display(src))}.wasm"
 
 # The Rust host becomes one relocatable wasm object (staticlib crate-type plus
 # --emit obj). no_std and panic=abort keep it import-free. It defines the six
-# roc_* runtime symbols and the compiler-rt intrinsics Roc's builtins call (see
-# host.rs), and leaves roc_init/roc_update/roc_render to the compiled app.
+# roc_* runtime symbols and leaves roc_init/roc_update/roc_render to the
+# compiled app.
 #
 # host.rs derives its offsets and strides from host/roc_platform_abi.rs, whose
 # layout asserts turn ABI drift into a compile error. That file is committed
-# and hand-maintained: `roc glue` overflows its stack on this platform, so
-# there is nothing to regenerate it with.
+# and hand-maintained: `roc glue` rejects a platform whose `requires` types
+# hold type variables (Model and Msg here), so there is nothing to regenerate
+# it with.
 build_host! = || {
 	small_buffers = if (Env.var_str!("SMALL_BUFFERS") ?? "").is_empty() {
 		[]
@@ -224,10 +225,25 @@ build_example! = |path, opt| {
 	}
 
 	if clean and Path.utf8(out).is_file!()? {
-		Ok({})
+		render_pages!(path, opt)
 	} else {
 		Stderr.line!(output)?
 		fail!("roc build failed for ${src}")
+	}
+}
+
+# A directory app with an ssr.roc next to its app.roc gets server-rendered
+# pages as well: the generator renders the app's own view with joy-html into
+# build/<opt>/ssr/<name>/, and www/serve.mjs serves those pages in place of
+# the plain shell, so the browser tests can boot the app over real markup
+# (see tests/apps/hydrate_lab).
+render_pages! = |path, opt| {
+	src = Path.display(path)
+	generator = "${src.drop_suffix("app.roc")}ssr.roc"
+	if src.ends_with("/app.roc") and Path.utf8(generator).is_file!()? {
+		run!("roc", [generator, "build/${opt}/ssr/${example_name(src)}"])
+	} else {
+		Ok({})
 	}
 }
 

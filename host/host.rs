@@ -29,8 +29,8 @@
 #![allow(static_mut_refs)]
 
 // ABI bindings for platform/main.roc in the shape `roc glue` (Rust spec)
-// would emit, committed and hand-maintained because `roc glue` overflows its
-// stack on this platform (see build.roc). The file carries size/alignment
+// would emit, committed and hand-maintained because `roc glue` rejects this
+// platform (see build.roc). The file carries size/alignment
 // assertions for both pointer widths, the tag discriminants, and the extern
 // signatures of every provided entry point. Every offset/stride/discriminant
 // constant this host uses is derived from those types (see the aliases
@@ -3898,45 +3898,6 @@ pub extern "C" fn cmd_ptr() -> usize {
 #[no_mangle]
 pub extern "C" fn cmd_len() -> usize {
     unsafe { CMD_LEN }
-}
-
-// --- compiler-rt intrinsics ---
-// Roc's builtins use 128-bit arithmetic (JSON number parsing among others)
-// and LLVM lowers that to compiler-rt libcalls. A Zig host gets these from
-// Zig's compiler-rt automatically, but our single-object rustc host does
-// not. Bundling compiler-rt is not an option either: roc's wasm linker
-// currently rejects the relocations in rustc-built .a archives, another
-// known compiler bug. So the ones Roc needs are implemented here by hand. wasm32 C ABI: i128 crosses as two i64 halves,
-// low first, and an i128 return becomes a leading sret pointer.
-
-/// 128-bit multiplication: writes a * b to `ret` (two u64 words, low first).
-#[no_mangle]
-pub extern "C" fn __multi3(ret: *mut u64, a_lo: u64, a_hi: u64, b_lo: u64, b_hi: u64) {
-    let (lo, carry) = mul_u64_wide(a_lo, b_lo);
-    let hi = carry
-        .wrapping_add(a_lo.wrapping_mul(b_hi))
-        .wrapping_add(a_hi.wrapping_mul(b_lo));
-    unsafe {
-        *ret = lo;
-        *ret.add(1) = hi;
-    }
-}
-
-/// Full 64x64 -> 128 multiplication via 32-bit limbs, avoiding u128 (which
-/// would lower right back into a __multi3 call).
-fn mul_u64_wide(a: u64, b: u64) -> (u64, u64) {
-    let a_lo = a & 0xffff_ffff;
-    let a_hi = a >> 32;
-    let b_lo = b & 0xffff_ffff;
-    let b_hi = b >> 32;
-    let ll = a_lo * b_lo;
-    let lh = a_lo * b_hi;
-    let hl = a_hi * b_lo;
-    let hh = a_hi * b_hi;
-    let mid = (ll >> 32) + (lh & 0xffff_ffff) + (hl & 0xffff_ffff);
-    let lo = (ll & 0xffff_ffff) | (mid << 32);
-    let hi = hh + (lh >> 32) + (hl >> 32) + (mid >> 32);
-    (lo, hi)
 }
 
 #[panic_handler]

@@ -1,8 +1,18 @@
 // Shared tiny fake DOM for the node harnesses. Nodes are objects so tests can
 // assert identity across diffs (reused vs rebuilt).
+import { foreignAttr, foreignTagName } from '../www/runtime.js';
+
+// Elements carry a namespace key ('html', 'svg' or 'math', see the runtime's
+// Namespaces notes), and a foreign element's attributes are stored under
+// the names the HTML parser gives them, with the namespace of a prefixed
+// one (xlink:href) in `attrNs`. Both use the runtime's own tables, so a
+// harness checks that the runtime asks for the right namespace and the
+// browser suite checks the tables against a real parser.
 export class El {
-  constructor(tag) {
+  constructor(tag, ns = 'html') {
     this.tag = tag;
+    this.ns = ns;
+    this.attrNs = new Map();
     this.children = [];
     // Like addEventListener, an event can have several listeners; firing
     // `listeners[event]()` calls them all, so a runtime that double-binds
@@ -25,9 +35,36 @@ export class Comment {
   constructor(s) { this.text = s; this.parent = null; }
 }
 
+const isForeign = (n) => n.ns !== undefined && n.ns !== 'html';
+
+// The live state of a control, like the browser's properties: a value or
+// checked a test (standing in for the user) or the runtime assigned, else
+// the default the markup gives it.
+const options = (n) => n.children.flatMap((c) => (c instanceof El ? (c.tag === 'option' ? [c] : options(c)) : []));
+const defaultValue = (n) => (n.tag === 'textarea'
+  ? n.children.filter((c) => c instanceof Text).map((c) => c.text).join('')
+  : n.attrs.get('value') ?? '');
+const liveValue = (n) => n.value ?? defaultValue(n);
+const liveChecked = (n) => n.checked ?? n.attrs.has('checked');
+const isToggle = (n) => n.tag === 'input' && ['checkbox', 'radio'].includes(n.attrs.get('type'));
+// A select's default selection: the last option the markup marks selected,
+// else the first enabled one (none for a multiple select).
+const defaultSelection = (n) => {
+  const opts = options(n);
+  if (n.attrs.has('multiple')) return opts.map((o) => o.attrs.has('selected'));
+  let def = -1;
+  opts.forEach((o, k) => { if (o.attrs.has('selected')) def = k; });
+  if (def < 0) def = opts.findIndex((o) => !o.attrs.has('disabled'));
+  return opts.map((_, k) => k === def);
+};
+const liveSelection = (n) => {
+  const def = defaultSelection(n);
+  return options(n).map((o, k) => o.selected ?? def[k]);
+};
+
 export const fakeDom = {
-  createElement: (tag) => {
-    const el = new El(tag);
+  createElement: (tag, ns = 'html') => {
+    const el = new El(ns === 'html' ? tag : foreignTagName(ns, tag), ns);
     elements.push(el);
     if (tag === 'dialog') dialogs.push(el);
     return el;
@@ -75,13 +112,28 @@ export const fakeDom = {
   // Mirrors browserDom: live form-control state is the property, the
   // attribute only sets the default (tests poke node.value/node.checked
   // directly to simulate user interaction).
+  nsOf: (n) => n.ns ?? 'html',
+  parentOf: (n) => n.parent,
   setAttr: (node, k, v) => {
+    if (isForeign(node)) {
+      const a = foreignAttr(node.ns, k);
+      node.attrs.set(a.name, v);
+      if (a.ns === null) node.attrNs.delete(a.name);
+      else node.attrNs.set(a.name, a.ns);
+      return;
+    }
     node.attrs.set(k, v);
     if (k === 'value') node.value = v;
     else if (k === 'checked') node.checked = true;
     else if (k === 'selected') node.selected = true;
   },
-  removeAttr: (node, k) => {
+  removeAttr: (node, k, exact = false) => {
+    if (isForeign(node)) {
+      const a = exact ? { name: k } : foreignAttr(node.ns, k);
+      node.attrs.delete(a.name);
+      node.attrNs.delete(a.name);
+      return;
+    }
     node.attrs.delete(k);
     if (k === 'value') node.value = '';
     else if (k === 'checked') node.checked = false;
@@ -177,7 +229,29 @@ export const fakeDom = {
     rest.parent = n.parent;
     return rest;
   },
-  getAttr: (n, k) => (n.attrs.has(k) ? n.attrs.get(k) : null),
+  getAttr: (n, k, exact = false) => {
+    const name = isForeign(n) && !exact ? foreignAttr(n.ns, k).name : k;
+    return n.attrs.has(name) ? n.attrs.get(name) : null;
+  },
+  attrNames: (n) => [...n.attrs.keys()],
+  attrName: (n, k) => (isForeign(n) ? foreignAttr(n.ns, k).name : k),
+  // The pre-boot interaction probes, mirroring browserDom on the fake
+  // properties above.
+  userChanged: (n) => {
+    if (n.tag === 'select') {
+      const def = defaultSelection(n);
+      return liveSelection(n).some((sel, k) => sel !== def[k]);
+    }
+    if (isToggle(n)) return liveChecked(n) !== n.attrs.has('checked');
+    if (n.attrs.get('type') === 'file') return false;
+    return liveValue(n) !== defaultValue(n);
+  },
+  controlState: (n) => (n.tag === 'select' ? liveSelection(n) : { value: liveValue(n), checked: liveChecked(n) }),
+  restoreControlState: (n, s) => {
+    if (Array.isArray(s)) options(n).forEach((o, k) => { if (k < s.length) o.selected = s[k]; });
+    else if (isToggle(n)) n.checked = s.checked;
+    else n.value = s.value;
+  },
   getProp: (n, k) => n[k],
   setProp: (n, k, v) => { n[k] = v; },
   // Every attached radio sharing the node's name, like the browser's group.

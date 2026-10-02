@@ -2,7 +2,7 @@
 // a missing trailing slash, the no-store headers a watch loop needs, and the
 // app-name guard that keeps a request from naming a file of its own. The
 // server runs as a real child process and is driven over HTTP, one process
-// per mode.
+// per mode and one more pinned to an app with page urls.
 // Run from the repo root: node tests/check_serve.mjs
 import { spawn } from 'node:child_process';
 import http from 'node:http';
@@ -11,11 +11,13 @@ import { expect, optLevel } from './harness.mjs';
 // Pid-derived ports keep concurrent harness runs from colliding.
 const prefixPort = 8900 + (process.pid % 400);
 const pinnedPort = prefixPort + 400;
+const pagesPort = prefixPort + 800;
 
 const opt = optLevel();
 const servers = [
   spawn('node', ['www/serve.mjs', String(prefixPort), opt]),
   spawn('node', ['www/serve.mjs', String(pinnedPort), opt, 'counter']),
+  spawn('node', ['www/serve.mjs', String(pagesPort), opt, 'pages']),
 ];
 process.on('exit', () => { for (const s of servers) s.kill(); });
 
@@ -31,7 +33,7 @@ async function ready(port) {
   }
   throw new Error(`server on ${port} never came up`);
 }
-await Promise.all([ready(prefixPort), ready(pinnedPort)]);
+await Promise.all([ready(prefixPort), ready(pinnedPort), ready(pagesPort)]);
 
 const get = (port, path) => fetch(`http://127.0.0.1:${port}${path}`, { redirect: 'manual' });
 
@@ -74,6 +76,19 @@ expect('wasm is wasm', new Uint8Array(await res.arrayBuffer()).slice(0, 4).join(
 // Only the four routes exist, so no request can name a file of its own.
 expect('unknown path within an app 404s', (await get(prefixPort, '/counter/host.rs')).status, 404);
 expect('app that was never built 404s', (await get(prefixPort, '/nonexistent_app/app.wasm')).status, 404);
+
+// A URL per page: an app that brings a page of its own gets it for every
+// one-segment path under it, so /pages/clock boots the same page as /pages/.
+// An app on the shared shell has not opted in, and neither has a prefix that
+// names no app, which is what the fetch fixture's /missing/quote relies on.
+res = await get(prefixPort, '/pages/clock');
+expect('page url serves the app page', res.status, 200);
+expect('page url content type', res.headers.get('content-type'), 'text/html');
+expect('page url is the page at the root', await res.text(), await (await get(prefixPort, '/pages/')).text());
+expect('deeper page paths 404', (await get(prefixPort, '/pages/clock/laps')).status, 404);
+expect('page paths with an extension 404', (await get(prefixPort, '/pages/clock.html')).status, 404);
+expect('apps on the shared shell have no page urls', (await get(prefixPort, '/counter/clock')).status, 404);
+expect('unknown prefixes have no page urls', (await get(prefixPort, '/missing/quote')).status, 404);
 
 // The app-name guard: dots and slashes never reach the file path, encoded
 // or not. fetch normalizes dot segments before sending, so these go over a
@@ -118,5 +133,10 @@ expect('pinned mode 404s the rest', (await get(pinnedPort, '/secrets')).status, 
 expect('pinned app under its own prefix', (await get(pinnedPort, '/counter/')).status, 200);
 expect('pinned wasm under its own prefix', (await get(pinnedPort, '/counter/app.wasm')).status, 200);
 expect('other prefixes still 404', (await get(pinnedPort, '/modal/')).status, 404);
+
+// Pinned with page urls, which is how watch.roc serves examples/pages/.
+expect('pinned page url serves the app page', (await get(pagesPort, '/clock')).status, 200);
+expect('pinned page url under its own prefix', (await get(pagesPort, '/pages/clock')).status, 200);
+expect('pinned deeper page paths 404', (await get(pagesPort, '/clock/laps')).status, 404);
 
 for (const s of servers) s.kill();

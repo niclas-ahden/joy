@@ -4,7 +4,7 @@ app [Model, Msg, init, update, render, subscriptions] {
 }
 
 import html.Html exposing [button, div, input, li, span, text, ul]
-import html.Attribute exposing [checked, class, on_check, on_click, on_input, type, value]
+import html.Attribute exposing [attribute, checked, class, on_check, on_click, on_input, type, value]
 import pf.Console
 import pf.Effect
 
@@ -20,6 +20,8 @@ import pf.Effect
 #     must attach
 #   * a list rendered from the model, so the harness can grow it after
 #     hydration and exercise structural patches on claimed nodes
+#   * an event handler attribute on the list, which the runtime refuses, so
+#     markup that carries one can be claimed against it
 #
 # The flags set the whole initial model, so a harness can stage any
 # server-rendered markup and boot the app to match (or mismatch) it.
@@ -60,6 +62,6 @@ render = |model|
 			input([class("draft"), value(model.draft), on_input(|s| Typed(s))]),
 			input([class("chk"), type("checkbox"), checked(model.on), on_check(|now| Toggled(now))]),
 			button([class("add"), on_click(Add)], [text("add")]),
-			ul([], model.items.map(|item| li([], [text(item)]))),
+			ul([attribute("onmouseover", "steal()")], model.items.map(|item| li([], [text(item)]))),
 		],
 	)

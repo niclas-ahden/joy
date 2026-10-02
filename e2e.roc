@@ -7,13 +7,14 @@
 # To build the examples at that optimization level (flags need roc's `--`
 # separator in front of them, otherwise roc claims --opt instead of passing
 # it on), serve the repo root, then let roc-spec run
-# tests/e2e/*_test.roc. Each one drives a Joy example in a real Chromium via
-# roc-playwright. Run from the repo root with `playwright` on PATH: the nix
-# devShell carries it and its browsers, CI's nightly-compiler legs install it
-# with npm instead. CI runs this next to ./tests.roc: the fake-DOM
-# harnesses there own the app logic, these tests own what only a real browser
-# can prove (event dispatch and bubbling, <dialog>, History, WebCrypto, fetch,
-# timers, real keyboard/mouse input).
+# tests/e2e/*_test.roc. Each one drives a Joy example in a real browser via
+# roc-playwright: Chromium by default, `--browser=firefox`, `webkit` or `all`
+# for the other engines Playwright bundles. Run from the repo root with
+# `playwright` on PATH: the nix devShell carries it and its browsers, CI's
+# nightly-compiler legs install it with npm instead. CI runs this next to
+# ./tests.roc: the fake-DOM harnesses there own the app logic, these tests own
+# what only a real browser can prove (event dispatch and bubbling, <dialog>,
+# History, WebCrypto, fetch, timers, real keyboard/mouse input).
 #
 # Set the environment variable `JOY_E2E_PORT` to change the port (default 8787).
 app [main!] {
@@ -26,19 +27,27 @@ import pf.Cmd
 import pf.Env
 import pf.Http
 import pf.Sleep
+import pf.Stdout
 import spec.Wait
 import weaver.Cli
+import weaver.Opt
 import Args
 import Util exposing [fail!, run!]
 
 main! = |args| {
-	opt = Args.check_opt!(Args.parse!(parser, args, "--opt=speed")?)?
+	{ opt: opt_arg, browser } = Args.parse!(parser, args, "--opt=speed")?
+	opt = Args.check_opt!(opt_arg)?
+	browsers = match browser {
+		"all" => ["chromium", "firefox", "webkit"]
+		"chromium" | "firefox" | "webkit" => [browser]
+		other => fail!("unknown --browser ${other}, expected chromium, firefox, webkit or all")?
+	}
 
 	if !(on_path!("playwright")) {
 		fail!("playwright not found. The nix devShell provides it, or install it with `npm install -g playwright && playwright install chromium`.")?
 	}
 
-	run!("./build.roc", ["--", "--opt=${opt}"])?
+	run!("roc", ["./build.roc", "--", "--opt=${opt}"])?
 
 	port = Env.var_str!("JOY_E2E_PORT") ?? "8787"
 	url = "http://127.0.0.1:${port}"
@@ -71,13 +80,24 @@ main! = |args| {
 	# The runner is interpreted (default --opt=dev). It is only orchestration,
 	# each test is spawned compiled (`roc --opt=speed`) by roc-spec. JOY_OPT
 	# names the build under test (stack_canary_test gates its deep budget on
-	# it).
-	code = Cmd.new_str("roc")
-		.args_str(["tests/e2e/run.roc"])
-		.env_str("JOY_E2E_URL", url)
-		.env_str("JOY_OPT", opt)
-		.exec_exit_code!()
-		.ok_or(1)
+	# it), JOY_BROWSER the engine (see tests/e2e/Browser.roc). One runner
+	# pass per engine, so a red engine shows next to the others instead of
+	# hiding behind the first.
+	codes = browsers.map_try!(
+		|engine| {
+			Stdout.line!("== ${engine}")?
+			Ok(
+				Cmd.new_str("roc")
+					.args_str(["tests/e2e/run.roc"])
+					.env_str("JOY_E2E_URL", url)
+					.env_str("JOY_OPT", opt)
+					.env_str("JOY_BROWSER", engine)
+					.exec_exit_code!()
+					.ok_or(1),
+			)
+		},
+	)?
+	code = codes.max() ?? 0
 
 	server.close!() ?? {}
 
@@ -96,16 +116,28 @@ main! = |args| {
 on_path! : Str => Bool
 on_path! = |program|
 	Cmd.new_str(program).args_str(["--version"]).exec_output_bytes!().is_ok()
+	# npm installs the CLI as `<name>.cmd` on Windows, and a spawn's PATH
+	# search there only ever appends `.exe`, so the bare name resolves on
+	# Unix and nowhere else. Try the shim second.
+		or Cmd.new_str("${program}.cmd").args_str(["--version"]).exec_output_bytes!().is_ok()
 
-parser : Cli.CliParser(Str)
+parser : Cli.CliParser({ opt : Str, browser : Str })
 parser = Cli.assert_valid(
 	Cli.finish(
-		Args.opt_option,
+		{
+			opt: Args.opt_option,
+			browser: Opt.str({
+				short: "",
+				long: "browser",
+				help: "Engine to drive: chromium (default), firefox, webkit or all.",
+				default: Value("chromium"),
+			}),
+		}.Cli,
 		{
 			name: "e2e",
 			version: "",
 			authors: [],
-			description: "Build the examples at the given optimization level and drive them in a real Chromium via tests/e2e/.",
+			description: "Build the examples at the given optimization level and drive them in a real browser via tests/e2e/.",
 			text_style: Plain,
 		},
 	),
