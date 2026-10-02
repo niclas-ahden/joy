@@ -3,9 +3,9 @@ app [Model, Msg, init, update, render, subscriptions] {
 	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.16.0/56NBT6VkQ5xm87Wjzcv9mRuNT4RACiAmuAmPbXwc8cuk.tar.zst",
 }
 
-import html.Html exposing [Html, div, button, input, text]
+import html.Html exposing [div, button, input, text]
 import html.Attribute exposing [id, type, value, on_input, on_click]
-import pf.Effect exposing [Effect]
+import pf.Effect
 
 # Probe: a controlled input inside Html.lazy. A rejected keystroke leaves
 # the thunk's capture equal, so the render skips the region and no attribute

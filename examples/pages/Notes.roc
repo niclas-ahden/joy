@@ -2,10 +2,10 @@
 ## notes kept so far, and a search that filters what is shown. The page is
 ## pure: nothing here needs the outside world, so update never returns an
 ## effect. Compare Clock.roc, which does.
-import html.Html exposing [Html, button, div, h2, input, li, p, span, text, ul]
+import html.Html exposing [button, div, h2, input, li, p, span, text, ul]
 import html.Attribute exposing [id, on_click, on_input, on_key, placeholder, value]
-import pf.Effect exposing [Effect]
-import pf.Sub exposing [Sub]
+import pf.Effect
+import pf.Sub
 
 Notes := [].{
 	Note : { id : U64, body : Str }

@@ -13,10 +13,10 @@ app [Model, Msg, init, update, render, subscriptions] {
 import Clock
 import Counter
 import Notes
-import html.Html exposing [Html, button, div, main, nav, text]
+import html.Html exposing [button, div, main, nav, text]
 import html.Attribute exposing [class_list, id, on_click]
-import pf.Effect exposing [Effect]
-import pf.Sub exposing [Sub]
+import pf.Effect
+import pf.Sub
 
 Page : [Counter, Clock, Notes]
 

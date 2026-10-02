@@ -3,10 +3,10 @@ app [Model, Msg, init, update, render, subscriptions] {
 	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.16.0/56NBT6VkQ5xm87Wjzcv9mRuNT4RACiAmuAmPbXwc8cuk.tar.zst",
 }
 
-import html.Html exposing [Html, button, div, input, p, text]
+import html.Html exposing [button, div, input, p, text]
 import html.Attribute exposing [id, on_click, on_input, value]
 import pf.DOM
-import pf.Effect exposing [Effect]
+import pf.Effect
 
 # Fixture for DOM.focus (tests/check_focus.mjs and tests/e2e/focus_test.roc).
 # "Edit" reveals an input that did not exist in the previous render and

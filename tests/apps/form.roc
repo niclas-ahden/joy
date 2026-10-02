@@ -3,9 +3,9 @@ app [Model, Msg, init, update, render, subscriptions] {
 	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.16.0/56NBT6VkQ5xm87Wjzcv9mRuNT4RACiAmuAmPbXwc8cuk.tar.zst",
 }
 
-import html.Html exposing [Html, div, fieldset, legend, input, label, select, option, textarea, button, text, element]
+import html.Html exposing [div, fieldset, legend, input, label, select, option, textarea, button, text, element]
 import html.Attribute exposing [id, class, type, name, value, checked, selected, attribute, for_, on_input, on_check, on_change, on, on_click]
-import pf.Effect exposing [Effect]
+import pf.Effect
 
 # Probe: a large form, every kind of control, and an update that refuses
 # some changes. Flags carry the row count as JSON, `{"n":200}`. The harness

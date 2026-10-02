@@ -2,10 +2,10 @@
 ## init, update, view and subscriptions, exactly like an app does, only the
 ## app in app.roc calls them instead of the platform. Nothing here knows that
 ## other pages exist, so the page can be written, read and tested on its own.
-import html.Html exposing [Html, button, div, h2, input, label, p, text]
+import html.Html exposing [button, div, h2, input, label, p, text]
 import html.Attribute exposing [id, on_click, on_input, type, value]
-import pf.Effect exposing [Effect]
-import pf.Sub exposing [Sub]
+import pf.Effect
+import pf.Sub
 
 Counter := [].{
 	## The count, how far one click moves it, and the clicks so far, so the

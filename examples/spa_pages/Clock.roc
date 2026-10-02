@@ -3,10 +3,10 @@
 ## render shows the time instead of waiting a whole second) and a recurring
 ## subscription (the tick every second). Both are returned as values, and
 ## app.roc maps them into its own Msg with Effect.map and Sub.map.
-import html.Html exposing [Html, button, div, h2, li, p, text, ul]
+import html.Html exposing [button, div, h2, li, p, text, ul]
 import html.Attribute exposing [id, on_click]
-import pf.Effect exposing [Effect]
-import pf.Sub exposing [Sub]
+import pf.Effect
+import pf.Sub
 import pf.Time
 
 Clock := [].{
