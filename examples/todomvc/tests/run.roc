@@ -54,7 +54,7 @@ base_port = 9000
 ## either runner.
 worker_envs : U64 -> List((Str, Str))
 worker_envs = |index| [
-	("JOY_E2E_URL", "http://localhost:${(9000 + index).to_str()}"),
+	("E2E_URL", "http://localhost:${(9000 + index).to_str()}"),
 ]
 
 max_workers! : {} => U16

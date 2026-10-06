@@ -15,7 +15,7 @@ Browser :: [].{
 	## "hydrate_lab/" or "hydrate_lab/stale" (a page of a server-rendered
 	## app, see render_pages! in build.roc).
 	open_page! = |path, ready| {
-		base = Env.var_str!("JOY_E2E_URL") ?? "http://127.0.0.1:8787"
+		base = Env.var_str!("E2E_URL") ?? "http://127.0.0.1:8787"
 		{ browser, page } = Browser.launch!()?
 		page.navigate!("${base}/${path}")?
 		assert!(page.find(ready).is_visible())?
@@ -37,10 +37,10 @@ Browser :: [].{
 	}
 
 	## The server's base URL (see e2e.roc).
-	base_url! = || Env.var_str!("JOY_E2E_URL") ?? "http://127.0.0.1:8787"
+	base_url! = || Env.var_str!("E2E_URL") ?? "http://127.0.0.1:8787"
 
 	open! = |app_name, ready| {
-		base = Env.var_str!("JOY_E2E_URL") ?? "http://127.0.0.1:8787"
+		base = Env.var_str!("E2E_URL") ?? "http://127.0.0.1:8787"
 		browser_type = match Env.var_str!("JOY_BROWSER") ?? "chromium" {
 			"firefox" => Firefox
 			"webkit" => WebKit

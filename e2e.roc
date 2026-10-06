@@ -16,7 +16,7 @@
 # what only a real browser can prove (event dispatch and bubbling, <dialog>,
 # History, WebCrypto, fetch, timers, real keyboard/mouse input).
 #
-# Set the environment variable `JOY_E2E_PORT` to change the port (default 8787).
+# Set the environment variable `E2E_PORT` to change the port (default 8787).
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
 	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.6.1/55UFmX5Ye5dNxWYzbzxQfsE54KTNwaoHNmYan163HbzB.tar.zst",
@@ -49,7 +49,7 @@ main! = |args| {
 
 	run!("roc", ["./build.roc", "--", "--opt=${opt}"])?
 
-	port = Env.var_str!("JOY_E2E_PORT") ?? "8787"
+	port = Env.var_str!("E2E_PORT") ?? "8787"
 	url = "http://127.0.0.1:${port}"
 
 	# Spawned leashed, so the platform kills the server (and anything it
@@ -58,7 +58,7 @@ main! = |args| {
 	# app is reachable under its own prefix and the tests can share one port.
 	server = Cmd.new_str("node")
 		.args_str(["www/serve.mjs", port, opt])
-		.env_str("JOY_E2E_URL", url)
+		.env_str("E2E_URL", url)
 		.stdout(Null)
 		.stderr(Null)
 		.spawn_leashed!() ? |e| SpawnFailed(e)
@@ -89,7 +89,7 @@ main! = |args| {
 			Ok(
 				Cmd.new_str("roc")
 					.args_str(["tests/e2e/run.roc"])
-					.env_str("JOY_E2E_URL", url)
+					.env_str("E2E_URL", url)
 					.env_str("JOY_OPT", opt)
 					.env_str("JOY_BROWSER", engine)
 					.exec_exit_code!()

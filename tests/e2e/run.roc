@@ -1,7 +1,7 @@
 # roc-spec runner for the browser E2E tests: discovers tests/e2e/*_test.roc
 # and runs each as a standalone app (each launches its own Chromium via
 # roc-playwright). Invoked by e2e.roc, which builds the examples, serves the
-# repo root and exports JOY_E2E_URL first.
+# repo root and exports E2E_URL first.
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
 	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.6.1/55UFmX5Ye5dNxWYzbzxQfsE54KTNwaoHNmYan163HbzB.tar.zst",

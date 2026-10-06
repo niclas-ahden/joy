@@ -12,7 +12,7 @@ TodoPage :: [].{
 	## input only exists once the wasm has rendered, so waiting for it
 	## means every test starts against a running app.
 	##
-	## The URL under test comes from JOY_E2E_URL, which both test runners
+	## The URL under test comes from E2E_URL, which both test runners
 	## set: Joy's e2e.roc exports one shared server, this directory's
 	## run.roc gives every worker its own. Without it, a test run on its
 	## own (`roc tests/add_test.roc`) targets the ./watch.roc dev server.
@@ -28,7 +28,7 @@ TodoPage :: [].{
 			{ browser_type, timeout: TimeoutMilliseconds(10000) },
 		)?
 		watch_port = Env.var_str!("JOY_WATCH_PORT") ?? "8000"
-		base = Env.var_str!("JOY_E2E_URL") ?? "http://localhost:${watch_port}"
+		base = Env.var_str!("E2E_URL") ?? "http://localhost:${watch_port}"
 		page.navigate!("${base}/todomvc/")?
 		assert!(page.find(".new-todo").is_visible())?
 		Ok({ browser, page })

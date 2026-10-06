@@ -103,7 +103,7 @@ smoke_watch! = |{}| {
 
 	code = Cmd.new_str("roc")
 		.args_str(["tests/add_test.roc"])
-		.env_str("JOY_E2E_URL", url)
+		.env_str("E2E_URL", url)
 		.exec_exit_code!()
 		.ok_or(1)
 
