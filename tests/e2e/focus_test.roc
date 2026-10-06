@@ -32,6 +32,14 @@ main! = |_args| {
 	assert!(page.find("#missing").has_text("missing 1"))?
 	Assert.eq(focused_id!(page)?, "nothing") ? |e| MissingSelectorShouldNotMoveFocus(Str.inspect(e))
 
+	# A selector that is not valid CSS ("#12") matches nothing either, for
+	# DOM.focus, show_modal and close_modal alike. The second click proves
+	# the app is still running after the first.
+	page.find("#bad").click!()?
+	page.find("#bad").click!()?
+	assert!(page.find("#invalid").has_text("invalid 2"))?
+	Assert.eq(focused_id!(page)?, "bad") ? |e| InvalidSelectorShouldNotMoveFocus(Str.inspect(e))
+
 	browser.close!()?
 	Ok({})
 }

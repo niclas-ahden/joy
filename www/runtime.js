@@ -1413,7 +1413,7 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
   // information for the developer, not an error: it is how a typo in the
   // selector, or an effect that ran before its element existed, shows up.
   function warnUnmatched(effect, selector) {
-    console.warn(`Joy ${effect}: nothing on the page matches "${selector}", so it did nothing.`);
+    console.warn(`Joy ${effect}: nothing on the page matches "${selector}" (or it is not a valid CSS selector), so it did nothing.`);
   }
 
   function runEffect(e) {
@@ -1780,6 +1780,18 @@ function defaultOptionIndex(select) {
   return options.findIndex((o) => !o.disabled);
 }
 
+// The element a selector-addressed effect targets, or null. querySelector
+// throws on a selector it cannot parse ("#12": an id cannot start with a
+// digit), and such a selector matches nothing either, so it gets the same
+// no-op and warning as a missing element instead of killing the app.
+function query(selector) {
+  try {
+    return document.querySelector(selector);
+  } catch {
+    return null;
+  }
+}
+
 // The value an input gets from its markup alone: a detached twin carrying
 // the same attributes, sanitized by the browser like the original was.
 function pristineValue(input) {
@@ -1873,19 +1885,19 @@ export const browserDom = {
   // an empty file list).
   eventFile: (e) => e?.target?.files?.[0] ?? null,
   showModal: (selector) => {
-    const el = document.querySelector(selector);
+    const el = query(selector);
     if (el && typeof el.showModal === 'function' && !el.open) el.showModal();
     return el !== null;
   },
   closeModal: (selector) => {
-    const el = document.querySelector(selector);
+    const el = query(selector);
     if (el && typeof el.close === 'function' && el.open) el.close();
     return el !== null;
   },
   // These three report whether the selector matched at all, so the
   // runtime can warn about the ones that did nothing.
   focus: (selector) => {
-    const el = document.querySelector(selector);
+    const el = query(selector);
     if (!el || typeof el.focus !== 'function') return el !== null;
     el.focus();
     // A text field gets its caret at the end, where typing continues the

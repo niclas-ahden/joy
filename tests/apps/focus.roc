@@ -12,21 +12,24 @@ import pf.Effect
 # "Edit" reveals an input that did not exist in the previous render and
 # focuses it in the same update: the effect runs after the paint, so the
 # selector finds the element. "Focus nothing" names a selector that matches
-# nothing, which must be a harmless no-op.
+# nothing, which must be a harmless no-op. "Bad selector" names one that is
+# not valid CSS (an id starting with a digit) for every selector effect,
+# which must be just as harmless: the app keeps running.
 
-Model : { editing : Bool, name : Str, missing : U64 }
+Model : { editing : Bool, name : Str, missing : U64, invalid : U64 }
 
 Msg : [
 	UserClickedEdit,
 	UserTyped(Str),
 	UserClickedDone,
 	UserClickedFocusNothing,
+	UserClickedBadSelector,
 ]
 
 subscriptions = |_model| []
 
 init : Str -> (Model, List(Effect(Msg)))
-init = |_| ({ editing: Bool.False, name: "Ada", missing: 0 }, [])
+init = |_| ({ editing: Bool.False, name: "Ada", missing: 0, invalid: 0 }, [])
 
 update : Model, Msg -> (Model, List(Effect(Msg)))
 update = |model, msg|
@@ -35,6 +38,8 @@ update = |model, msg|
 		UserTyped(name) => ({ ..model, name }, [])
 		UserClickedDone => ({ ..model, editing: Bool.False }, [])
 		UserClickedFocusNothing => ({ ..model, missing: model.missing + 1 }, [DOM.focus("#nope")])
+		UserClickedBadSelector =>
+			({ ..model, invalid: model.invalid + 1 }, [DOM.focus("#12"), DOM.show_modal("#12"), DOM.close_modal("#12")])
 	}
 
 render : Model -> Html(Msg)
@@ -55,6 +60,8 @@ render = |model| {
 			button([id("edit"), on_click(UserClickedEdit)], [text("Edit")]),
 			button([id("nothing"), on_click(UserClickedFocusNothing)], [text("Focus nothing")]),
 			p([id("missing")], [text("missing ${model.missing.to_str()}")]),
+			button([id("bad"), on_click(UserClickedBadSelector)], [text("Bad selector")]),
+			p([id("invalid")], [text("invalid ${model.invalid.to_str()}")]),
 			div([id("editor")], editor),
 		],
 	)
