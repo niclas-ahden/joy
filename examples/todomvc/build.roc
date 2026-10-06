@@ -59,17 +59,35 @@ copy_runtime! = || {
 			Ok(at_slash) => at_slash.after.drop_suffix(".tar.zst")
 			Err(_) => url.drop_suffix(".tar.zst")
 		}
-		home = Env.var_str!("HOME") ?? ""
-		cache = Env.var_str!("XDG_CACHE_HOME") ?? "${home}/.cache"
-		"${cache}/roc/packages/${hash}/www/runtime.js"
+		"${package_cache!()}/${hash}/www/runtime.js"
 	} else {
 		"${url.drop_suffix("platform/main.roc")}www/runtime.js"
 	}
 	if Path.utf8(src).is_file!()? {
-		run!("cp", [src, "www/runtime.js"])
+		match Path.utf8(src).copy!(Path.utf8("www/runtime.js")) {
+			Ok({}) => Ok({})
+			Err(e) => fail!("could not copy ${src} to www/runtime.js: ${Str.inspect(e)}")
+		}
 	} else {
 		fail!("no runtime.js at ${src}. Is app.roc's platform a Joy bundle or checkout?")
 	}
+}
+
+# Where roc keeps the packages it downloads, found the way roc finds it:
+# XDG_CACHE_HOME when set, else %LOCALAPPDATA% (Windows), else ~/.cache.
+package_cache! = || {
+	base = match Env.var_str!("XDG_CACHE_HOME") {
+		Ok(xdg) => xdg
+		Err(_) =>
+			match (Env.platform!().os, Env.var_str!("LOCALAPPDATA")) {
+				(WINDOWS, Ok(local)) => local
+				_ => {
+					home = Env.var_str!("HOME") ?? ""
+					"${home}/.cache"
+				}
+			}
+	}
+	"${base}/roc/packages"
 }
 
 # The platform bundle URL out of app.roc's header.
@@ -127,16 +145,6 @@ capture! = |cmd| {
 			Ok(Str.from_utf8_lossy(streams.stdout_bytes.concat(streams.stderr_bytes)))
 
 		Err(FailedToGetExitCodeB(_)) => fail!("could not run ${Cmd.to_str(cmd)}")
-	}
-}
-
-# Run a command with inherited stdio, exiting with the child's code when it
-# fails.
-run! = |program, args| {
-	match Cmd.new_str(program).args_str(args).exec_exit_code!() {
-		Ok(0) => Ok({})
-		Ok(code) => Err(Exit(code))
-		Err(_) => Err(Exit(1))
 	}
 }
 
