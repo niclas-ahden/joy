@@ -29,7 +29,7 @@ export class Text {
 }
 
 // Neither element nor text, so hydration must drop it on sight. The parser
-// produces these from `<!-- ... -->`; joy-html never renders them, but
+// produces these from `<!-- ... -->`. joy-html never renders them, but
 // hand-written SSR shells can contain them.
 export class Comment {
   constructor(s) { this.text = s; this.parent = null; }
@@ -361,7 +361,7 @@ export function findTag(node, tag) {
 // Semantic locators, the vocabulary of the browser suite (roc-playwright's
 // role, label and test-id locators) on the fake tree, so a harness can say
 // what a user sees instead of walking `children[1].children[0]`. Each
-// returns the first match in pre-order, or null; the `*All` variants return
+// returns the first match in pre-order, or null. The `*All` variants return
 // every match.
 
 // Every element (never text) matching pred, pre-order.
@@ -426,9 +426,9 @@ const labelsFor = (root, el) => {
 };
 
 // The element's accessible name, close enough to the browser's computation
-// for test locators: aria-label wins; a form control is named by its labels,
-// falling back to its placeholder or title (a button-like input to its
-// value); anything else by its text.
+// for test locators: aria-label wins, then a form control is named by its
+// labels, falling back to its placeholder or title (a button-like input to
+// its value), and anything else by its text.
 export function nameOf(root, el) {
   const aria = el.attrs.get('aria-label');
   if (aria != null) return aria.replace(/\s+/g, ' ').trim();

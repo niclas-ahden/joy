@@ -185,25 +185,40 @@ export function foreignAttr(ns, key) {
 
 // `dom` interface:
 //   createElement(tag, ns) -> node, ns being 'html', 'svg' or 'math'
-//   nsOf(node) -> the element's namespace key ; parentOf(node) -> node | null
-//   createText(s) -> node ; fragment() -> node
-//   append(parent, child) ; clear(node) ; on(node, event, fn)
-//   setText(textNode, s) ; childrenOf(node) -> node[] ; replaceNode(old, new)
-//   insertBefore(parent, node, anchorOrNull) ; removeChild(parent, node)
-//   setAttr(node, k, v) ; removeAttr(node, k, exact) ; eventProp(domEvent, prop) -> string
+//   nsOf(node) -> the element's namespace key
+//   parentOf(node) -> node | null
+//   createText(s) -> node
+//   fragment() -> node
+//   append(parent, child)
+//   clear(node)
+//   on(node, event, fn)
+//   setText(textNode, s)
+//   childrenOf(node) -> node[]
+//   replaceNode(old, new)
+//   insertBefore(parent, node, anchorOrNull)
+//   removeChild(parent, node)
+//   setAttr(node, k, v)
+//   removeAttr(node, k, exact)
+//   eventProp(domEvent, prop) -> string
 //   eventKeyInfo(domEvent) -> {key, code, ctrl, shift, alt, meta, repeat}
 //   eventPointerInfo(domEvent) -> {clientX..offsetY, button, buttons, ctrl..meta}
-//   eventFile(domEvent) -> File | null ; showModal(sel) ; closeModal(sel)
-//   elementTag(node) -> tag | null ; getAttr(node, k, exact) -> string | null
+//   eventFile(domEvent) -> File | null
+//   showModal(sel)
+//   closeModal(sel)
+//   elementTag(node) -> tag | null
+//   getAttr(node, k, exact) -> string | null
 //   (exact: k is a qualified name as attrNames reports it, not a view's)
-//   getProp(node, k) ; setProp(node, k, v) ; radioGroup(node) -> node[]
+//   getProp(node, k)
+//   setProp(node, k, v)
+//   radioGroup(node) -> node[]
 // Hydration additionally needs (only checked when `hydrate` is set):
 //   textValue(node) -> string | null
 //   splitText(textNode, offset) -> the new following text node
 //   attrNames(node) -> the qualified names of the attributes it carries
 //   attrName(node, k) -> the qualified name setAttr(node, k) would store
 //   userChanged(control) -> whether the user changed the form control
-//   controlState(control) -> its live state ; restoreControlState(control, s)
+//   controlState(control) -> its live state
+//   restoreControlState(control, s)
 //   clearParsedTemplate(node), optional (see hydrateRange)
 export function makeRuntime(exports, dom, root, hydrate = false) {
   const { memory } = exports;
@@ -251,7 +266,7 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
   // test or a monitor can assert on it instead of scraping the console:
   // null until the claim walk has run (always, without `hydrate`), then
   // { claimed, mismatch }. `claimed` is false when the root was empty and
-  // the walk was a plain build; `mismatch` repeats the warning's cause, or
+  // the walk was a plain build. `mismatch` repeats the warning's cause, or
   // null for a clean claim.
   let hydrateOutcome = null;
 
@@ -753,7 +768,7 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
   // its whole subtree with it (a frame with kids === null builds fresh
   // without further matching), and children the ops never claimed are
   // removed when their parent closes. The page always ends up showing the
-  // app's own render; the first repair is remembered and warned once,
+  // app's own render. The first repair is remembered and warned once,
   // because the fix belongs on the server.
   function hydrateRange(w, start, end) {
     // One frame per open element: the element and a cursor (kids, idx) into
@@ -794,7 +809,7 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
     };
 
     // Children the ops never claimed are not in the app's first render:
-    // remove them. Elements and text are real divergence worth the warning;
+    // remove them. Elements and text are real divergence worth the warning,
     // stray junk is not. Then a claimed element settles what only its close
     // can: a textarea's server-rendered value, the attributes the view never
     // declared, and a form control's live state.
@@ -1617,7 +1632,7 @@ const MOUNT_OPTIONS = ['wasm', 'root', 'flags', 'dom', 'setup', 'hydrate'];
 //          registered in time to receive sends from `init`.
 //   hydrate  claim the server-rendered children of `root` on the first paint
 //          instead of clearing them. The server must have rendered the same
-//          view the app's init produces (SSR with joy-html); mismatches are
+//          view the app's init produces (SSR with joy-html). Mismatches are
 //          repaired and warned about. An empty root hydrates as a plain
 //          build, so one loader serves both cases. The returned handle's
 //          hydration() reports the outcome ({ claimed, mismatch }, or null

@@ -57,8 +57,9 @@ export const expectAtMost = (label, got, max) => {
 // textWrites, inserts (a fresh subtree placed among kept siblings, or a
 // replacement), moves (a kept node re-inserted elsewhere), removals,
 // bindings (listeners attached), propWrites (live properties pinned back after
-// an event, see restoreControl in www/runtime.js); patchSetText, patchReplace, patchAttrs,
-// patchReorder, patchRefresh (ops emitted by the differ); lazyForces.
+// an event, see restoreControl in www/runtime.js). Then patchSetText, patchReplace,
+// patchAttrs, patchReorder, patchRefresh (ops emitted by the differ), and
+// lazyForces.
 
 // A fake DOM that counts the mutations made through it. `counts` is live.
 export function countingDom(base = fakeDom) {

@@ -3,7 +3,7 @@
 # its own version back, and a keystroke in the middle of a value leaves
 # the caret where it was, whether accepted (the property is not rewritten)
 # or refused or normalized (the runtime puts the caret back). The fake-DOM
-# harness (tests/check_form.mjs) owns the work budgets; this proves the
+# harness (tests/check_form.mjs) owns the work budgets, and this proves the
 # browser's side of the contract, in whichever engine JOY_BROWSER names.
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",

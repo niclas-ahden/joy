@@ -6,7 +6,7 @@ name: Release
 #
 # 1. `required` gates `draft`: the pinned compiler at speed on Linux and
 #    macOS, plus the small-buffers leg. The tagged commit already passed the
-#    full browser matrix on main; this proves the compiler that bundles.
+#    full browser matrix on main. This proves the compiler that bundles.
 # 2. `draft` bundles the platform and creates a DRAFT release with the bundle,
 #    docs and starter notes attached. A human presses Publish. Drafting before
 #    the bundle is tested is deliberate: the draft is what the rest of the run
