@@ -135,8 +135,9 @@ work.expectDelta('a normalized mid-value keystroke', { patchAttrs: 1, attrWrites
 // --- IME composition: provisional text is never pinned mid-composition ---
 // Chromium's order, and Firefox's for its own IME typing: input events with
 // isComposing during the composition, then compositionend. A refusal
-// mid-composition leaves the provisional text alone and pins once the
-// composition ends.
+// mid-composition leaves the provisional text alone, and compositionend
+// runs the pin once the current task is over.
+const tick = () => new Promise((done) => setTimeout(done));
 const compose = (el, v) => { el.value = v; el.listeners.input({ target: { value: v }, isComposing: true }); };
 work.mark();
 compose(notes, 'hi日');
@@ -147,26 +148,28 @@ compose(notes, 'hi日!');
 expect('refused composing text is left provisional', notes.value, 'hi日!');
 work.expectDelta('no pin mid-composition', { patchAttrs: 0, propWrites: 0 });
 notes.listeners.compositionend({});
-expect('the pin runs when the composition ends', notes.value, 'hi日');
-work.expectDelta('one pin at compositionend', { propWrites: 1 });
+await tick();
+expect('the pin runs once the composition has ended', notes.value, 'hi日');
+work.expectDelta('one pin after compositionend', { propWrites: 1 });
 // Firefox's ending: compositionend with the text committed, then one input
 // without isComposing. Playwright's fill on Firefox takes this path with
 // no input during the composition at all, which is what is modelled here
-// and what tests/e2e/form_test.roc drives for real. The runtime delivers
-// the committed text at compositionend, so an accepted composition lands
-// (one attribute patch, no pin) and a refused one is reverted before the
-// trailing input, which then carries the settled value.
+// and what tests/e2e/form_test.roc drives for real. The trailing input
+// delivers the committed text like any keystroke: an accepted composition
+// lands (one attribute patch, no pin), a refused one is pinned back by
+// that input, and the pin compositionend left for later finds nothing to do.
 work.mark();
 notes.value = 'hi日x';
 notes.listeners.compositionend({});
-expect('compositionend delivers accepted text', notes.value, 'hi日x');
 notes.listeners.input({ target: { value: notes.value }, isComposing: false });
-expect('the trailing input changes nothing', notes.value, 'hi日x');
+await tick();
+expect('an accepted composition lands', notes.value, 'hi日x');
 work.expectDelta('an accepted composition in that order', { patchAttrs: 1, propWrites: 0 });
 work.mark();
 notes.value = 'hi日x!';
 notes.listeners.compositionend({});
-expect('compositionend reverts refused text', notes.value, 'hi日x');
+expect('compositionend leaves refused text to the input after it', notes.value, 'hi日x!');
 notes.listeners.input({ target: { value: notes.value }, isComposing: false });
-expect('the trailing input keeps the model value', notes.value, 'hi日x');
+expect('the trailing input pins the model value', notes.value, 'hi日x');
+await tick();
 work.expectDelta('a refused composition in that order', { patchAttrs: 0, propWrites: 1 });

@@ -473,31 +473,40 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
       if (d.preventDefault) domEvent.preventDefault?.();
       dispatchValue(d.id, dom.eventProp(domEvent, d.prop));
       // Text under IME composition is provisional, and writing the property
-      // would end the composition, so the pin waits for compositionend
-      // (bound next to every on_input, see setHandler). Whichever order the
-      // engine fires the two in, the last of them runs the pin against the
-      // final text.
+      // would end the composition, so a composing input leaves the pin to
+      // compositionend (bound next to every on_input, see setHandler).
       if (domEvent.isComposing) return;
     }
     restoreControl(node);
+    pinTarget(domEvent, node);
   };
+  // A handler on a wrapper sees a control's event as it bubbles up, so the
+  // control the user changed is the event's target, not the node the
+  // handler sits on. It is pinned too, but only after the events that
+  // report a control's new state. A click, a key or a pointer event that
+  // only bubbles through a control leaves the control alone.
+  const PIN_TARGET = new Set(['input', 'change', 'compositionend']);
+  function pinTarget(domEvent, node) {
+    const target = domEvent.target;
+    if (target != null && target !== node && PIN_TARGET.has(domEvent.type)) restoreControl(target);
+  }
   // Engines disagree on the order at the end of a composition. Chromium
   // fires the last `input` (isComposing) before compositionend. Firefox
-  // fires compositionend first and the `input` carrying the text after it.
-  // Firefox's own IME typing still fires `input` with isComposing during
-  // the composition, while Playwright's fill on Firefox takes the same
-  // ending with no `input` during the composition at all, which is what
-  // the e2e suite drives. Pinning first would revert text the app has not
-  // seen, so the composed value is delivered through the input handler
-  // here and pinned after. Where the input came first the value is
-  // already in the model and the delivery changes nothing, and the
-  // trailing Firefox input then carries the settled value.
+  // fires compositionend first and the `input` carrying the text after it,
+  // and Playwright's fill on Firefox takes that ending with no `input`
+  // during the composition at all. Either way an `input` delivers the
+  // committed text, so compositionend delivers nothing itself, which would
+  // hand the app every composition twice. It only owes the pin a composing
+  // input skips, and runs it once the current task is over: after a
+  // trailing input has delivered what it carries, since pinning first would
+  // revert text the app has not seen.
   const compositionListener = (domEvent) => {
-    if (painting) return;
     const node = domEvent.currentTarget;
-    const d = node[EVENTS]?.get('input');
-    if (d?.kind === 'value') dispatchValue(d.id, dom.eventProp({ target: node }, d.prop));
-    restoreControl(node);
+    setTimeout(() => {
+      if (!alive) return;
+      restoreControl(node);
+      pinTarget(domEvent, node);
+    });
   };
 
   function setHandler(node, name, desc) {
@@ -697,6 +706,10 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
   // for it.
   function buildRange(w, start, end, parent, out, ctx = parent) {
     const stack = [parent];
+    // The selects built here. A select's value names one of its options,
+    // which do not exist yet when its own attributes are applied, so the
+    // value is pinned once the whole range is built.
+    let selects = null;
     const top = () => stack[stack.length - 1];
     const ctxFrame = nsFrame(ctx);
     const nsStack = [ctxFrame.ns];
@@ -712,6 +725,7 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
         const el = dom.createElement(tag, ns);
         dom.append(top(), el);
         out?.push(el);
+        if (tag === 'select') (selects ??= []).push(el);
         stack.push(el);
         nsStack.push(ns);
         tagStack.push(ns === 'html' ? '' : tag.toLowerCase());
@@ -731,7 +745,18 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
         throw new Error(`unknown build op ${op} at word ${i}`);
       }
     }
+    if (selects !== null) for (const sel of selects) restoreControl(sel);
     return i;
+  }
+
+  // The select whose options are `parent`'s children, if any: the select
+  // itself, or the one an optgroup sits in.
+  function selectOf(parent) {
+    const tag = dom.elementTag(parent);
+    if (tag === 'select') return parent;
+    if (tag !== 'optgroup') return null;
+    const up = dom.parentOf(parent);
+    return up !== null && dom.elementTag(up) === 'select' ? up : null;
   }
 
   // --- Hydration ---
@@ -859,6 +884,10 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
         } else {
           restoreControl(f.parent);
         }
+      } else if (f.tag === 'select') {
+        // A select built fresh in a repair gets its value now that its
+        // options exist, like one a plain build makes (see buildRange).
+        restoreControl(f.parent);
       }
     };
 
@@ -1027,22 +1056,35 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
       }
     } else {
       const refs = nodeList;
+      // Selects whose options this paint changes, pinned once it is done
+      // (see buildRange): the options a select's value names may only
+      // arrive now.
+      let selects = null;
+      const optionsChanged = (parent) => {
+        const sel = parent === null ? null : selectOf(parent);
+        if (sel !== null) (selects ??= []).push(sel);
+      };
       let i = 1;
       while (i < w.length) {
         const op = w[i++];
         if (op === OP_SET_TEXT) {
           const idx = w[i++];
           dom.setText(refs[idx], str(w[i++], w[i++]));
+          // An option without a value attribute takes its text as its value.
+          const opt = dom.parentOf(refs[idx]);
+          if (opt !== null && dom.elementTag(opt) === 'option' && dom.getAttr(opt, 'value') === null) optionsChanged(dom.parentOf(opt));
         } else if (op === OP_REPLACE) {
           structural = true;
           structuralOps += 1;
           const idx = w[i++];
           const n = w[i++];
           const holder = dom.fragment();
+          const parent = dom.parentOf(refs[idx]);
           // Built detached, but in the namespace of the parent it replaces
           // into: a node swapped inside an <svg> stays SVG.
-          buildRange(w, i, i + n, holder, undefined, dom.parentOf(refs[idx]) ?? root);
+          buildRange(w, i, i + n, holder, undefined, parent ?? root);
           i += n;
+          optionsChanged(parent);
           cleanupSubtree(refs[idx]);
           dom.replaceNode(refs[idx], dom.childrenOf(holder)[0]);
         } else if (op === OP_PATCH_ATTRS) {
@@ -1050,6 +1092,8 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
           const n = w[i++];
           applyAttrOps(w, i, i + n, refs[idx]);
           i += n;
+          // An option's new value may be the one its select names.
+          if (dom.elementTag(refs[idx]) === 'option') optionsChanged(dom.parentOf(refs[idx]));
         } else if (op === OP_REFRESH_HANDLERS) {
           // The element's attributes are unchanged except that its handlers
           // were re-boxed by the render (they always are), so only the stored
@@ -1071,6 +1115,7 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
           const parent = refs[parentIdx];
           const n = w[i++];
           const kept = w[i++];
+          optionsChanged(parent);
           const segNodes = [];
           if (kept === 0) {
             // No old child survives: drop them all at once and rebuild into
@@ -1134,6 +1179,7 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
           throw new Error(`unknown patch op ${op} at word ${i - 1}`);
         }
       }
+      if (selects !== null) for (const sel of selects) restoreControl(sel);
     }
     if (structural) {
       nodeList = (structuralOps === 1 && splice)
@@ -1694,6 +1740,14 @@ async function instantiate(wasm) {
 function writeValue(node, v) {
   const before = node.value;
   if (before === v) return;
+  // Only the field being typed in has a caret worth keeping. Anywhere else,
+  // a detached node in a fresh build included, a plain assignment does, and
+  // touching a selection there is work some engines answer with selection
+  // events or focus.
+  if (node.getRootNode?.().activeElement !== node) {
+    node.value = v;
+    return;
+  }
   let start = null, end = null, dir = null;
   try { start = node.selectionStart; end = node.selectionEnd; dir = node.selectionDirection; } catch {}
   node.value = v;
