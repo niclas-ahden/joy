@@ -1,10 +1,8 @@
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.27.0/HZanbveSUDoJF8LypR663eH7PpaKEKG36eErEQzmV1Qs.tar.zst",
-	# The joy-html checkout next to this repo, for its unreleased SSR fixes
-	# (textarea values as text, the newline the parser drops after <pre>,
-	# no refused attributes). TODO: back to the release URL, the same one
-	# app.roc uses, once joy-html releases them.
-	html: "../../../../joy-html/package/main.roc",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
+	# The same joy-html app.roc uses, so the server and the client render
+	# with one implementation.
+	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.0/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 }
 
 import html.Html
