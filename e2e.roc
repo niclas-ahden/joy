@@ -97,7 +97,10 @@ main! = |args| {
 			)
 		},
 	)?
-	code = codes.max() ?? 0
+	# The first engine that failed decides the exit code. Not the largest: a
+	# crash on Windows exits with a negative code, which another engine's 0
+	# would hide.
+	code = codes.find_first(|c| c != 0) ?? 0
 
 	server.close!() ?? {}
 
