@@ -16,7 +16,7 @@ TodoPage :: [].{
 	## set: Joy's e2e.roc exports one shared server, this directory's
 	## run.roc gives every worker its own. Without it, a test run on its
 	## own (`roc tests/add_test.roc`) targets the ./watch.roc dev server.
-	## Every server answers under /todomvc/, so one URL fits them all.
+	## Every server answers under /spa-todomvc/, so one URL fits them all.
 	open! = |{}| {
 		browser_type = match Env.var_str!("JOY_BROWSER") ?? "chromium" {
 			"firefox" => Firefox
@@ -29,7 +29,7 @@ TodoPage :: [].{
 		)?
 		watch_port = Env.var_str!("JOY_WATCH_PORT") ?? "8000"
 		base = Env.var_str!("E2E_URL") ?? "http://localhost:${watch_port}"
-		page.navigate!("${base}/todomvc/")?
+		page.navigate!("${base}/spa-todomvc/")?
 		assert!(page.find(".new-todo").is_visible())?
 		Ok({ browser, page })
 	}

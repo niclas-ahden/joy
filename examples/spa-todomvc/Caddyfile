@@ -16,9 +16,9 @@
   # a hard refresh in some browsers
 	header Cache-Control "no-cache"
 
-	# The browser tests navigate to /todomvc/, the app's path on Joy's own
+	# The browser tests navigate to /spa-todomvc/, the app's path on Joy's own
 	# dev server, so the same tests run unchanged against either server
-	handle_path /todomvc/* {
+	handle_path /spa-todomvc/* {
 		root * www
 		file_server
 	}

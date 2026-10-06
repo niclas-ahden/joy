@@ -1,10 +1,10 @@
-// Node harness for todomvc: a smoke pass over the app logic on the fake DOM.
+// Node harness for spa-todomvc: a smoke pass over the app logic on the fake DOM.
 // Adding (with trimming), toggling, editing and clearing, plus the empty
 // state where the list section and footer do not exist. Each step also
 // carries a work budget: what it built, moved and removed, and which patch
 // ops the differ emitted, so a change that keeps the page looking right but
 // rebuilds the list to get there fails here. The full behaviour lives in the
-// example's own browser suite, examples/todomvc/tests/.
+// example's own browser suite, examples/spa-todomvc/tests/.
 // Run from the repo root: node tests/check_todomvc.mjs
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
@@ -13,7 +13,7 @@ import { countingDom, expect, meter, wasmPath } from './harness.mjs';
 
 const counted = countingDom();
 const root = new El('#root');
-const app = await mount({ wasm: readFileSync(wasmPath('todomvc')), root, flags: '', dom: counted.dom });
+const app = await mount({ wasm: readFileSync(wasmPath('spa-todomvc')), root, flags: '', dom: counted.dom });
 const work = meter(app, counted);
 
 const rows = () => byRoleAll(byClass(root, 'todo-list') ?? root, 'listitem');

@@ -42,14 +42,14 @@ const headers = (type) => ({ 'content-type': type, 'cache-control': 'no-store' }
 // App names come from the URL in prefix mode and reach a file path below, so
 // they are checked against what build.roc can actually produce. That, plus a
 // route table of literals, means no request can name a file of its own.
-const isAppName = (app) => /^[a-z0-9_]+$/i.test(app);
+const isAppName = (app) => /^[a-z0-9_-]+$/i.test(app);
 
 // The whole URL space, relative to an app's root.
 function routeFor(app, rest) {
   switch (rest) {
     // A server-rendered page from the app's build comes first (see
     // render_pages! in build.roc). Then a directory example with a page of
-    // its own, like examples/todomvc/, gets it, and every other app shares
+    // its own, like examples/spa-todomvc/, gets it, and every other app shares
     // the plain shell. Both of those are complete copyable pages.
     case '/':
       return { files: [`build/${opt}/ssr/${app}/index.html`, `examples/${app}/www/index.html`, 'www/index.html'], type: 'text/html' };
@@ -84,7 +84,7 @@ function routeFor(app, rest) {
 // app. Pinned mode has no prefix to strip, everything sits at the root.
 function resolve(pathname) {
   // The pinned app also answers under its own prefix, so a URL that names
-  // the app, like the /todomvc/ the browser tests navigate to, works against
+  // the app, like the /spa-todomvc/ the browser tests navigate to, works against
   // this server and the prefix-mode one alike.
   if (pinned) {
     const prefix = `/${pinned}/`;

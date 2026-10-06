@@ -85,7 +85,7 @@ run_suite! = |use_systemd, forwarded| {
 
 # The dev loop: ./watch.roc must come up and serve a working app. One real
 # browser test against it proves the whole chain (caddy, the build it runs,
-# runtime.js, the /todomvc/ alias). It does not edit app.roc, so the
+# runtime.js, the /spa-todomvc/ alias). It does not edit app.roc, so the
 # rebuild-on-change half of the loop is roc's own --watch to keep honest.
 # Clear of the worker servers at 9000+ and the dev default 8000.
 smoke_port = "8123"

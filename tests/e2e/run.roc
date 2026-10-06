@@ -30,7 +30,7 @@ hooks = {
 	kill!: Cmd.Child.kill!,
 	wait!: Cmd.Child.wait!,
 	# tests/e2e/ itself, plus each directory example's own tests/
-	# (examples/todomvc/tests/): a directory example keeps its browser tests
+	# (examples/spa-todomvc/tests/): a directory example keeps its browser tests
 	# next to its app, and this runner spawns them all the same way.
 	list_dir!: |dir| {
 		base = Path.utf8(dir).list!()?.map(Path.display)

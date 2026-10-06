@@ -81,7 +81,7 @@ main! = |args| {
 app_dirs = ["examples", "tests/apps"]
 
 # The named app, in whichever directory holds it. `counter`,
-# `examples/counter.roc`, `tests/apps/vdom.roc` and `examples/todomvc` all
+# `examples/counter.roc`, `tests/apps/vdom.roc` and `examples/spa-todomvc` all
 # work: the argument's directory is dropped and only the name is looked up,
 # so watch.roc can pass whatever the user typed. A flat app is
 # <dir>/<name>.roc, a directory app is <dir>/<name>/app.roc.
@@ -100,7 +100,7 @@ find_source! = |name| {
 
 # Every app in every source directory. A flat app is one <dir>/<name>.roc
 # file; an app that brings a page, styles or tests of its own is a directory,
-# <dir>/<name>/, built from its app.roc (see examples/todomvc/).
+# <dir>/<name>/, built from its app.roc (see examples/spa-todomvc/).
 list_sources! = ||
 	app_dirs
 		.map_try!(|dir| sources_in!(dir))

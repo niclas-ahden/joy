@@ -1,6 +1,6 @@
 name: Publish the TodoMVC starter
 
-# When a release is published, push examples/todomvc to
+# When a release is published, push examples/spa-todomvc to
 # niclas-ahden/joy-todomvc with its platform line pointed at the released
 # bundle. The starter repo is a published copy: it is developed and tested in
 # this repo, and the release gate already drove its whole suite against the
@@ -68,7 +68,7 @@ jobs:
           url="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/$archive"
 
           mkdir staging
-          git archive HEAD examples/todomvc | tar -x --strip-components=2 -C staging
+          git archive HEAD examples/spa-todomvc | tar -x --strip-components=2 -C staging
 
           sed -i "s|\"\.\./\.\./platform/main\.roc\"|\"$url\"|" staging/app.roc
           # A rewrite that silently matched nothing would publish a starter

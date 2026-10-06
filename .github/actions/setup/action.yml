@@ -147,7 +147,7 @@ runs:
         fi
         playwright --version
 
-    # The template suite (examples/todomvc/tests.roc) serves through caddy,
+    # The template suite (examples/spa-todomvc/tests.roc) serves through caddy,
     # so the browser legs need it. Keep in step with the devShell's caddy
     # (`nix develop -c caddy version`).
     - name: Install caddy
