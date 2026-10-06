@@ -336,6 +336,14 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
   const files = new Map();
   let nextFileId = 1;
 
+  // WebCrypto.digest_file/_slice effects waiting for a turn, and how many
+  // are reading or hashing now. A digest holds its whole slice in memory
+  // until the hash is done, so at most navigator.hardwareConcurrency run at
+  // once: an app that asks for every 16 MiB chunk of a 10 GB file at once
+  // then holds a few chunks, not the file.
+  const digestQueue = [];
+  let digestsRunning = 0;
+
   // Pending Time.debounce timers by key: re-arming clears the old timer and
   // releases the callback it held (the fresh command carries a fresh one).
   const debounces = new Map(); // key -> { handle, cb }
@@ -1478,13 +1486,8 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
       if (!file) {
         dispatchBytes(e.cb, new Uint8Array());
       } else {
-        sliceFile(file, e.start, e.len)
-          .arrayBuffer()
-          .then((buf) => crypto.subtle.digest(e.algorithm, buf))
-          .then(
-            (buf) => dispatchBytes(e.cb, new Uint8Array(buf)),
-            () => dispatchBytes(e.cb, new Uint8Array()),
-          );
+        digestQueue.push({ file, e });
+        startDigests();
       }
     } else if (e.kind === 'navigate') {
       dom.navigate(e.url);
@@ -1499,6 +1502,28 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
   function sliceFile(file, start, len) {
     if (len > 0) return file.slice(start, start + len);
     return start > 0 ? file.slice(start) : file;
+  }
+
+  // Start queued file digests while fewer than navigator.hardwareConcurrency
+  // run (read at each start, 4 where the browser does not say). A finished
+  // one makes room for the next, also when its dispatch threw.
+  function startDigests() {
+    const limit = Math.max(1, globalThis.navigator?.hardwareConcurrency || 4);
+    while (digestsRunning < limit && digestQueue.length > 0) {
+      const { file, e } = digestQueue.shift();
+      digestsRunning++;
+      sliceFile(file, e.start, e.len)
+        .arrayBuffer()
+        .then((buf) => crypto.subtle.digest(e.algorithm, buf))
+        .then(
+          (buf) => dispatchBytes(e.cb, new Uint8Array(buf)),
+          () => dispatchBytes(e.cb, new Uint8Array()),
+        )
+        .finally(() => {
+          digestsRunning--;
+          startDigests();
+        });
+    }
   }
 
   // Pack response headers for the host: a u32 count, then per header a u32

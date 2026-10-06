@@ -9,9 +9,12 @@
 ## `Attribute.on_file`) whose bytes live on the browser side and never enter
 ## wasm memory, and the SHA-1/SHA-384/SHA-512 algorithms the builtin does
 ## not provide. For chunked hashing of large files (progress reporting, or a
-## hash-of-chunk-hashes scheme), issue one `digest_file_slice` per chunk
-## (the browser runs them concurrently) and hash the concatenated chunk
-## hashes at the end.
+## hash-of-chunk-hashes scheme), issue one `digest_file_slice` per chunk and
+## hash the concatenated chunk hashes at the end. The runtime runs at most
+## `navigator.hardwareConcurrency` file digests at once and starts the rest
+## as those finish, so however many chunks you ask for, only that many are
+## in memory. Each digest holds its whole range in memory, which is why
+## `digest_file` on a large file is best avoided.
 ##
 ## The callback receives the raw hash bytes (20 for Sha1, 32 for Sha256, 48
 ## for Sha384, 64 for Sha512). An EMPTY list means the digest failed (unknown

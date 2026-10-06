@@ -4,16 +4,17 @@ app [Model, Msg, init, update, render, subscriptions] {
 }
 
 import html.Html exposing [div, p, input, button, text]
-import html.Attribute exposing [type, on_file, on_click]
+import html.Attribute exposing [type, id, on_file, on_click]
 import pf.Effect
 import pf.WebCrypto
 
-# Fixture for check_digest.mjs, the three digest paths check_upload.mjs does
-# not reach: hashing in-memory bytes (they cross into JS, unlike a file's), a
-# byte range of a picked file, and the empty-hash failure signal for a file
-# id the browser does not hold.
+# Fixture for check_digest.mjs, the digest paths check_upload.mjs does not
+# reach: hashing in-memory bytes (they cross into JS, unlike a file's), a
+# byte range of a picked file, the empty-hash failure signal for a file id
+# the browser does not hold, and many chunk digests asked for at once (the
+# runtime runs only a few of them at a time).
 
-Model : { mem : Str, slice : Str, missing : Str }
+Model : { mem : Str, slice : Str, missing : Str, chunks : List(Str) }
 
 Msg : [
 	UserClickedHashMem,
@@ -22,12 +23,21 @@ Msg : [
 	GotSliceHash(List(U8)),
 	UserClickedHashMissing,
 	GotMissingHash(List(U8)),
+	UserPickedChunkedFile(Attribute.FileInfo),
+	GotChunkHash(U64, List(U8)),
 ]
+
+## The chunked file is hashed in this many chunks of `chunk_len` bytes.
+chunk_count : U64
+chunk_count = 6
+
+chunk_len : U64
+chunk_len = 2
 
 subscriptions = |_model| []
 
 init : Str -> (Model, List(Effect(Msg)))
-init = |_| ({ mem: "", slice: "", missing: "" }, [])
+init = |_| ({ mem: "", slice: "", missing: "", chunks: List.repeat("", chunk_count) }, [])
 
 show = |hash| if hash.len() == 0 "failed" else WebCrypto.to_hex(hash)
 
@@ -57,6 +67,17 @@ update = |model, msg|
 			)
 
 		GotMissingHash(h) => ({ ..model, missing: show(h) }, [])
+
+		# Every chunk's digest at once, the way a chunked upload asks for them.
+		UserPickedChunkedFile(info) =>
+			(
+				{ ..model, chunks: List.repeat("", chunk_count) },
+				List.repeat({}, chunk_count).map_with_index(
+					|_, i| WebCrypto.digest_file_slice(Sha256, { file: info.id, start: i * chunk_len, len: chunk_len }, |h| GotChunkHash(i, h)),
+				),
+			)
+
+		GotChunkHash(i, h) => ({ ..model, chunks: model.chunks.set(i, show(h)) ?? model.chunks }, [])
 	}
 
 render : Model -> Html(Msg)
@@ -70,5 +91,7 @@ render = |model|
 			p([], [text("slice: ${model.slice}")]),
 			button([on_click(UserClickedHashMissing)], [text("Hash missing")]),
 			p([], [text("missing: ${model.missing}")]),
+			input([type("file"), id("chunked"), on_file(|f| UserPickedChunkedFile(f))]),
+			p([], [text("chunks: ${Str.join_with(model.chunks, ",")}")]),
 		],
 	)
