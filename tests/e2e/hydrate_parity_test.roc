@@ -24,6 +24,10 @@ main! = |_args| {
 	Assert.eq(page.evaluate!("JSON.stringify(window.app.hydration())")?, "{\"claimed\":true,\"mismatch\":null}") ? |e| ClaimNotClean(Str.inspect(e))
 	Assert.eq(page.evaluate!("window.labAgainstFresh().then((d) => JSON.stringify(d))")?, "[]") ? |e| ClaimedPageDiffersFromAClientBuild(Str.inspect(e))
 
+	# A range or color input with no value attribute reads a value the
+	# browser made up. Untouched, the app must not hear it as typed ahead.
+	Assert.eq(page.evaluate!("document.querySelector('.nudges').textContent")?, "nudges 0") ? |e| UntouchedControlsDeliveredAsTyped(Str.inspect(e))
+
 	# The server's SVG and MathML-free page, as the parser built it.
 	Assert.eq(page.evaluate!(namespaces)?, "svg:svg svg:linearGradient svg:use svg:foreignObject xhtml:div svg:desc xhtml:span svg:title") ? |e| ClaimedNamespaces(Str.inspect(e))
 	Assert.eq(page.evaluate!("String(document.querySelector('.sprite').getAttributeNS('http://www.w3.org/1999/xlink', 'href'))")?, "#dot") ? |e| ClaimedXlinkHref(Str.inspect(e))

@@ -1,4 +1,4 @@
-import html.Html exposing [button, div, element, input, option, select, span, table, tbody, td, text, textarea, tr]
+import html.Html exposing [button, div, element, input, meta, option, select, span, table, tbody, td, text, textarea, tr]
 import html.Attribute exposing [attribute, checked, class, disabled, id, name, on_change, on_check, on_click, on_input, selected, type, value]
 
 ## The hydration lab's view, shared by the client (app.roc) and the page
@@ -6,8 +6,10 @@ import html.Attribute exposing [attribute, checked, class, disabled, id, name, o
 ## browser's own parser decides whether they agree. It holds what HTML
 ## serializes lossily or a parser rewrites: SVG and MathML with names the
 ## parser adjusts, form controls whose state HTML expresses differently than
-## a view declares it, a <pre> starting with a newline, and the switches
-## the generator flips to make the server's page disagree on purpose.
+## a view declares it, a <pre> starting with a newline, elements with a DOM
+## property named `content` (a template's fragment, a meta's string), and the
+## switches the generator flips to make the server's page disagree on
+## purpose.
 Lab := [].{
 	Model : {
 		name : Str,
@@ -24,9 +26,11 @@ Lab := [].{
 		locked : Bool,
 		stale : Bool,
 		bare_rows : Bool,
+		contents : Bool,
+		nudges : U64,
 	}
 
-	Msg : [Named(Str), Bio(Str), Sized(Str), Colored(Str), Agreed(Bool), Count, ToggleShape, AddIcon, Rotate, ToggleMath]
+	Msg : [Named(Str), Bio(Str), Sized(Str), Colored(Str), Agreed(Bool), Count, ToggleShape, AddIcon, Rotate, ToggleMath, Nudged]
 
 	default : Model
 	default = {
@@ -44,6 +48,8 @@ Lab := [].{
 		locked: Bool.False,
 		stale: Bool.False,
 		bare_rows: Bool.False,
+		contents: Bool.False,
+		nudges: 0,
 	}
 
 	decode : Str -> Try(Model, _)
@@ -70,6 +76,7 @@ Lab := [].{
 			AddIcon => { ..model, icons: model.icons.append("n${model.next.to_str()}"), next: model.next + 1 }
 			Rotate => { ..model, icons: model.icons.drop_first(1).concat(model.icons.take_first(1)) }
 			ToggleMath => { ..model, math: !model.math }
+			Nudged => { ..model, nudges: model.nudges + 1 }
 		}
 
 	view : Model -> Html(Msg)
@@ -98,7 +105,7 @@ Lab := [].{
 					text("")
 				},
 				rows(model),
-			],
+			].concat(if model.contents contents_view else []),
 		)
 }
 
@@ -113,6 +120,12 @@ forms = |model|
 			input([class("red"), type("radio"), name("color"), value("red"), checked(model.color == "red"), on_change(|s| Colored(s))]),
 			input([class("blue"), type("radio"), name("color"), value("blue"), checked(model.color == "blue"), on_change(|s| Colored(s))]),
 			input([class("agree"), type("checkbox"), checked(model.agree), on_check(|now| Agreed(now))]),
+			# Untouched controls whose value the browser makes up, since the
+			# markup has none: a range sits at its midpoint, a color reads
+			# #000000. Neither is something the visitor typed ahead.
+			input([class("slider"), type("range"), on_input(|_| Nudged)]),
+			input([class("tint"), type("color"), on_input(|_| Nudged)]),
+			span([class("nudges")], [text("nudges ${model.nudges.to_str()}")]),
 			span(
 				[class("echo")],
 				[text("${model.name}|${model.bio}|${model.size}|${model.color}|${if model.agree "yes" else "no"}|${model.count.to_str()}")],
@@ -173,6 +186,15 @@ formula =
 			element("annotation-xml", [], [element("svg", [class("svg-in-math")], [])]),
 		],
 	)
+
+# Two elements with a DOM property named `content`: a template, whose
+# children the parser moves into that fragment, and microdata's <meta>,
+# whose `content` is its attribute as a string.
+contents_view : List(Html(Lab.Msg))
+contents_view = [
+	element("template", [class("stamp")], [div([class("in-template")], [text("stamped")])]),
+	div([attribute("itemscope", "")], [meta([attribute("itemprop", "lab"), attribute("content", "claimed")])]),
+]
 
 rows : Lab.Model -> Html(Lab.Msg)
 rows = |model| {

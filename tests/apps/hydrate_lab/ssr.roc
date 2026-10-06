@@ -39,6 +39,8 @@ pages = [
 	{ name: "stale", server: { ..Lab.default, locked: Bool.True, stale: Bool.True }, client: Lab.default },
 	# Both agree, but on rows straight in a table, which the parser wraps.
 	{ name: "bare", server: { ..Lab.default, bare_rows: Bool.True }, client: { ..Lab.default, bare_rows: Bool.True } },
+	# Both agree, on a template and a <meta>, each with a `content` property.
+	{ name: "content", server: { ..Lab.default, contents: Bool.True }, client: { ..Lab.default, contents: Bool.True } },
 ]
 
 write_pages! = |out_dir| {

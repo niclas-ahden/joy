@@ -780,6 +780,8 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
   //     came from a view, so they are dropped on sight
   //   * a textarea's value serializes as its text, which is taken back out
   //     (see closeFrame)
+  //   * a template's children are parsed into its inert `.content`, where
+  //     nothing can be claimed, so they are built fresh
   //   * what the user typed, ticked or picked before the app booted lives
   //     only in the controls' live state, which is kept and then delivered
   //     to the app (see deliverTypedAhead)
@@ -798,7 +800,8 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
   function hydrateRange(w, start, end) {
     // One frame per open element: the element and a cursor (kids, idx) into
     // its pre-existing children. Fresh (repaired) elements carry kids ===
-    // null, so their subtrees skip matching entirely. An empty root gets the
+    // null, so their subtrees skip matching entirely, and so does a claimed
+    // template, whose children are built fresh. An empty root gets the
     // fresh treatment from the start: nothing was server-rendered, which is
     // a plain build and not a mismatch, so one loader serves both cases.
     //
@@ -839,26 +842,27 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
     // can: a textarea's server-rendered value, the attributes the view never
     // declared, and a form control's live state.
     const closeFrame = (f) => {
-      if (f.kids === null) return;
-      let k = f.idx;
-      // A textarea whose ops set its value and build no children of their
-      // own: its text is the server's rendering of that value, not a child
-      // of the app's render.
-      if (f.textareaValue !== undefined && f.idx === 0) {
-        let text = '';
-        for (; k < f.kids.length && dom.textValue(f.kids[k]) !== null; k++) {
-          text += dom.textValue(f.kids[k]);
+      if (f.kids !== null) {
+        let k = f.idx;
+        // A textarea whose ops set its value and build no children of their
+        // own: its text is the server's rendering of that value, not a child
+        // of the app's render.
+        if (f.textareaValue !== undefined && f.idx === 0) {
+          let text = '';
+          for (; k < f.kids.length && dom.textValue(f.kids[k]) !== null; k++) {
+            text += dom.textValue(f.kids[k]);
+            dom.removeChild(f.parent, f.kids[k]);
+          }
+          if (text !== f.textareaValue) {
+            noteMismatch(`expected the <textarea> to hold ${clip(f.textareaValue)} but the server rendered ${clip(text)}`);
+          }
+        }
+        for (; k < f.kids.length; k++) {
+          if (dom.elementTag(f.kids[k]) !== null || dom.textValue(f.kids[k]) !== null) {
+            noteMismatch(`the server rendered more inside <${dom.elementTag(f.parent) ?? 'the root'}> than the app's first render has`);
+          }
           dom.removeChild(f.parent, f.kids[k]);
         }
-        if (text !== f.textareaValue) {
-          noteMismatch(`expected the <textarea> to hold ${clip(f.textareaValue)} but the server rendered ${clip(text)}`);
-        }
-      }
-      for (; k < f.kids.length; k++) {
-        if (dom.elementTag(f.kids[k]) !== null || dom.textValue(f.kids[k]) !== null) {
-          noteMismatch(`the server rendered more inside <${dom.elementTag(f.parent) ?? 'the root'}> than the app's first render has`);
-        }
-        dom.removeChild(f.parent, f.kids[k]);
       }
       if (f.declared !== null) {
         // An attribute the view never declares would outlive every later
@@ -961,13 +965,17 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
         const nsTag = ns === 'html' ? '' : lower;
         if (el !== null) {
           // The parser moves a template's children into its inert
-          // `.content` fragment; the ops build them as regular children
-          // (like createElement does), so the parsed copies would linger
-          // unseen. Dropping them keeps one copy.
-          dom.clearParsedTemplate?.(el);
+          // `.content` fragment, while the ops build them as regular children
+          // (like createElement does). There is nothing to claim inside one,
+          // so the parsed copies are dropped and the children built fresh,
+          // which is no mismatch. Only a template has such a fragment: other
+          // elements can carry a `content` property of their own (a
+          // <meta>'s is its attribute).
+          const template = lower === 'template';
+          if (template) dom.clearParsedTemplate?.(el);
           // A control's state is read before its own ops can rewrite it.
           const control = CONTROLS.has(lower) ? { dirty: dom.userChanged(el), state: dom.controlState(el) } : null;
-          frames.push({ parent: el, kids: [...dom.childrenOf(el)], idx: 0, ns, nsTag, tag: lower, declared: [], control, textareaValue: undefined });
+          frames.push({ parent: el, kids: template ? null : [...dom.childrenOf(el)], idx: 0, ns, nsTag, tag: lower, declared: [], control, textareaValue: undefined });
         } else {
           const fresh = dom.createElement(tag, ns);
           insertFresh(f, fresh);
@@ -1772,6 +1780,14 @@ function defaultOptionIndex(select) {
   return options.findIndex((o) => !o.disabled);
 }
 
+// The value an input gets from its markup alone: a detached twin carrying
+// the same attributes, sanitized by the browser like the original was.
+function pristineValue(input) {
+  const twin = input.ownerDocument.createElement('input');
+  for (const a of input.attributes) twin.setAttribute(a.name, a.value);
+  return twin.value;
+}
+
 export const browserDom = {
   createElement: (tag, ns) =>
     ns === 'svg' || ns === 'math'
@@ -1922,7 +1938,12 @@ export const browserDom = {
     }
     if (n.type === 'checkbox' || n.type === 'radio') return n.checked !== n.defaultChecked;
     if (n.type === 'file') return false;
-    return n.value !== n.defaultValue;
+    if (n.value === n.defaultValue) return false;
+    // The browser sanitizes an input's value, so an untouched one can still
+    // read differently from its value attribute: a range without one sits
+    // at its midpoint, a color reads #000000, an email loses its spaces.
+    // What the same markup gives a fresh input is the default to compare.
+    return n.localName !== 'input' || n.value !== pristineValue(n);
   },
   controlState: (n) =>
     n.localName === 'select' ? Array.from(n.options, (o) => o.selected) : { value: n.value, checked: n.checked },
@@ -1947,5 +1968,5 @@ export const browserDom = {
   // The parser parks a template's children in its content fragment, where
   // the claim walk (which builds them as regular children, like
   // createElement) would leave them duplicated.
-  clearParsedTemplate: (n) => { if (n.content) n.content.replaceChildren(); },
+  clearParsedTemplate: (n) => { if (n.content instanceof DocumentFragment) n.content.replaceChildren(); },
 };
