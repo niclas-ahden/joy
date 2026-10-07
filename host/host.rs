@@ -667,11 +667,15 @@ const OP_VISIBLE: u32 = 11; // margin_ptr, margin_len, key_ptr, key_len, handler
 const OP_POINTER_EVENT: u32 = 14; // name_ptr, name_len, prevent_default(0/1), stop_propagation(0/1), callable_id; bind pointer event (fires with the PointerEvent record)
 const OP_FILE_EVENT: u32 = 15; // callable_id; bind a file input's change event (fires with the FileInfo record)
 // Patch ops (used for a diff render). Nodes are addressed by their pre-order
-// index in the PREVIOUS tree, which matches the DOM the runtime already built.
+// index in the PREVIOUS tree, which matches the runtime's node list. Every op
+// of one paint uses those old indices, and a REORDER comes before the ops
+// inside the children it keeps, so the runtime can work out its new node list
+// from the ops alone, without reading the DOM, where nodes it did not create
+// (a browser extension's, an embedded widget's) may sit among its own.
 const OP_SET_TEXT: u32 = 5; // node_idx, str_ptr, str_len; retarget a text node's value
-const OP_REPLACE: u32 = 6; // node_idx, n_words, <build ops...>; swap a subtree for a fresh one
+const OP_REPLACE: u32 = 6; // node_idx, old_span, n_words, <build ops...>: swap a subtree (old_span nodes in pre-order) for a fresh one
 const OP_PATCH_ATTRS: u32 = 10; // node_idx, n_words, <attr ops...>; apply an attribute diff (sets + removals)
-const OP_REORDER: u32 = 12; // parent_idx, old_span, n_children, n_kept, <descriptors...>; rewrite a child list
+const OP_REORDER: u32 = 12; // parent_idx, old_span, n_children, n_kept, n_removed, start*, <descriptors...>: rewrite a child list
 const OP_REFRESH_HANDLERS: u32 = 16; // node_idx, n_entries, (name_ptr, name_len, handler_id)*; retarget bound handlers
 // Removal ops, only inside a PATCH_ATTRS payload. The host diffs the two
 // attribute lists itself and emits exactly what changed, so the runtime
@@ -679,14 +683,15 @@ const OP_REFRESH_HANDLERS: u32 = 16; // node_idx, n_entries, (name_ptr, name_len
 const OP_REMOVE_ATTR: u32 = 17; // key_ptr, key_len; drop a string/bool attribute
 const OP_REMOVE_EVENT: u32 = 18; // name_ptr, name_len; drop an event handler
 const OP_REMOVE_VIS: u32 = 19; // disconnect the visibility observer
-// OP_REORDER descriptors, one per child of the NEW list, in order. STAY and
-// MOVE also carry the old child's pre-order start and subtree size, so the
-// runtime can splice its node list instead of re-walking the DOM:
-//   STAY old_pos          : the old child at that position, already in place
-//   MOVE old_pos          : the old child at that position, to be moved here
+// OP_REORDER first lists the old children no descriptor references, which
+// the runtime removes: n_removed, then each one's pre-order start. Then one
+// descriptor per child of the NEW list, in order. STAY and MOVE locate the
+// kept old child by its pre-order start and subtree size:
+//   STAY start count      : an old child, already in place
+//   MOVE start count      : an old child, to be moved here
 //   NEW n_words <build..> : a freshly built subtree
-// Old children not referenced by any descriptor are removed. STAY nodes form
-// an increasing subsequence (the LIS), so the runtime only touches MOVE/NEW.
+// STAY nodes form an increasing subsequence (the LIS), so the runtime only
+// touches MOVE/NEW.
 const REORDER_STAY: u32 = 0;
 const REORDER_MOVE: u32 = 1;
 const REORDER_NEW: u32 = 2;
@@ -1997,11 +2002,14 @@ unsafe fn bytes_eq_len(a: usize, b: usize, len: usize) -> bool {
 }
 
 /// Emit a REPLACE of node `idx` with a freshly built subtree, backpatching the
-/// subtree's word count so the runtime knows how many words to consume.
+/// subtree's word count so the runtime knows how many words to consume. The
+/// old subtree's size tells the runtime which stretch of its node list the new
+/// nodes take over.
 unsafe fn replace(idx: usize, new_off: usize) {
     count_patch(PATCH_REPLACE);
     push(OP_REPLACE);
     push(idx as u32);
+    push(prev_count(idx) as u32);
     let len_pos = CMD_LEN;
     push(0);
     let before = CMD_LEN;
@@ -2421,9 +2429,11 @@ unsafe fn diff_children(parent_idx: usize, old_off: usize, new_off: usize) {
             changed = true;
         }
     }
+    let mut removed: u32 = 0;
     for j in 0..old_n {
         if *old_used.add(j) == 0 {
             changed = true;
+            removed += 1;
         }
     }
     if changed {
@@ -2442,6 +2452,14 @@ unsafe fn diff_children(parent_idx: usize, old_off: usize, new_off: usize) {
         push(old_span as u32);
         push(new_n as u32);
         push(kept);
+        // The old children to remove, by pre-order start, so the runtime
+        // finds them in its node list and not by position in the DOM.
+        push(removed);
+        for j in 0..old_n {
+            if *old_used.add(j) == 0 {
+                push(*starts.add(j));
+            }
+        }
         for k in 0..new_n {
             let m = *m4n.add(k);
             if m == NO_MATCH {
@@ -2453,7 +2471,6 @@ unsafe fn diff_children(parent_idx: usize, old_off: usize, new_off: usize) {
                 set_word(len_pos, (CMD_LEN - before) as u32);
             } else {
                 push(if *stay.add(k) == 1 { REORDER_STAY } else { REORDER_MOVE });
-                push(m);
                 let start = *starts.add(m as usize);
                 push(start);
                 push(prev_count(start as usize) as u32);

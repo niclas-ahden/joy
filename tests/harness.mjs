@@ -85,7 +85,7 @@ export function countingDom(base = fakeDom) {
       counts.inserts += 1;
       base.replaceNode(oldNode, newNode);
     },
-    removeChild: (parent, node) => { counts.removals += 1; base.removeChild(parent, node); },
+    remove: (node) => { if (node.parent) counts.removals += 1; base.remove(node); },
     clear: (node) => { counts.removals += node.children.length; base.clear(node); },
     on: (node, event, fn) => { counts.bindings += 1; base.on(node, event, fn); },
     setProp: (node, k, v) => { counts.propWrites += 1; base.setProp(node, k, v); },

@@ -91,11 +91,22 @@ export const fakeDom = {
   },
   setText: (node, s) => { node.text = s; },
   childrenOf: (node) => node.children ?? [],
+  childCount: (node) => node.children.length,
+  // Like replaceWith: a node without a parent stays without one, and so
+  // does the new node.
   replaceNode: (oldNode, newNode) => {
-    const p = oldNode.parent, i = p.children.indexOf(oldNode);
+    const p = oldNode.parent;
+    if (p === null) return;
+    if (newNode.parent) fakeDom.remove(newNode);
+    const i = p.children.indexOf(oldNode);
     p.children[i] = newNode; newNode.parent = p; oldNode.parent = null;
   },
   insertBefore: (parent, node, anchor) => {
+    // Like the DOM, which throws NotFoundError for an anchor that is not
+    // the parent's child, rather than inserting somewhere else.
+    if (anchor && anchor.parent !== parent) {
+      throw new Error('NotFoundError: insertBefore: the anchor is not a child of the parent');
+    }
     // Like the DOM: inserting a node that already has a parent moves it.
     if (node.parent) {
       const from = node.parent.children.indexOf(node);
@@ -105,8 +116,9 @@ export const fakeDom = {
     parent.children.splice(at, 0, node);
     node.parent = parent;
   },
-  removeChild: (parent, node) => {
-    parent.children.splice(parent.children.indexOf(node), 1);
+  remove: (node) => {
+    if (node.parent === null) return;
+    node.parent.children.splice(node.parent.children.indexOf(node), 1);
     node.parent = null;
   },
   // Mirrors browserDom: live form-control state is the property, the
@@ -259,6 +271,132 @@ export const fakeDom = {
     ? elements.filter((el) => el.parent !== null && el.tag === 'input' &&
         el.attrs.get('type') === 'radio' && el.attrs.get('name') === n.attrs.get('name'))
     : []),
+  // Like browserDom's MutationObserver, over the changes `others` makes.
+  watchOthers: (root) => {
+    const seen = { nodes: new Set(), attrs: new Map(), texts: new Set(), cut: new Set() };
+    const watcher = { root, seen };
+    watchers.add(watcher);
+    return { take: () => { watchers.delete(watcher); return seen; } };
+  },
+  // Every harness holds the runtime's node list against the tree after each
+  // paint: the app's nodes still under the root, in list order, must be the
+  // nodes under the root in document order, less what others added. A
+  // node somebody else took off the page leaves the list's view of it, one
+  // they wrapped stays in it where the wrapper put it.
+  checkNodes: (root, nodes) => {
+    const inTree = new Set();
+    const want = [];
+    const stack = [...root.children].reverse();
+    while (stack.length > 0) {
+      const n = stack.pop();
+      inTree.add(n);
+      if (!n.byOthers) want.push(n);
+      if (n.children) for (let k = n.children.length - 1; k >= 0; k--) stack.push(n.children[k]);
+    }
+    const got = nodes.filter((n) => inTree.has(n));
+    let k = 0;
+    while (k < got.length && k < want.length && got[k] === want[k]) k++;
+    if (k < got.length || k < want.length) {
+      throw new Error(`checkNodes: the node list and the tree part at ${k}: ${describeNode(got[k])} in the list, ${describeNode(want[k])} in the tree (${got.length} listed, ${want.length} in the tree)`);
+    }
+  },
+};
+
+// fakeDom without the node-list check, for the benches, which would time it.
+export const uncheckedDom = { ...fakeDom, checkNodes: undefined };
+
+// A server-rendered copy of a client build's root, the way the parser hands
+// it over: same namespaces and names, adjacent text merged, empty text gone.
+export const parsedCopy = (from) => {
+  const r = new El('#root');
+  for (const c of from.children) fakeDom.append(r, parsedClone(c));
+  return r;
+};
+function parsedClone(node) {
+  if (node instanceof Text) return new Text(node.text);
+  const el = new El(node.tag, node.ns);
+  for (const [k, v] of node.attrs) el.attrs.set(k, v);
+  for (const [k, v] of node.attrNs) el.attrNs.set(k, v);
+  let pending = null;
+  for (const c of node.children) {
+    if (c instanceof Text) { pending = (pending ?? '') + c.text; continue; }
+    if (pending) fakeDom.append(el, new Text(pending));
+    pending = null;
+    fakeDom.append(el, parsedClone(c));
+  }
+  if (pending) fakeDom.append(el, new Text(pending));
+  return el;
+}
+
+const describeNode = (n) => (n === undefined ? 'nothing'
+  : n instanceof Text ? `text ${JSON.stringify(n.text)}`
+  : n instanceof El ? `<${n.tag}>` : 'a comment');
+
+// The watchOthers recordings in progress.
+const watchers = new Set();
+const within = (root, node) => {
+  for (let p = node; p; p = p.parent) if (p === root) return true;
+  return false;
+};
+const record = (node, note) => {
+  for (const w of watchers) if (within(w.root, node)) note(w.seen);
+};
+const markOthers = (node) => {
+  node.byOthers = true;
+  for (const c of node.children ?? []) markOthers(c);
+};
+
+// Somebody else's hand on the page, a browser extension's or an embedded
+// widget's: changes the runtime did not make. Nodes inserted through here
+// are marked `byOthers`, with everything under them, which checkNodes leaves
+// out, and a watchOthers running over the spot records each change.
+export const others = {
+  insertBefore: (parent, node, anchor = null) => {
+    markOthers(node);
+    fakeDom.insertBefore(parent, node, anchor);
+    record(node, (seen) => seen.nodes.add(node));
+  },
+  append: (parent, node) => others.insertBefore(parent, node, null),
+  // Taking a node of the page out is recorded against its parent, as a
+  // MutationObserver reports it. Their own nodes come and go unrecorded.
+  remove: (node) => {
+    record(node, (seen) => { if (!seen.nodes.has(node)) seen.cut.add(node.parent); });
+    fakeDom.remove(node);
+  },
+  // Put `wrapper` where `node` is and `node` inside it, the way a
+  // translation extension wraps text. `node` stays the page's: a
+  // MutationObserver reports it as added to the wrapper, but taken out of
+  // the page first.
+  wrap: (node, wrapper) => {
+    const parent = node.parent;
+    others.insertBefore(parent, wrapper, node);
+    others.remove(node);
+    fakeDom.append(wrapper, node);
+  },
+  // Put `theirs` where `node` is and take `node` off the page, the way a
+  // page translator swaps a text for its translation.
+  replace: (node, theirs) => {
+    others.insertBefore(node.parent, theirs, node);
+    others.remove(node);
+  },
+  // Move a node of the page to `parent`, in front of `anchor`. It stays the
+  // page's, like a wrapped one.
+  move: (node, parent, anchor = null) => {
+    others.remove(node);
+    fakeDom.insertBefore(parent, node, anchor);
+  },
+  // The attribute only, as setAttribute leaves a control's live state be.
+  setAttr: (node, k, v) => {
+    node.attrs.set(k, v);
+    record(node, (seen) => {
+      if (!seen.attrs.has(node)) seen.attrs.set(node, new Set());
+      seen.attrs.get(node).add(k);
+    });
+  },
+  setText: (node, s) => {
+    node.text = s;
+    record(node, (seen) => seen.texts.add(node));
+  },
 };
 
 // Fake location + popstate: tests set the url and call popstate() to

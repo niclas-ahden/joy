@@ -7,7 +7,7 @@
 //   JOY_OPT=speed node tests/bench_jsbench.mjs --nonkeyed
 import { readFileSync } from 'node:fs';
 import { mount } from '../www/runtime.js';
-import { El, fakeDom } from './fakedom.mjs';
+import { El, uncheckedDom } from './fakedom.mjs';
 import { wasmPath } from './harness.mjs';
 
 const keyed = !process.argv.includes('--nonkeyed');
@@ -29,7 +29,7 @@ const median = (xs) => {
 };
 
 const root = new El('#root');
-await mount({ wasm: bytes, root, flags: '', dom: fakeDom });
+await mount({ wasm: bytes, root, flags: '', dom: uncheckedDom });
 const tbody = findId(root, 'tbody');
 const btn = {};
 for (const id of ['run', 'runlots', 'add', 'update', 'clear', 'swaprows']) {

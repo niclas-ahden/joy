@@ -9,7 +9,7 @@
 // Run from the repo root: JOY_OPT=speed node tests/check_svg.mjs
 import { readFileSync } from 'node:fs';
 import { mount, childNamespace, foreignAttr, foreignTagName, NS } from '../www/runtime.js';
-import { El, Text, byClass, fakeDom, html } from './fakedom.mjs';
+import { El, Text, byClass, fakeDom, html, parsedCopy as stage } from './fakedom.mjs';
 import { expect, wasmPath } from './harness.mjs';
 
 const bytes = readFileSync(wasmPath('svg'));
@@ -129,28 +129,6 @@ expect('math on again is MathML again', byClass(root, 'formula').ns, 'math');
 
 // --- Hydration ---
 
-// A server-rendered copy of a client build, the way the parser hands it
-// over: same namespaces and names, adjacent text merged, empty text gone.
-function parsedClone(node) {
-  if (node instanceof Text) return new Text(node.text);
-  const el = new El(node.tag, node.ns);
-  for (const [k, v] of node.attrs) el.attrs.set(k, v);
-  for (const [k, v] of node.attrNs) el.attrNs.set(k, v);
-  let pending = null;
-  for (const c of node.children) {
-    if (c instanceof Text) { pending = (pending ?? '') + c.text; continue; }
-    if (pending) fakeDom.append(el, new Text(pending));
-    pending = null;
-    fakeDom.append(el, parsedClone(c));
-  }
-  if (pending) fakeDom.append(el, new Text(pending));
-  return el;
-}
-const stage = (from) => {
-  const r = new El('#root');
-  for (const c of from.children) fakeDom.append(r, parsedClone(c));
-  return r;
-};
 async function hydrateOver(staged) {
   const warns = [];
   const realWarn = console.warn;

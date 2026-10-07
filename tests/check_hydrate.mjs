@@ -127,7 +127,7 @@ expect('on_check reached the app', chk.attrs.has('checked'), false);
 {
   const r = new El('#root');
   const d = ssrDom(model);
-  d.children.splice(1, 0, new Comment(' server says hi '));
+  fakeDom.insertBefore(d, new Comment(' server says hi '), d.children[1]);
   fakeDom.append(d.children[3], new Comment('inside the span? sure'));
   fakeDom.append(r, d);
   const m = await hydrateMount(r, model);

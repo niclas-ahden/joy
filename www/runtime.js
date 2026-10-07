@@ -6,6 +6,14 @@
 // below). Later paints are diffs: the host emits patch ops addressing nodes
 // by their pre-order index, which the runtime tracks in a retained `nodeList`.
 //
+// The node list comes from the ops alone, never from reading the DOM back:
+// browser extensions and embedded widgets put nodes of their own among the
+// app's (a video speed control next to a <video>, a password manager's icon
+// next to an input, a map drawn into a container), and a list re-read from
+// the DOM would count them, so every later index would point at the wrong
+// node. The runtime only ever touches its own nodes: it inserts next to them,
+// removes them by reference and leaves everything else where it is.
+//
 // Command buffer: word 0 is the mode; the rest are ops.
 //   MODE_FULL (0): build ops build the whole tree
 //   MODE_PATCH (1): patch ops mutate the existing DOM
@@ -17,18 +25,25 @@
 //   POINTER_EVENT(14) name pd sp handler_id | FILE_EVENT(15) handler_id
 // Tag/attr/event names and attr values are srefs (interned string refs, see
 // `sref` below). Text content and key filters are raw (ptr, len) pairs.
-// Patch ops:
-//   SET_TEXT(5) idx str | REPLACE(6) idx n_words <build ops...>
+// Patch ops, all addressing nodes by their index before the paint:
+//   SET_TEXT(5) idx str
+//   REPLACE(6) idx old_span n_words <build ops...>, which swaps the node, the
+//     first of the old_span nodes its subtree takes in pre-order, for a fresh
+//     subtree
 //   PATCH_ATTRS(10) idx n_words <attr ops...>, a host-computed diff whose
 //     ops also include REMOVE_ATTR(17) key | REMOVE_EVENT(18) name |
 //     REMOVE_VIS(19). Removal names are embedded in the buffer (len word +
 //     packed bytes), not (ptr, len) references
-//   REORDER(12) parent_idx old_span n_children n_kept <descriptors...>, which
-//     rewrites a child list. One descriptor per child of the new list, in order:
-//       STAY(0) old_pos | MOVE(1) old_pos | NEW(2) n_words <build ops...>
-//     Old children not referenced by any descriptor are removed. STAY nodes
-//     are already in relative order (the host's LIS pass guarantees it), so
-//     only MOVE/NEW nodes are (re)inserted.
+//   REORDER(12) parent_idx old_span n_children n_kept n_removed (start)*
+//     <descriptors...>, which rewrites a child list. old_span is how many
+//     nodes the old children take in pre-order, and each `start` is the index
+//     of an old child to remove. One descriptor per child of the new list, in
+//     order:
+//       STAY(0) start count | MOVE(1) start count | NEW(2) n_words <build ops...>
+//     where a kept child is the subtree of `count` nodes at index `start`.
+//     STAY nodes are already in relative order (the host's LIS pass
+//     guarantees it), so only MOVE/NEW nodes are (re)inserted. A REORDER
+//     comes before the ops inside the children it keeps.
 // A handler_id is an opaque u32 the host mints per handler (a boxed Roc
 // message, a boxed Str -> msg decoder for value events, or a boxed
 // KeyEvent -> msg decoder for key events); the runtime never interprets it,
@@ -194,9 +209,10 @@ export function foreignAttr(ns, key) {
 //   on(node, event, fn)
 //   setText(textNode, s)
 //   childrenOf(node) -> node[]
-//   replaceNode(old, new)
+//   childCount(node) -> how many children it has, the app's and others'
+//   replaceNode(old, new), nothing when `old` has no parent
 //   insertBefore(parent, node, anchorOrNull)
-//   removeChild(parent, node)
+//   remove(node), nothing when it has no parent
 //   setAttr(node, k, v)
 //   removeAttr(node, k, exact)
 //   eventProp(domEvent, prop) -> string
@@ -211,6 +227,8 @@ export function foreignAttr(ns, key) {
 //   getProp(node, k)
 //   setProp(node, k, v)
 //   radioGroup(node) -> node[]
+//   checkNodes(root, nodes), optional: called after every paint with the
+//     runtime's node list, for a test adapter to hold against its tree
 // Hydration additionally needs (only checked when `hydrate` is set):
 //   textValue(node) -> string | null
 //   splitText(textNode, offset) -> the new following text node
@@ -220,7 +238,12 @@ export function foreignAttr(ns, key) {
 //   controlState(control) -> its live state
 //   restoreControlState(control, s)
 //   clearParsedTemplate(node), optional (see hydrateRange)
-export function makeRuntime(exports, dom, root, hydrate = false) {
+//   watchOthers(root), optional: start recording the changes others make
+//     under `root` and return { take() }, which stops and returns them as
+//     { nodes, attrs, texts, cut } (see mount and browserDom.watchOthers)
+//
+// `others` is the handle watchOthers returned when mount started it, or null.
+export function makeRuntime(exports, dom, root, hydrate = false, others = null) {
   const { memory } = exports;
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
@@ -233,7 +256,7 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
   // The adapter methods that only some paths reach are checked up front,
   // so a custom adapter fails at mount rather than at the first event
   // (restoreControl) or the first claim.
-  const needed = ['elementTag', 'getAttr', 'getProp', 'setProp', 'radioGroup', 'nsOf', 'parentOf'];
+  const needed = ['elementTag', 'getAttr', 'getProp', 'setProp', 'radioGroup', 'nsOf', 'parentOf', 'remove', 'childCount'];
   if (hydrate) {
     needed.push('textValue', 'splitText', 'attrNames', 'attrName', 'userChanged', 'controlState', 'restoreControlState');
   }
@@ -261,6 +284,25 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
   // nodes are rebuilt) but the developer should hear about.
   let hydrateMismatch = null;
   const noteMismatch = (what) => { hydrateMismatch ??= what; };
+
+  // What others changed under the root while the app loaded (see mount),
+  // held for the claim walk only: the nodes they added, the attributes they
+  // set (node -> qualified names), the text nodes whose text they changed
+  // and the parents they took nodes of the page out of. None of it is the
+  // server's, so none of it is a mismatch.
+  let othersSeen = null;
+  // Whether others took nodes of the page out of `parent` while the app
+  // loaded, to put their own in their place (a translation for a text, a
+  // wrapper around a video) or to move them somewhere else.
+  const cutByOthers = (parent) => othersSeen !== null && othersSeen.cut?.has(parent) === true;
+  // A node others added under `parent`, unless they also took the page's own
+  // out of it: there it stands in for a node of the page and goes like any
+  // node the ops do not expect, while the app's own takes the place back.
+  // Kept, it would leave the page with both, the translation next to the
+  // text, the wrapper's video next to the app's.
+  const addedByOthers = (node, parent) => othersSeen !== null && othersSeen.nodes.has(node) && !cutByOthers(parent);
+  const attrByOthers = (node, name) => othersSeen !== null && othersSeen.attrs.get(node)?.has(name) === true;
+  const textByOthers = (node) => othersSeen !== null && othersSeen.texts.has(node);
 
   // The walk's outcome, readable through the app handle's hydration() so a
   // test or a monitor can assert on it instead of scraping the console:
@@ -570,7 +612,7 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
     // frame closes, and the attribute's absence here is no difference.
     if (cur === null && k === 'value' && claimFrame.tag === 'textarea') {
       claimFrame.textareaValue = v;
-    } else {
+    } else if (!attrByOthers(node, dom.attrName(node, k))) {
       noteMismatch(cur === null
         ? `expected ${k}=${clip(v)} on <${dom.elementTag(node)}> but the server rendered no ${k}`
         : `expected ${k}=${clip(v)} on <${dom.elementTag(node)}> but the server rendered ${k}=${clip(cur)}`);
@@ -583,13 +625,14 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
   function claimBool(node, k, flag) {
     claimFrame.declared.push(k);
     const present = dom.getAttr(node, k) !== null;
+    const byOthers = attrByOthers(node, dom.attrName(node, k));
     if (flag && attrAllowed(k, '')) {
       if (!present) {
-        noteMismatch(`expected ${k} on <${dom.elementTag(node)}> but the server rendered it without`);
+        if (!byOthers) noteMismatch(`expected ${k} on <${dom.elementTag(node)}> but the server rendered it without`);
         dom.setAttr(node, k, '');
       }
     } else if (present) {
-      noteMismatch(`the server rendered ${k} on <${dom.elementTag(node)}>, which the app's first render leaves off`);
+      if (!byOthers) noteMismatch(`the server rendered ${k} on <${dom.elementTag(node)}>, which the app's first render leaves off`);
       dom.removeAttr(node, k);
     }
   }
@@ -707,11 +750,10 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
 
   // Build the balanced op range [start, end) into `parent` and return the next
   // index. Nodes are created in document pre-order, so when `out` is given
-  // every created node is pushed onto it, saving callers that need the
-  // subtree's pre-order (the node-list splice) a second walk. `ctx` is the
-  // element the range lands under, whose namespace the new elements start
-  // from: `parent` itself, unless that is a detached fragment standing in
-  // for it.
+  // every created node is pushed onto it: that is their stretch of the node
+  // list. `ctx` is the element the range lands under, whose namespace the new
+  // elements start from: `parent` itself, unless that is a detached fragment
+  // standing in for it.
   function buildRange(w, start, end, parent, out, ctx = parent) {
     const stack = [parent];
     // The selects built here. A select's value names one of its options,
@@ -793,6 +835,13 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
   //   * what the user typed, ticked or picked before the app booted lives
   //     only in the controls' live state, which is kept and then delivered
   //     to the app (see deliverTypedAhead)
+  //   * what others did to the page while the app loaded (see mount) is
+  //     theirs: the nodes they added stay where they are, unclaimed, so do
+  //     the attributes they set, and text they changed is set back without
+  //     a word, since none of it is the server disagreeing. Nodes they put
+  //     in place of the page's own are the exception (see addedByOthers):
+  //     they go, the app's nodes are built back, and that goes unreported
+  //     too
   //
   // An attribute the markup carries that the view does not declare, or a
   // value that differs, is a mismatch like a wrong node: rewritten to the
@@ -802,9 +851,14 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
   // render, is repaired locally: the expected node is built fresh in place,
   // its whole subtree with it (a frame with kids === null builds fresh
   // without further matching), and children the ops never claimed are
-  // removed when their parent closes. The page always ends up showing the
-  // app's own render. The first repair is remembered and warned once,
-  // because the fix belongs on the server.
+  // removed when their parent closes. A node the ops do not expect, in front
+  // of the one they do, is removed on its own, so the siblings after it are
+  // still claimed, along with what the user typed into them. The page always
+  // ends up showing the app's own render. The first repair is remembered and
+  // warned once, because the fix belongs on the server.
+  //
+  // Returns whether there was server-rendered DOM to claim, and the claimed
+  // and fresh nodes in pre-order, the paint's node list.
   function hydrateRange(w, start, end) {
     // One frame per open element: the element and a cursor (kids, idx) into
     // its pre-existing children. Fresh (repaired) elements carry kids ===
@@ -819,22 +873,70 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
     // of a form control's live state taken before any op touched it, and
     // `textareaValue`, the value a textarea's server-rendered text has to
     // match. `ns` and `nsTag` are what its children take their namespace
-    // from (see nsFrame).
+    // from (see nsFrame). `cut` is whether others took nodes of the page out
+    // of it while the app loaded (see cutByOthers).
+    const nodes = [];
     const rootKids = [...dom.childrenOf(root)];
-    const hadKids = rootKids.length !== 0; // the walk splices rootKids, so decide now
+    // Decided now, as the walk splices rootKids. A root holding only what
+    // others added is empty as far as the server goes.
+    const hadKids = rootKids.some((n) => !addedByOthers(n, root));
     const rootNsFrame = nsFrame(root);
-    const frames = [{ parent: root, kids: hadKids ? rootKids : null, idx: 0, ns: rootNsFrame.ns, nsTag: rootNsFrame.tag, tag: '', declared: null, control: null, textareaValue: undefined }];
+    const frames = [{ parent: root, kids: hadKids ? rootKids : null, idx: 0, ns: rootNsFrame.ns, nsTag: rootNsFrame.tag, tag: '', declared: null, control: null, textareaValue: undefined, cut: cutByOthers(root) }];
     const top = () => frames[frames.length - 1];
 
-    // Remove comment-ish nodes at the cursor: neither element nor text, so
-    // no view produced them and no op will ever claim them.
-    const dropJunk = (f) => {
+    // Where others took nodes of the page out, the repairs are theirs to
+    // answer for, not the server's: made all the same, but not reported.
+    const noteMismatchIn = (f, what) => { if (!f.cut) noteMismatch(what); };
+
+    // Neither element nor text: no view produced it and no op will ever
+    // claim it.
+    const junk = (n) => dom.elementTag(n) === null && dom.textValue(n) === null;
+
+    // Move the cursor past what no op claims: nodes others added stay where
+    // they are, comment-ish ones are removed.
+    const skipUnclaimable = (f) => {
       let cand = f.kids[f.idx];
-      while (cand !== undefined && dom.elementTag(cand) === null && dom.textValue(cand) === null) {
-        dom.removeChild(f.parent, cand);
-        f.kids.splice(f.idx, 1);
+      while (cand !== undefined) {
+        if (addedByOthers(cand, f.parent)) {
+          f.idx++;
+        } else if (junk(cand)) {
+          dom.remove(cand);
+          f.kids.splice(f.idx, 1);
+        } else {
+          break;
+        }
         cand = f.kids[f.idx];
       }
+    };
+
+    // The candidate after the one at the cursor, past what no op claims.
+    const nextCandidate = (f) => {
+      for (let k = f.idx + 1; k < f.kids.length; k++) {
+        const c = f.kids[k];
+        if (!addedByOthers(c, f.parent) && !junk(c)) return c;
+      }
+      return undefined;
+    };
+
+    // Remove the node at the cursor, which the ops do not expect, when the
+    // one after it is the node they do. Rebuilding in front of it instead
+    // would leave every sibling after it to be rebuilt as well.
+    //
+    // TODO: a node others added before mount started watching cannot be
+    // told from the server's markup. One in front of a node the ops expect
+    // is removed here and reported as a mismatch, and one whose tag the ops
+    // expect is claimed as the app's, its content and attributes rewritten.
+    // Watching from earlier would fix both: a tiny inline script right after
+    // the root's markup that starts the observer for mount to pick up.
+    const dropStray = (f, cand, fits, expected) => {
+      const next = nextCandidate(f);
+      if (next === undefined || !fits(next)) return cand;
+      const tag = dom.elementTag(cand);
+      noteMismatchIn(f, `expected ${expected} but found ${tag === null ? 'text' : `<${tag}>`} in front of it`);
+      dom.remove(cand);
+      f.kids.splice(f.idx, 1);
+      skipUnclaimable(f);
+      return f.kids[f.idx];
     };
 
     // Put a freshly built node where the cursor stands. It is claimed by
@@ -845,10 +947,11 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
     };
 
     // Children the ops never claimed are not in the app's first render:
-    // remove them. Elements and text are real divergence worth the warning,
-    // stray junk is not. Then a claimed element settles what only its close
-    // can: a textarea's server-rendered value, the attributes the view never
-    // declared, and a form control's live state.
+    // remove them, but leave what others added. Elements and text are real
+    // divergence worth the warning, stray junk is not. Then a claimed element
+    // settles what only its close can: a textarea's server-rendered value,
+    // the attributes the view never declared, and a form control's live
+    // state.
     const closeFrame = (f) => {
       if (f.kids !== null) {
         let k = f.idx;
@@ -859,26 +962,29 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
           let text = '';
           for (; k < f.kids.length && dom.textValue(f.kids[k]) !== null; k++) {
             text += dom.textValue(f.kids[k]);
-            dom.removeChild(f.parent, f.kids[k]);
+            dom.remove(f.kids[k]);
           }
           if (text !== f.textareaValue) {
             noteMismatch(`expected the <textarea> to hold ${clip(f.textareaValue)} but the server rendered ${clip(text)}`);
           }
         }
         for (; k < f.kids.length; k++) {
-          if (dom.elementTag(f.kids[k]) !== null || dom.textValue(f.kids[k]) !== null) {
-            noteMismatch(`the server rendered more inside <${dom.elementTag(f.parent) ?? 'the root'}> than the app's first render has`);
+          const kid = f.kids[k];
+          if (addedByOthers(kid, f.parent)) continue;
+          if (!junk(kid)) {
+            noteMismatchIn(f, `the server rendered more inside <${dom.elementTag(f.parent) ?? 'the root'}> than the app's first render has`);
           }
-          dom.removeChild(f.parent, f.kids[k]);
+          dom.remove(kid);
         }
       }
       if (f.declared !== null) {
         // An attribute the view never declares would outlive every later
         // render, since the host's diff only ever touches the ones it knows
-        // about. A stale `disabled` would disable the button for good.
+        // about. A stale `disabled` would disable the button for good. The
+        // ones others set are theirs to keep.
         const declared = new Set(f.declared.map((key) => dom.attrName(f.parent, key)));
         for (const name of dom.attrNames(f.parent)) {
-          if (!declared.has(name)) {
+          if (!declared.has(name) && !attrByOthers(f.parent, name)) {
             noteMismatch(`the server rendered ${name}=${clip(dom.getAttr(f.parent, name, true) ?? '')} on <${dom.elementTag(f.parent)}>, which the app's first render does not have`);
             dom.removeAttr(f.parent, name, true);
           }
@@ -903,15 +1009,21 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
       }
     };
 
+    // Claim or build the text node for a text vnode `s`, and return it.
     const hydrateText = (f, s) => {
       if (f.kids !== null) {
-        dropJunk(f);
-        const cand = f.kids[f.idx];
+        skipUnclaimable(f);
+        let cand = f.kids[f.idx];
+        // Empty text is never in the markup, so only a text with something
+        // in it can be the one after a stray node.
+        if (cand !== undefined && s.length > 0 && dom.textValue(cand) === null) {
+          cand = dropStray(f, cand, (n) => dom.textValue(n)?.startsWith(s) === true, `the text ${JSON.stringify(s)}`);
+        }
         const t = cand === undefined ? null : dom.textValue(cand);
         if (t !== null) {
           if (t === s) {
             f.idx++;
-            return;
+            return cand;
           }
           if (s.length < t.length && t.startsWith(s)) {
             // The serializer merged this vnode with the text after it: cut
@@ -921,20 +1033,22 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
             const rest = dom.splitText(cand, s.length);
             f.kids.splice(f.idx + 1, 0, rest);
             f.idx++;
-            return;
+            return cand;
           }
           if (s.length > 0) {
-            noteMismatch(`expected the text ${JSON.stringify(s)} but the server rendered ${JSON.stringify(t)}`);
+            if (!textByOthers(cand)) noteMismatchIn(f, `expected the text ${JSON.stringify(s)} but the server rendered ${JSON.stringify(t)}`);
             dom.setText(cand, s);
             f.idx++;
-            return;
+            return cand;
           }
         }
-        if (s.length > 0) noteMismatch(`expected the text ${JSON.stringify(s)}`);
+        if (s.length > 0) noteMismatchIn(f, `expected the text ${JSON.stringify(s)}`);
       }
       // Nothing claimable here: the vnode is empty text (which HTML cannot
       // express), the tree diverged, or this subtree is fresh anyway.
-      insertFresh(f, dom.createText(s));
+      const fresh = dom.createText(s);
+      insertFresh(f, fresh);
+      return fresh;
     };
 
     let i = start;
@@ -946,28 +1060,30 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
         const lower = tag.toLowerCase();
         const f = top();
         const ns = nsUnder(f.ns, f.nsTag, f.parent, tag);
+        // Case-insensitive: HTML tags parse caselessly, and SVG localName
+        // keeps camelCase (feGaussianBlur) while views may not. The
+        // namespace has to match too: an svg <title> is not an HTML one.
+        const fits = (n) => dom.elementTag(n)?.toLowerCase() === lower && dom.nsOf(n) === ns;
         let el = null;
         if (f.kids !== null) {
-          dropJunk(f);
-          const cand = f.kids[f.idx];
+          skipUnclaimable(f);
+          let cand = f.kids[f.idx];
+          if (cand !== undefined && !fits(cand)) cand = dropStray(f, cand, fits, `<${tag}>`);
           const candTag = cand === undefined ? null : dom.elementTag(cand);
-          // Case-insensitive: HTML tags parse caselessly, and SVG localName
-          // keeps camelCase (feGaussianBlur) while views may not. The
-          // namespace has to match too: an svg <title> is not an HTML one.
-          if (candTag !== null && candTag.toLowerCase() === lower && dom.nsOf(cand) === ns) {
+          if (cand !== undefined && fits(cand)) {
             el = cand;
             f.idx++;
           } else if (candTag !== null && candTag.toLowerCase() === lower) {
-            noteMismatch(`expected <${tag}> in the ${ns} namespace but the server's <${candTag}> is in the ${dom.nsOf(cand)} one`);
+            noteMismatchIn(f, `expected <${tag}> in the ${ns} namespace but the server's <${candTag}> is in the ${dom.nsOf(cand)} one`);
           } else if (cand !== undefined) {
             // The one rewrite of well-formed-looking markup that views hit
             // most: the parser wraps rows that sit directly in a table.
             const hint = lower === 'tr' && candTag?.toLowerCase() === 'tbody'
               ? ' (the HTML parser puts a <tr> that sits directly in a <table> inside a <tbody>, so give the rows a tbody of their own)'
               : '';
-            noteMismatch(`expected <${tag}> but the server rendered ${candTag === null ? 'text' : `<${candTag}>`}${hint}`);
+            noteMismatchIn(f, `expected <${tag}> but the server rendered ${candTag === null ? 'text' : `<${candTag}>`}${hint}`);
           } else {
-            noteMismatch(`expected <${tag}> but the server rendered nothing there`);
+            noteMismatchIn(f, `expected <${tag}> but the server rendered nothing there`);
           }
         }
         const nsTag = ns === 'html' ? '' : lower;
@@ -983,11 +1099,13 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
           if (template) dom.clearParsedTemplate?.(el);
           // A control's state is read before its own ops can rewrite it.
           const control = CONTROLS.has(lower) ? { dirty: dom.userChanged(el), state: dom.controlState(el) } : null;
-          frames.push({ parent: el, kids: template ? null : [...dom.childrenOf(el)], idx: 0, ns, nsTag, tag: lower, declared: [], control, textareaValue: undefined });
+          frames.push({ parent: el, kids: template ? null : [...dom.childrenOf(el)], idx: 0, ns, nsTag, tag: lower, declared: [], control, textareaValue: undefined, cut: cutByOthers(el) });
+          nodes.push(el);
         } else {
           const fresh = dom.createElement(tag, ns);
           insertFresh(f, fresh);
-          frames.push({ parent: fresh, kids: null, idx: 0, ns, nsTag, tag: lower, declared: null, control: null, textareaValue: undefined });
+          frames.push({ parent: fresh, kids: null, idx: 0, ns, nsTag, tag: lower, declared: null, control: null, textareaValue: undefined, cut: false });
+          nodes.push(fresh);
         }
       } else if (op === OP_ELEMENT_CLOSE) {
         i += 1;
@@ -995,7 +1113,7 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
       } else if (op === OP_TEXT) {
         const s = str(w[i + 1], w[i + 2]);
         i += 3;
-        hydrateText(top(), s);
+        nodes.push(hydrateText(top(), s));
       } else if (op === OP_ATTR || op === OP_BOOL_ATTR || op === OP_MSG_EVENT || op === OP_VALUE_EVENT || op === OP_KEY_EVENT || op === OP_POINTER_EVENT || op === OP_FILE_EVENT || op === OP_VISIBLE) {
         const f = top();
         claimFrame = f.declared !== null ? f : null;
@@ -1009,7 +1127,7 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
       }
     }
     closeFrame(frames.pop()); // the root's own leftovers
-    return hadKids; // whether there was server-rendered DOM to claim
+    return { claimed: hadKids, nodes };
   }
 
   // Disconnect visibility observers in a subtree that is about to be
@@ -1026,12 +1144,50 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
     for (const c of dom.childrenOf(node)) cleanupVisWalk(c);
   }
 
-  // Pre-order list of the DOM nodes under `root` (root itself excluded).
-  function preorder() {
+  // The node list after a paint that rewrote parts of it. Each edit replaces
+  // the stretch [at, end) of the old list with its segments, in order: nodes
+  // the paint built (an array), or a kept child's old stretch ({ start, end }),
+  // which may hold edits of its own, since the ops inside a kept child use
+  // old indices too. Edits nest that way but never overlap, so one pass over
+  // the old list, in the new order, gives the new one.
+  function composeNodes(old, edits) {
+    edits.sort((a, b) => a.at - b.at);
     const out = [];
-    const visit = (n) => { out.push(n); for (const c of dom.childrenOf(n)) visit(c); };
-    for (const c of dom.childrenOf(root)) visit(c);
+    // The first edit at or after old index `from`.
+    const firstFrom = (from) => {
+      let lo = 0, hi = edits.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (edits[mid].at < from) lo = mid + 1;
+        else hi = mid;
+      }
+      return lo;
+    };
+    // Copy old[from..to) to `out`, applying the edits that start in it. The
+    // edits nested in one are applied through its segments, so the next one
+    // looked at starts past its end. The copying loops live in pushNodes:
+    // V8 compiles a long loop in place, and leaving such a loop inside a
+    // function called once per kept child threw that code away every time.
+    const copy = (from, to) => {
+      let pos = from;
+      for (let k = firstFrom(from); k < edits.length && edits[k].at < to; k = firstFrom(pos)) {
+        const e = edits[k];
+        pushNodes(out, old, pos, e.at);
+        for (const seg of e.segs) {
+          if (Array.isArray(seg)) pushNodes(out, seg, 0, seg.length);
+          else if (edits.length === 1) pushNodes(out, old, seg.start, seg.end);
+          else copy(seg.start, seg.end);
+        }
+        pos = e.end;
+      }
+      pushNodes(out, old, pos, to);
+    };
+    copy(0, old.length);
     return out;
+  }
+
+  function pushNodes(out, nodes, from, to) {
+    for (let t = from; t < to; t++) out.push(nodes[t]);
   }
 
   function paint() {
@@ -1042,25 +1198,22 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
     } finally {
       painting = false;
     }
+    dom.checkNodes?.(root, nodeList);
   }
 
   function paintApply(w) {
-    // Rebuilding the pre-order node list costs O(total nodes) per paint, so
-    // skip it when every op left the tree's shape alone (SET_TEXT and
-    // PATCH_ATTRS mutate nodes in place; REPLACE and REORDER change the
-    // node set).
-    let structural = false;
-    // A paint whose only structural op is a single REORDER can splice the
-    // node list from what it already knows (the host sends each kept child's
-    // old pre-order start and subtree size), skipping the full DOM re-walk.
-    // Anything else structural falls back to preorder().
-    let structuralOps = 0;
-    let splice = null;
     if (w[0] === MODE_FULL) {
-      structural = true;
       if (hydrateFirstPaint) {
         hydrateFirstPaint = false;
-        const claimed = hydrateRange(w, 1, w.length);
+        // Nothing else runs until the walk is over, so what others did
+        // while the app loaded is final now.
+        othersSeen = others?.take() ?? null;
+        let claimed;
+        try {
+          ({ claimed, nodes: nodeList } = hydrateRange(w, 1, w.length));
+        } finally {
+          othersSeen = null;
+        }
         hydrateOutcome = { claimed, mismatch: hydrateMismatch };
         if (hydrateMismatch) {
           console.warn(`Joy hydrate: the server-rendered HTML did not match the app's first render (${hydrateMismatch}). The mismatched nodes and attributes were repaired, so the page is correct, but the server view and the client's init disagree and hydration paid for both.`);
@@ -1068,140 +1221,166 @@ export function makeRuntime(exports, dom, root, hydrate = false) {
       } else {
         cleanupSubtree(root);
         dom.clear(root);
-        buildRange(w, 1, w.length, root);
+        const nodes = [];
+        buildRange(w, 1, w.length, root, nodes);
+        nodeList = nodes;
       }
-    } else {
-      const refs = nodeList;
-      // Selects whose options this paint changes, pinned once it is done
-      // (see buildRange): the options a select's value names may only
-      // arrive now.
-      let selects = null;
-      const optionsChanged = (parent) => {
-        const sel = parent === null ? null : selectOf(parent);
-        if (sel !== null) (selects ??= []).push(sel);
-      };
-      let i = 1;
-      while (i < w.length) {
-        const op = w[i++];
-        if (op === OP_SET_TEXT) {
-          const idx = w[i++];
-          dom.setText(refs[idx], str(w[i++], w[i++]));
-          // An option without a value attribute takes its text as its value.
-          const opt = dom.parentOf(refs[idx]);
-          if (opt !== null && dom.elementTag(opt) === 'option' && dom.getAttr(opt, 'value') === null) optionsChanged(dom.parentOf(opt));
-        } else if (op === OP_REPLACE) {
-          structural = true;
-          structuralOps += 1;
-          const idx = w[i++];
-          const n = w[i++];
-          const holder = dom.fragment();
-          const parent = dom.parentOf(refs[idx]);
-          // Built detached, but in the namespace of the parent it replaces
-          // into: a node swapped inside an <svg> stays SVG.
-          buildRange(w, i, i + n, holder, undefined, parent ?? root);
-          i += n;
-          optionsChanged(parent);
-          cleanupSubtree(refs[idx]);
-          dom.replaceNode(refs[idx], dom.childrenOf(holder)[0]);
-        } else if (op === OP_PATCH_ATTRS) {
-          const idx = w[i++];
-          const n = w[i++];
-          applyAttrOps(w, i, i + n, refs[idx]);
-          i += n;
-          // An option's new value may be the one its select names.
-          if (dom.elementTag(refs[idx]) === 'option') optionsChanged(dom.parentOf(refs[idx]));
-        } else if (op === OP_REFRESH_HANDLERS) {
-          // The element's attributes are unchanged except that its handlers
-          // were re-boxed by the render (they always are), so only the stored
-          // handler ids move, with no attribute writes and no listener
-          // rebinding.
-          const m = eventsFor(refs[w[i++]]);
-          const n = w[i++];
-          for (let k = 0; k < n; k++) {
-            i = sref(w, i);
-            const d = m.get(srefVal);
-            const id = w[i++];
-            if (d) d.id = id;
-          }
-        } else if (op === OP_REORDER) {
-          structural = true;
-          structuralOps += 1;
-          const parentIdx = w[i++];
-          const oldSpan = w[i++];
-          const parent = refs[parentIdx];
-          const n = w[i++];
-          const kept = w[i++];
-          optionsChanged(parent);
-          const segNodes = [];
-          if (kept === 0) {
-            // No old child survives: drop them all at once and rebuild into
-            // the emptied parent, where append order is document order. This
-            // is the clear and replace-all shape, and it skips the per-node
-            // removals and inserts of the general path entirely.
-            if (visCount > 0) for (const c of dom.childrenOf(parent)) cleanupVisWalk(c);
-            dom.clear(parent);
-            for (let k = 0; k < n; k++) {
-              i++; // kind is always NEW here
-              const nw = w[i++];
-              buildRange(w, i, i + nw, parent, segNodes);
-              i += nw;
-            }
-          } else {
-            const oldChildren = [...dom.childrenOf(parent)];
-            // Resolve every descriptor to a node first (building NEW
-            // subtrees), so old positions are read before the DOM mutates.
-            // segNodes accumulates the segment's new pre-order for the
-            // splice.
-            const placed = [];
-            const moved = [];
-            const used = new Uint8Array(oldChildren.length);
-            for (let k = 0; k < n; k++) {
-              const kind = w[i++];
-              if (kind === REORDER_NEW) {
-                const nw = w[i++];
-                const holder = dom.fragment();
-                const fresh = [];
-                buildRange(w, i, i + nw, holder, fresh, parent);
-                i += nw;
-                placed.push(fresh[0]);
-                moved.push(true);
-                for (const node of fresh) segNodes.push(node);
-              } else {
-                const pos = w[i++];
-                const start = w[i++];
-                const count = w[i++];
-                used[pos] = 1;
-                placed.push(oldChildren[pos]);
-                moved.push(kind === REORDER_MOVE);
-                for (let t = start; t < start + count; t++) segNodes.push(refs[t]);
-              }
-            }
-            for (let pos = 0; pos < oldChildren.length; pos++) {
-              if (!used[pos]) {
-                cleanupSubtree(oldChildren[pos]);
-                dom.removeChild(parent, oldChildren[pos]);
-              }
-            }
-            // Right-to-left, inserting each MOVE/NEW before the node that
-            // ends up after it. STAY nodes are already in relative order.
-            let anchor = null;
-            for (let k = n - 1; k >= 0; k--) {
-              if (moved[k]) dom.insertBefore(parent, placed[k], anchor);
-              anchor = placed[k];
-            }
-          }
-          splice = { at: parentIdx + 1, oldSpan, nodes: segNodes };
-        } else {
-          throw new Error(`unknown patch op ${op} at word ${i - 1}`);
+      return;
+    }
+    const refs = nodeList;
+    // The stretches of the node list the structural ops rewrite (REPLACE
+    // and REORDER, see composeNodes). A paint without any leaves the list
+    // as it is: SET_TEXT and PATCH_ATTRS change nodes in place.
+    const edits = [];
+    // Selects whose options this paint changes, pinned once it is done
+    // (see buildRange): the options a select's value names may only
+    // arrive now.
+    let selects = null;
+    const optionsChanged = (parent) => {
+      const sel = parent === null ? null : selectOf(parent);
+      if (sel !== null) (selects ??= []).push(sel);
+    };
+    let i = 1;
+    while (i < w.length) {
+      const op = w[i++];
+      if (op === OP_SET_TEXT) {
+        const idx = w[i++];
+        // TODO: a text node others took off the page and put their own in
+        // place of (a page translator swapping in its translation) keeps
+        // getting its text set off the page, so the app's later changes to
+        // it never show. A paint could notice an addressed node without a
+        // parent and rebuild it where its neighbours are.
+        dom.setText(refs[idx], str(w[i++], w[i++]));
+        // An option without a value attribute takes its text as its value.
+        const opt = dom.parentOf(refs[idx]);
+        if (opt !== null && dom.elementTag(opt) === 'option' && dom.getAttr(opt, 'value') === null) optionsChanged(dom.parentOf(opt));
+      } else if (op === OP_REPLACE) {
+        const idx = w[i++];
+        const span = w[i++];
+        const n = w[i++];
+        const old = refs[idx];
+        const parent = dom.parentOf(old);
+        const holder = dom.fragment();
+        const fresh = [];
+        // Built detached, but in the namespace of the parent it replaces
+        // into: a node swapped inside an <svg> stays SVG.
+        buildRange(w, i, i + n, holder, fresh, parent ?? root);
+        i += n;
+        optionsChanged(parent);
+        cleanupSubtree(old);
+        // A node somebody else took off the page stays off it, and so does
+        // its replacement.
+        dom.replaceNode(old, fresh[0]);
+        edits.push({ at: idx, end: idx + span, segs: [fresh] });
+      } else if (op === OP_PATCH_ATTRS) {
+        const idx = w[i++];
+        const n = w[i++];
+        applyAttrOps(w, i, i + n, refs[idx]);
+        i += n;
+        // An option's new value may be the one its select names.
+        if (dom.elementTag(refs[idx]) === 'option') optionsChanged(dom.parentOf(refs[idx]));
+      } else if (op === OP_REFRESH_HANDLERS) {
+        // The element's attributes are unchanged except that its handlers
+        // were re-boxed by the render (they always are), so only the stored
+        // handler ids move, with no attribute writes and no listener
+        // rebinding.
+        const m = eventsFor(refs[w[i++]]);
+        const n = w[i++];
+        for (let k = 0; k < n; k++) {
+          i = sref(w, i);
+          const d = m.get(srefVal);
+          const id = w[i++];
+          if (d) d.id = id;
         }
+      } else if (op === OP_REORDER) {
+        const parentIdx = w[i++];
+        const oldSpan = w[i++];
+        const parent = refs[parentIdx];
+        const n = w[i++];
+        const kept = w[i++];
+        const nRemoved = w[i++];
+        const removedAt = i;
+        i += nRemoved;
+        optionsChanged(parent);
+        // The parent keeps its place, and the new children take the rest of
+        // its stretch.
+        const segs = [[parent]];
+        if (kept === 0) {
+          // No old child survives: drop them all and build the new ones
+          // into the parent, where append order is document order. When
+          // they are all the parent holds, one clear drops them, the clear
+          // and replace-all shape, which skips the per-node removals and
+          // inserts of the general path. Otherwise others' nodes sit among
+          // them, and only the app's own are removed.
+          if (nRemoved > 0 && dom.childCount(parent) === nRemoved) {
+            if (visCount > 0) for (let r = 0; r < nRemoved; r++) cleanupVisWalk(refs[w[removedAt + r]]);
+            dom.clear(parent);
+          } else {
+            for (let r = 0; r < nRemoved; r++) {
+              const gone = refs[w[removedAt + r]];
+              cleanupSubtree(gone);
+              dom.remove(gone);
+            }
+          }
+          const fresh = [];
+          for (let k = 0; k < n; k++) {
+            i++; // kind is always NEW here
+            const nw = w[i++];
+            buildRange(w, i, i + nw, parent, fresh);
+            i += nw;
+          }
+          segs.push(fresh);
+        } else {
+          // Resolve every descriptor to a node first, building the NEW
+          // subtrees detached.
+          const placed = new Array(n);
+          const moved = new Uint8Array(n);
+          for (let k = 0; k < n; k++) {
+            const kind = w[i++];
+            if (kind === REORDER_NEW) {
+              const nw = w[i++];
+              const holder = dom.fragment();
+              const fresh = [];
+              buildRange(w, i, i + nw, holder, fresh, parent);
+              i += nw;
+              placed[k] = fresh[0];
+              moved[k] = 1;
+              segs.push(fresh);
+            } else {
+              const start = w[i++];
+              const count = w[i++];
+              placed[k] = refs[start];
+              moved[k] = kind === REORDER_MOVE ? 1 : 0;
+              segs.push({ start, end: start + count });
+            }
+          }
+          for (let r = 0; r < nRemoved; r++) {
+            const gone = refs[w[removedAt + r]];
+            cleanupSubtree(gone);
+            dom.remove(gone);
+          }
+          // Right-to-left, inserting each MOVE/NEW before the node that
+          // ends up after it. STAY nodes are already in relative order. A
+          // node only anchors while it is in the parent: one somebody else
+          // took away is passed over for the next one that is.
+          let anchor = null;
+          for (let k = n - 1; k >= 0; k--) {
+            const node = placed[k];
+            if (moved[k]) {
+              dom.insertBefore(parent, node, anchor);
+              anchor = node;
+            } else if (dom.parentOf(node) === parent) {
+              anchor = node;
+            }
+          }
+        }
+        edits.push({ at: parentIdx, end: parentIdx + 1 + oldSpan, segs });
+      } else {
+        throw new Error(`unknown patch op ${op} at word ${i - 1}`);
       }
-      if (selects !== null) for (const sel of selects) restoreControl(sel);
     }
-    if (structural) {
-      nodeList = (structuralOps === 1 && splice)
-        ? nodeList.slice(0, splice.at).concat(splice.nodes, nodeList.slice(splice.at + splice.oldSpan))
-        : preorder();
-    }
+    if (selects !== null) for (const sel of selects) restoreControl(sel);
+    if (edits.length > 0) nodeList = composeNodes(refs, edits);
   }
 
   // Copy a JS string into wasm memory via the host's js_alloc; returns [ptr, len].
@@ -1715,7 +1894,15 @@ const MOUNT_OPTIONS = ['wasm', 'root', 'flags', 'dom', 'setup', 'hydrate'];
 //          repaired and warned about. An empty root hydrates as a plain
 //          build, so one loader serves both cases. The returned handle's
 //          hydration() reports the outcome ({ claimed, mismatch }, or null
-//          when hydrate was off), for tests and monitoring.
+//          when hydrate was off), for tests and monitoring. What others
+//          change on the page from the call on (a browser extension's nodes
+//          and attributes, say) is left to them, except nodes they put in
+//          place of the page's own before the app ran (a translation for a
+//          text, a wrapper around a video): the app's nodes take their place
+//          back, so the page never shows both.
+//          Known issue: what others added before the call looks like the
+//          server's markup, so the claim may remove it or take it for the
+//          app's own (see dropStray in makeRuntime).
 export async function mount(options) {
   const { wasm, root, flags, dom = browserDom, setup = null, hydrate = false } = options ?? {};
 
@@ -1731,12 +1918,23 @@ export async function mount(options) {
   if (root == null) throw new TypeError('mount: `root` is required, the element to render into');
   if (typeof flags !== 'string') throw new TypeError('mount: `flags` is required, the string passed to init ("" when unused)');
 
-  const instance = await instantiate(wasm);
-  const rt = makeRuntime(instance.exports, dom, root, hydrate);
-  const app = { instance, dispatch: rt.dispatch, dispatchValue: rt.dispatchValue, sendPort: rt.sendPort, onPort: rt.onPort, unmount: rt.unmount, perf: rt.perf, hydration: rt.hydration };
-  setup?.(app);
-  rt.start(flags);
-  return app;
+  // The server-rendered page is live while the wasm loads, and a browser
+  // extension or another script on the page may add nodes to it, set
+  // attributes on it or change its text in that time. The claim walk must
+  // not take any of that for the server's, so the root is watched from here
+  // until the walk runs. What happened before this point cannot be told
+  // apart from the server's markup.
+  const others = hydrate ? dom.watchOthers?.(root) ?? null : null;
+  try {
+    const instance = await instantiate(wasm);
+    const rt = makeRuntime(instance.exports, dom, root, hydrate, others);
+    const app = { instance, dispatch: rt.dispatch, dispatchValue: rt.dispatchValue, sendPort: rt.sendPort, onPort: rt.onPort, unmount: rt.unmount, perf: rt.perf, hydration: rt.hydration };
+    setup?.(app);
+    rt.start(flags);
+    return app;
+  } finally {
+    others?.take(); // stops watching when the walk did not get to run
+  }
 }
 
 // A URL streams from the network straight into the compiler, which is faster
@@ -1839,9 +2037,11 @@ export const browserDom = {
   on: (node, event, fn) => node.addEventListener(event, fn),
   setText: (node, s) => { node.nodeValue = s; },
   childrenOf: (node) => Array.from(node.childNodes),
+  childCount: (node) => node.childNodes.length,
+  // replaceWith and remove do nothing to a node without a parent.
   replaceNode: (oldNode, newNode) => oldNode.replaceWith(newNode),
   insertBefore: (parent, node, anchor) => parent.insertBefore(node, anchor),
-  removeChild: (parent, node) => parent.removeChild(node),
+  remove: (node) => node.remove(),
   setAttr: (node, k, v) => {
     if (node.namespaceURI !== NS.html) {
       const a = foreignAttrOf(node, k);
@@ -2006,4 +2206,52 @@ export const browserDom = {
   // the claim walk (which builds them as regular children, like
   // createElement) would leave them duplicated.
   clearParsedTemplate: (n) => { if (n.content instanceof DocumentFragment) n.content.replaceChildren(); },
+  // Record what others change under `root` until take(): the nodes they
+  // add, the attributes they set (by qualified name, as getAttributeNames
+  // reports it), the text nodes whose text they change and the parents they
+  // take nodes of the page out of. A node of the page they put back
+  // somewhere, moved or wrapped in one of theirs, shows up among the added
+  // ones but stays the page's. The runtime changes nothing in the meantime,
+  // so every change is somebody else's.
+  watchOthers: (root) => {
+    const seen = { nodes: new Set(), attrs: new Map(), texts: new Set(), cut: new Set() };
+    const taken = new Set();
+    const note = (records) => {
+      for (const r of records) {
+        if (r.type === 'childList') {
+          // A replaceWith() takes the old node out and puts the new one in
+          // within one record, so what it removed is looked at first.
+          for (const n of r.removedNodes) {
+            if (!seen.nodes.has(n)) {
+              seen.cut.add(r.target);
+              taken.add(n);
+            }
+          }
+          for (const n of r.addedNodes) if (!taken.has(n)) seen.nodes.add(n);
+        } else if (r.type === 'attributes') {
+          const name = r.attributeNamespace === null
+            ? r.attributeName
+            : r.target.getAttributeNodeNS(r.attributeNamespace, r.attributeName)?.name ?? r.attributeName;
+          let names = seen.attrs.get(r.target);
+          if (names === undefined) seen.attrs.set(r.target, (names = new Set()));
+          names.add(name);
+        } else {
+          seen.texts.add(r.target);
+        }
+      }
+    };
+    const observer = new MutationObserver(note);
+    observer.observe(root, { childList: true, attributes: true, characterData: true, subtree: true });
+    let watching = true;
+    return {
+      take: () => {
+        if (watching) {
+          note(observer.takeRecords());
+          observer.disconnect();
+          watching = false;
+        }
+        return seen;
+      },
+    };
+  },
 };
