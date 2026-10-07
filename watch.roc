@@ -16,8 +16,8 @@
 #
 # Set the environment variable `JOY_WATCH_PORT` to change the port (default 8000).
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
-	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.7.0/9PiT7ffE9m8BJyVv3LwE4rWWdcbpxEMUADMpiLBfY8jJ.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
+	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
 }
 
 import pf.Cmd
@@ -51,7 +51,7 @@ main! = |args| {
 		Err(FailedToGetExitCode(problem)) => fail!("watchexec: ${IOErr.to_str(problem.err)}")?
 	}
 
-	server.kill!() ?? {}
+	server.close!() ?? {}
 
 	if exit_code == 0 {
 		Ok({})
@@ -94,9 +94,9 @@ check_watchexec! = |probe|
 # down with us.
 start_server! = |port, opt, name| {
 	server =
-		match Cmd.new_str("node").args_str(["www/serve.mjs", port, opt, name]).spawn_leashed!() {
+		match Cmd.new_str("node").args_str(["www/serve.mjs", port, opt, name]).stdout(Capture).stderr(Capture).spawn_leashed!() {
 			Ok(child) => child
-			Err(SpawnFailed(err)) =>
+			Err(err) =>
 				fail!(
 					Str.join_with(
 						[
@@ -112,16 +112,20 @@ start_server! = |port, opt, name| {
 
 	Sleep.millis!(300)
 
-	match server.poll!() {
-		Ok(Running) => Ok(server)
+	match server.try_wait!() {
+		Ok([]) => Ok(server)
 
-		Ok(Exited(exit)) => {
-			said = Str.from_utf8_lossy(exit.stdout.concat(exit.stderr)).trim()
+		Ok([exit, ..]) => {
+			said = Str.from_utf8_lossy(exit.stdout_bytes.concat(exit.stderr_bytes)).trim()
+			code = match exit.status {
+				Exited(c) => c.to_str()
+				Signaled(signal) => "signal ${signal.to_str()}"
+			}
 
 			fail!(
 				Str.join_with(
 					[
-						"The dev server exited straight away (code ${exit.exit_code.to_str()}).",
+						"The dev server exited straight away (code ${code}).",
 						"",
 						"Port ${port} is most likely already taken, often by an earlier",
 						"./watch.roc whose dev server outlived the terminal it ran in. Stop that",
@@ -135,7 +139,8 @@ start_server! = |port, opt, name| {
 			)
 		}
 
-		Err(PollFailed(err)) => fail!("Could not check on the dev server: ${IOErr.to_str(err)}")
+		Err(IO(err)) => fail!("Could not check on the dev server: ${IOErr.to_str(err)}")
+		Err(other) => fail!("Could not check on the dev server: ${Str.inspect(other)}")
 	}
 }
 

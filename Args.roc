@@ -1,3 +1,4 @@
+import pf.Env
 import pf.OsStr
 import pf.Stdout
 import weaver.Cli
@@ -39,7 +40,7 @@ Args :: [].{
 	## see a parsed config. `example` is the script's own arguments, e.g.
 	## "--opt=speed", shown by separator_hint! when they went missing.
 	parse! = |parser, args, example| {
-		match Cli.parse_or_display_message(parser, args.drop_first(1), |arg| Utf8(OsStr.display(arg))) {
+		match Cli.parse_or_display_message(parser, args, |arg| Utf8(OsStr.display(arg))) {
 			Err(Help(message)) => {
 				Stdout.line!(message)?
 				Err(Exit(0))
@@ -62,12 +63,12 @@ Args :: [].{
 
 	## A forgotten `--` leaves the script with no arguments at all: roc took
 	## them. Weaver can only report the option it did not get, so name the
-	## likely cause when the script was handed nothing but its own path.
+	## likely cause when the script was handed nothing.
 	separator_hint! = |args, example|
-		if args.len() > 1 {
+		if !args.is_empty() {
 			Ok({})
 		} else {
-			match args.first() {
+			match Env.program_name!() {
 				Err(_) => Ok({})
 				Ok(script) =>
 					Stdout.line!(

@@ -17,9 +17,9 @@
 #
 # Set the environment variable `JOY_E2E_PORT` to change the port (default 8787).
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
-	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.3.0/2v2CV8CLXRJmQRvfoHtPngAUGgE8jL6DDgXbugZhFVf5.tar.zst",
-	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.7.0/9PiT7ffE9m8BJyVv3LwE4rWWdcbpxEMUADMpiLBfY8jJ.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
+	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.6.1/55UFmX5Ye5dNxWYzbzxQfsE54KTNwaoHNmYan163HbzB.tar.zst",
+	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
 }
 
 import pf.Cmd
@@ -50,7 +50,9 @@ main! = |args| {
 	server = Cmd.new_str("node")
 		.args_str(["www/serve.mjs", port, opt])
 		.env_str("JOY_E2E_URL", url)
-		.spawn_leashed!()?
+		.stdout(Null)
+		.stderr(Null)
+		.spawn_leashed!() ? |e| SpawnFailed(e)
 
 	# Any response means the port is live, so poll the page the tests open.
 	# Bounded, so a server that never comes up fails the run instead of
@@ -77,7 +79,7 @@ main! = |args| {
 		.exec_exit_code!()
 		.ok_or(1)
 
-	server.kill!() ?? {}
+	server.close!() ?? {}
 
 	if code == 0 {
 		Ok({})

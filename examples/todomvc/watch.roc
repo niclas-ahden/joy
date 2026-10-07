@@ -14,7 +14,7 @@
 #
 # Set the environment variable `JOY_WATCH_PORT` to change the port (default 8000).
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
 }
 
 import pf.Cmd
@@ -27,34 +27,7 @@ import pf.Stdout
 main! = |_args| {
 	port = Env.var_str!("JOY_WATCH_PORT") ?? "8000"
 
-	spawned =
-		Cmd.new_str("caddy")
-			.args_str(["run", "--config", "Caddyfile", "--adapter", "caddyfile"])
-			.env_str("JOY_WATCH_PORT", port)
-			.spawn!()
-
-	caddy = match spawned {
-		Ok(child) => child
-		Err(SpawnFailed(err)) => log_and_exit!("caddy", err)?
-	}
-
-	# spawn! only reports that the process started, so give caddy a moment to parse its
-	# config, then poll! to verify it's running
-	Sleep.millis!(200)
-
-	match caddy.poll!() {
-		Ok(Running) => {}
-		Ok(Exited(exited)) => {
-			Stderr.line!("Error: caddy exited immediately (code ${exited.exit_code.to_str()}). Is ./Caddyfile OK?")?
-			Stderr.line!(Str.from_utf8_lossy(exited.stderr))?
-			Err(Exit(1))?
-		}
-		Err(PollFailed(_)) => Err(Exit(2))?
-	}
-
-	Stdout.line!("=> Serving the app at http://localhost:${port}")?
-
-	# ./build.roc once up front so that Joy's runtime.js is copied out of the platform
+	# ./build.roc once up front so that Joy's assets are in place when the server starts
 	build = Cmd.new_str("./build.roc").exec_exit_code!()
 
 	build_code = match build {
@@ -68,18 +41,50 @@ main! = |_args| {
 		{}
 	}
 
+	spawned =
+		Cmd.new_str("caddy")
+			.args_str(["run", "--config", "Caddyfile", "--adapter", "caddyfile"])
+			.env_str("JOY_WATCH_PORT", port)
+			.stderr(Capture)
+			.spawn!()
+
+	caddy = match spawned {
+		Ok(child) => child
+		Err(err) => log_and_exit!("caddy", err)?
+	}
+
+	# spawn! only reports that the process started, so give caddy a moment to parse its
+	# config, then try_wait! to verify it's running
+	Sleep.millis!(200)
+
+	match caddy.try_wait!() {
+		Ok([]) => {}
+		Ok([exited, ..]) => {
+			code = match exited.status {
+				Exited(c) => c.to_str()
+				Signaled(signal) => "signal ${signal.to_str()}"
+			}
+			Stderr.line!("Error: caddy exited immediately (code ${code}). Is ./Caddyfile OK?")?
+			Stderr.line!(Str.from_utf8_lossy(exited.stderr_bytes))?
+			Err(Exit(1))?
+		}
+		Err(_) => Err(Exit(2))?
+	}
+
+	Stdout.line!("=> Serving the app at http://localhost:${port}")?
+
 	watch =
 		Cmd.new_str("roc")
 			.args_str(["build", "--watch", "--target=wasm32", "--output=www/app.wasm", "app.roc"])
 			.exec_exit_code!()
 
 	# `roc build --watch` above blocks, so we're killing caddy only when roc is dead
-	caddy.kill!() ?? {}
+	caddy.close!() ?? {}
 
 	match watch {
 		Ok(0) => Ok({})
 		Ok(code) => Err(Exit(code))
-		Err(FailedToGetExitCode(failure)) => log_and_exit!("roc", failure.err)?
+		Err(FailedToGetExitCode(failure)) => log_and_exit!("roc", failure.err)
 	}
 }
 

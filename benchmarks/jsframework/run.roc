@@ -18,7 +18,7 @@
 # (clone-setup/ here), and this script detects its .envrc and wraps the
 # benchmark work in `direnv exec`.
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
 }
 
 import pf.Cmd
@@ -248,9 +248,9 @@ run_pair! = |fork, in_fork, framework, bench, extra| {
 		],
 		"\n",
 	)
-	child = match Cmd.new_str("bash").args_str(["-c", script]).spawn_leashed!() {
+	child = match Cmd.new_str("bash").args_str(["-c", script]).stdout(Capture).stderr(Capture).spawn_leashed!() {
 		Ok(c) => c
-		Err(SpawnFailed(err)) => fail!("could not start the benchmark runner: ${IOErr.to_str(err)}")?
+		Err(err) => fail!("could not start the benchmark runner: ${IOErr.to_str(err)}")?
 	}
 	report_pair!(framework, bench, wait_pair!(child, pair_deadline_polls))?
 	barrier!(fork, in_fork)
@@ -260,12 +260,13 @@ run_pair! = |fork, in_fork, framework, bench, extra| {
 # when the deadline passes. SIGKILL skips puppeteer's exit handlers, so a
 # timed out pair reliably leaves its browser behind for barrier! to sweep.
 wait_pair! = |child, polls_left| {
-	match child.poll!() {
-		Ok(Exited(exit)) => Finished(exit)
+	match child.try_wait!() {
+		Ok([exit, ..]) => Finished(exit)
 		Err(_) => Lost
-		Ok(Running) => {
+		Ok([]) => {
 			if polls_left == 0 {
-				match child.kill_wait!() {
+				_ = child.kill!()
+				match child.wait!() {
 					Ok(exit) => TimedOut(exit)
 					Err(_) => Lost
 				}
@@ -277,16 +278,16 @@ wait_pair! = |child, polls_left| {
 	}
 }
 
-# Say how a pair ended. A leashed child pipes its stdio, so the runner's
+# Say how a pair ended. The pair's stdio is captured, so the runner's
 # output lands here when the pair finishes rather than streaming live.
 report_pair! = |framework, bench, outcome|
 	match outcome {
 		Finished(exit) => {
 			print_output!(exit)
-			if exit.exit_code == 0 {
+			if exit.status == Exited(0) {
 				Ok({})
 			} else {
-				Stdout.line!("(runner exited ${exit.exit_code.to_str()} on ${framework} ${bench}, the retry pass re-runs whatever is missing)")
+				Stdout.line!("(runner exited with ${Str.inspect(exit.status)} on ${framework} ${bench}, the retry pass re-runs whatever is missing)")
 			}
 		}
 		TimedOut(exit) => {
@@ -297,9 +298,9 @@ report_pair! = |framework, bench, outcome|
 	}
 
 print_output! = |exit| {
-	out = Str.from_utf8_lossy(exit.stdout).trim()
+	out = Str.from_utf8_lossy(exit.stdout_bytes).trim()
 	_ = if out.is_empty() { {} } else { Stdout.line!(out) ?? {} }
-	err = Str.from_utf8_lossy(exit.stderr).trim()
+	err = Str.from_utf8_lossy(exit.stderr_bytes).trim()
 	if err.is_empty() { {} } else { Stderr.line!(err) ?? {} }
 }
 

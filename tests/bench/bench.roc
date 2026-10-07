@@ -25,8 +25,8 @@
 # instrumentation is compiled out entirely without JOY_BENCH, so normal
 # builds pay nothing.
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
-	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.8.0/9boAetfXPFWCmMg5uavT1juSYFRw9zaGsWcfs4qspXde.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
+	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.11.1/GJz6pEptEAmK2FqGnzJQUhF9cymdiV3vwETDdCDevAZ1.tar.zst",
 }
 
 import pf.Cmd
@@ -41,7 +41,7 @@ import playwright.Playwright
 baseline_path = "tests/bench/baseline.json"
 
 main! = |args| {
-	save_baseline = match args.get(1) {
+	save_baseline = match args.first() {
 		Ok(arg) => OsStr.display(arg) == "--save-baseline"
 		Err(_) => Bool.False
 	}
@@ -69,7 +69,9 @@ main! = |args| {
 	# results table compares Joy on.
 	server = Cmd.new_str("node")
 		.args_str(["www/serve.mjs", port, "speed", "jsbench_keyed"])
-		.spawn_leashed!()?
+		.stdout(Null)
+		.stderr(Null)
+		.spawn_leashed!() ? |e| SpawnFailed(e)
 	url = "http://127.0.0.1:${port}/"
 	wait_for_server!(url, 100)?
 
@@ -94,7 +96,7 @@ main! = |args| {
 	_ = page.evaluate!(warmup_js)?
 	raw = page.evaluate!(measure_js)?
 	browser.close!()?
-	server.kill!() ?? {}
+	server.close!() ?? {}
 
 	samples : Try(List(List(F64)), _)
 	samples = Json.parse(raw)
@@ -176,11 +178,11 @@ median : List(F64) -> F64
 median = |values| {
 	sorted = values.sort_with(
 		|a, b| if a < b {
-			LT
+			Before
 		} else if a > b {
-			GT
+			After
 		} else {
-			EQ
+			Same
 		},
 	)
 	sorted.get(sorted.len() // 2) ?? 0.0

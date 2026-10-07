@@ -3,8 +3,8 @@
 # roc-playwright). Invoked by e2e.roc, which builds the examples, serves the
 # repo root and exports JOY_E2E_URL first.
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
-	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.3.0/2v2CV8CLXRJmQRvfoHtPngAUGgE8jL6DDgXbugZhFVf5.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
+	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.6.1/55UFmX5Ye5dNxWYzbzxQfsE54KTNwaoHNmYan163HbzB.tar.zst",
 }
 
 import pf.Cmd
@@ -17,12 +17,18 @@ import spec.Spec
 
 hooks = {
 	spawn_test!: |file, envs|
+		# WORKAROUND: roc-lang/roc#11442. With a warm module cache,
+		# `--opt=speed` builds fail to link with `undefined symbol:
+		# roc__static_const_N`. Drop `--no-cache` when fixed.
 		Cmd.new(OsStr.utf8("roc"))
-			.args_str(["--opt=speed", file])
+			.args_str(["--opt=speed", "--no-cache", file])
 			.envs_str(envs)
+			.stdout(Capture)
+			.stderr(Capture)
 			.spawn_leashed!(),
-	poll!: Cmd.Child.poll!,
-	kill_wait!: Cmd.Child.kill_wait!,
+	try_wait!: Cmd.Child.try_wait!,
+	kill!: Cmd.Child.kill!,
+	wait!: Cmd.Child.wait!,
 	# tests/e2e/ itself, plus each directory example's own tests/
 	# (examples/todomvc/tests/): a directory example keeps its browser tests
 	# next to its app, and this runner spawns them all the same way.

@@ -5,14 +5,14 @@
 # Optional args: a filename pattern (substring) and --fail-fast.
 # Optional env: ROC_SPEC_MAX_WORKERS (default 4).
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
-	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.4.0/7fpzAnSVtkGcXL3dCsoK3j6wtebcEYiSSbGEpAMMnZbE.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
+	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.6.1/55UFmX5Ye5dNxWYzbzxQfsE54KTNwaoHNmYan163HbzB.tar.zst",
 }
 
 import pf.Cmd
 import pf.Env
 import pf.Http
-import pf.OsStr exposing [OsStr]
+import pf.OsStr
 import pf.Path
 import pf.Sleep
 import pf.Stderr
@@ -24,12 +24,18 @@ import spec.TestEnvironment
 
 effects = {
 	spawn_test!: |file, envs|
+		# WORKAROUND: roc-lang/roc#11442. With a warm module cache,
+		# `--opt=speed` builds fail to link with `undefined symbol:
+		# roc__static_const_N`. Drop `--no-cache` when fixed.
 		Cmd.new(OsStr.utf8("roc"))
-			.args_str(["--opt=speed", file])
+			.args_str(["--opt=speed", "--no-cache", file])
 			.envs_str(envs)
+			.stdout(Capture)
+			.stderr(Capture)
 			.spawn_leashed!(),
-	poll!: Cmd.Child.poll!,
-	kill_wait!: Cmd.Child.kill_wait!,
+	try_wait!: Cmd.Child.try_wait!,
+	kill!: Cmd.Child.kill!,
+	wait!: Cmd.Child.wait!,
 	list_dir!: |dir| Path.list!(Path.utf8(dir)).map_ok(|entries| entries.map(Path.display)),
 	print!: Stdout.line!,
 	utc_now!: Utc.now!,
@@ -61,9 +67,8 @@ max_workers! = |{}|
 ## Parse command line args into pattern and flags
 parse_args : List(Str) -> { pattern : Str, fail_fast : Bool }
 parse_args = |args| {
-	rest = args.drop_first(1)
-	pattern = rest.keep_if(|a| !a.starts_with("--")).first().ok_or("")
-	fail_fast = rest.contains("--fail-fast")
+	pattern = args.keep_if(|a| !a.starts_with("--")).first().ok_or("")
+	fail_fast = args.contains("--fail-fast")
 	{ pattern, fail_fast }
 }
 
@@ -103,15 +108,16 @@ warm_package_cache! = |test_dir|
 ## Start one static file server for the given worker index. The same
 ## Caddyfile that ./watch.roc uses, so the tests serve www/ exactly like
 ## the dev server does.
-spawn_worker! : U16 => Try({}, _)
+spawn_worker! : U16 => Try(Cmd.Child, _)
 spawn_worker! = |index| {
 	port = base_port + index
 	cmd =
 		Cmd.new_str("caddy")
 			.args_str(["run", "--config", "Caddyfile", "--adapter", "caddyfile"])
 			.env_str("JOY_WATCH_PORT", port.to_str())
-	_child = Cmd.spawn_leashed!(cmd) ? |e| ServerSpawnFailed(index, CaddyErr(e))
-	Ok({})
+			.stdout(Null)
+			.stderr(Null)
+	Cmd.spawn_leashed!(cmd).map_err(|e| ServerSpawnFailed(index, CaddyErr(e)))
 }
 
 ## One readiness probe against a worker's server: any HTTP response means it
@@ -135,7 +141,7 @@ main! = |os_args| {
 
 	# Spawn all test servers first (spawn_leashed! so they die with the
 	# runner), then poll them all until every one answers (up to ~30s).
-	TestEnvironment.start!({ sleep!: Sleep.millis! }, {
+	servers = TestEnvironment.start!({ sleep!: Sleep.millis! }, {
 		count: workers,
 		spawn!: spawn_worker!,
 		ready!: |index| check_worker!(base_port + index),
@@ -153,6 +159,13 @@ main! = |os_args| {
 		quiet: Bool.True,
 		fail_fast,
 	}, pattern)?
+
+	# Holding the handles until here kept the servers up for the run. A child
+	# is terminated when its last reference is released, so close them only
+	# now that the run is over.
+	for server in servers {
+		_ = Cmd.Child.close!(server)
+	}
 
 	passed = results.count_if(|r| r.passed)
 	total = results.len()

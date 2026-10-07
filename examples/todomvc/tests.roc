@@ -15,21 +15,19 @@
 # Run from the repo root, inside `nix develop` (for roc, caddy and
 # playwright).
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
 }
 
 import pf.Cmd
 import pf.Http
-import pf.OsStr exposing [OsStr]
+import pf.OsStr
 import pf.Sleep
 import pf.Stderr
 import pf.Stdout
 import pf.Url
 
 main! : List(OsStr) => Try({}, _)
-main! = |os_args| {
-	forwarded = os_args.drop_first(1)
-
+main! = |forwarded| {
 	# Fresh wasm before any server starts serving www/
 	build!("./build.roc")?
 

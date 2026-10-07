@@ -9,7 +9,7 @@ Util :: [].{
 	## it fails. A command that could not be run at all (missing binary, no
 	## permission) is reported on stderr: the child never got to say anything,
 	## so without this the script would die with no output at all.
-	run! : Str, List(Str) => Try({}, [Exit(I32), ..])
+	run! : Str, List(Str) => Try({}, [Exit(I32)])
 	run! = |program, args| {
 		match Cmd.new_str(program).args_str(args).exec_exit_code!() {
 			Ok(0) => Ok({})
@@ -22,7 +22,7 @@ Util :: [].{
 	}
 
 	## run!, with one environment variable set for the child.
-	run_env! : Str, List(Str), Str, Str => Try({}, [Exit(I32), ..])
+	run_env! : Str, List(Str), Str, Str => Try({}, [Exit(I32)])
 	run_env! = |program, args, key, value| {
 		match Cmd.new_str(program).args_str(args).env_str(key, value).exec_exit_code!() {
 			Ok(0) => Ok({})
@@ -35,7 +35,7 @@ Util :: [].{
 	}
 
 	## Report a message on stderr and exit non-zero.
-	fail! : Str => Try(ok, [Exit(I32), ..])
+	fail! : Str => Try(ok, [Exit(I32)])
 	fail! = |message| {
 		Stderr.line!("error: ${message}") ?? {}
 		Err(Exit(1))
