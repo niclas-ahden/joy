@@ -13,7 +13,7 @@ platform ""
 		# this exact URL and `import html.Html`. It must be the same URL, or
 		# the app's Html is a different nominal type than the one `render`
 		# is required to return.
-		html: "https://github.com/niclas-ahden/joy-html/releases/download/0.16.0/56NBT6VkQ5xm87Wjzcv9mRuNT4RACiAmuAmPbXwc8cuk.tar.zst",
+		html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.0/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 	}
 	provides {
 		"roc_init": init_for_host,
@@ -76,9 +76,9 @@ platform ""
 		},
 	}
 
-import html.Html exposing [Html]
-import Effect exposing [Effect]
-import Sub exposing [Sub]
+import html.Html
+import Effect
+import Sub
 import Http
 import Time
 import Keyboard

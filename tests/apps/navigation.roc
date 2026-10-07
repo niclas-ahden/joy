@@ -1,12 +1,12 @@
 app [Model, Msg, init, update, render, subscriptions] {
 	pf: platform "../../platform/main.roc",
-	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.16.0/56NBT6VkQ5xm87Wjzcv9mRuNT4RACiAmuAmPbXwc8cuk.tar.zst",
-	url: "https://github.com/niclas-ahden/roc-url/releases/download/0.6.1/95CwyLo97aKZ5twTy6VtkmmhF6MFKMr7hvPeMi6U7bAF.tar.zst",
+	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.0/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
+	url: "https://github.com/niclas-ahden/roc-url/releases/download/0.7.0/DCKNTirZCLugy1ZydPLrYpefR71RYq1HFUpgQVSNvaFy.tar.zst",
 }
 
-import html.Html exposing [Html, div, h1, h2, p, input, button, text]
+import html.Html exposing [div, h1, h2, p, input, button, text]
 import html.Attribute exposing [id, placeholder, on_input, on_click]
-import pf.Effect exposing [Effect]
+import pf.Effect
 import pf.DOM
 import url.Uri
 

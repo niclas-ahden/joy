@@ -1,11 +1,11 @@
 app [Model, Msg, init, update, render, subscriptions] {
 	pf: platform "../platform/main.roc",
-	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.16.0/56NBT6VkQ5xm87Wjzcv9mRuNT4RACiAmuAmPbXwc8cuk.tar.zst",
+	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.0/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 }
 
-import html.Html exposing [Html, div, form, textarea, label, input, button, p, h1, text]
+import html.Html exposing [div, form, textarea, label, input, button, p, h1, text]
 import html.Attribute exposing [id, rows, cols, type, checked, on_input, on_submit, on_check]
-import pf.Effect exposing [Effect]
+import pf.Effect
 import pf.Console
 
 Model : { draft : Str, saved : Str, secret : Bool }

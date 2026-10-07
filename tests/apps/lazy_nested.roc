@@ -1,11 +1,11 @@
 app [Model, Msg, init, update, render, subscriptions] {
 	pf: platform "../../platform/main.roc",
-	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.16.0/56NBT6VkQ5xm87Wjzcv9mRuNT4RACiAmuAmPbXwc8cuk.tar.zst",
+	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.0/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 }
 
-import html.Html exposing [Html, div, button, ul, li, p, text]
+import html.Html exposing [div, button, ul, li, p, text]
 import html.Attribute exposing [class, on_click]
-import pf.Effect exposing [Effect]
+import pf.Effect
 
 # Exercises Html.lazy: an outer lazy section (taking rows + label) holds a
 # nested lazy region (taking rows only), so changing the label forces the

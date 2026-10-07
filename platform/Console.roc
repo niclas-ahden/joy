@@ -11,7 +11,7 @@
 ## format belongs to the compiler (the inspected value), and it lands in
 ## `console.debug`, which files under the Verbose level in devtools.
 ## Statement form only, `x = dbg y` is not supported.
-import Effect exposing [Effect]
+import Effect
 
 Console := [].{
 

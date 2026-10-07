@@ -28,13 +28,13 @@ A client-side counter:
 
 ```roc
 app [Model, Msg, init, update, render, subscriptions] {
-    pf: platform "https://github.com/niclas-ahden/joy/releases/download/0.32.1/BBEFdA1VAk1WZvQWKs3yNfN2RMdZZP5DsM8j7gyNoFta.tar.zst",
-    html: "https://github.com/niclas-ahden/joy-html/releases/download/0.15.0/5Yoz712P8ed4MBW74eddTEJdZ92ZDCUbVGFkt4XXSuj9.tar.zst",
+    pf: platform "https://github.com/niclas-ahden/joy/releases/download/0.33.0/9UWLeQeJEUkXNGmZtibc1aqpL3gm6Li65GvXxsML5vFz.tar.zst",
+    html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.0/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 }
 
-import html.Html exposing [Html, div, button, text]
+import html.Html exposing [div, button, text]
 import html.Attribute exposing [on_click]
-import pf.Effect exposing [Effect]
+import pf.Effect
 
 Model : { count : I64 }
 
@@ -101,7 +101,7 @@ $ nix develop # Oh, lord, have mercy! This is great!
 
 If you don't want to use Nix then please install:
 
-* [`roc nightly-2026-09-04-c125b82`](https://github.com/roc-lang/nightlies/releases/tag/nightly-2026-09-04-c125b82)
+* [`roc nightly-2026-10-06-c34079d`](https://github.com/roc-lang/nightlies/releases/tag/nightly-2026-10-06-c34079d)
 * `rustc` (v1.94 + `wasm32-unknown-unknown`)
 * `node` (v22)
 * `watchexec`

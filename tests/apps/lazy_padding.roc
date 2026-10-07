@@ -1,11 +1,11 @@
 app [Model, Msg, init, update, render, subscriptions] {
 	pf: platform "../../platform/main.roc",
-	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.16.0/56NBT6VkQ5xm87Wjzcv9mRuNT4RACiAmuAmPbXwc8cuk.tar.zst",
+	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.0/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 }
 
-import html.Html exposing [Html, div, button, text]
+import html.Html exposing [div, button, text]
 import html.Attribute exposing [id, on_click]
-import pf.Effect exposing [Effect]
+import pf.Effect
 
 # Probe: do lazy captures with padding bytes (Bool in a tuple, Bool in a
 # record, U8 mixed with U64) still compare equal across renders, so the

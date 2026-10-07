@@ -1,11 +1,11 @@
 app [Model, Msg, init, update, render, subscriptions] {
 	pf: platform "../platform/main.roc",
-	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.16.0/56NBT6VkQ5xm87Wjzcv9mRuNT4RACiAmuAmPbXwc8cuk.tar.zst",
+	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.0/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 }
 
-import html.Html exposing [Html, div, p, text]
+import html.Html exposing [div, p, text]
 import html.Attribute exposing [id, style, on_pointer, on_pointer_down, on_pointer_move, on_pointer_up]
-import pf.Effect exposing [Effect]
+import pf.Effect
 
 # Pointer events (unifying mouse, touch and pen) as typed messages: each
 # handler takes a real `PointerEvent -> Msg` function, so coordinates,

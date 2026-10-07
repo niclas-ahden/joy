@@ -1,12 +1,12 @@
 app [Model, Msg, init, update, render, subscriptions] {
 	pf: platform "../../platform/main.roc",
-	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.16.0/56NBT6VkQ5xm87Wjzcv9mRuNT4RACiAmuAmPbXwc8cuk.tar.zst",
-	random: "https://github.com/niclas-ahden/roc-prng/releases/download/0.3.0/C8MfdSF4ZCt7RahWC8PCBaj1NB6Y6L6vtiHdeHB1EVnv.tar.zst",
+	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.0/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
+	random: "https://github.com/niclas-ahden/roc-prng/releases/download/0.4.0/C3JpBYoPwC9SN5aweoh1Dux2K3iy4vfMTdAsWooE1HF5.tar.zst",
 }
 
-import html.Html exposing [Html, div, h1, button, table, tbody, tr, td, a, span, text]
+import html.Html exposing [div, h1, button, table, tbody, tr, td, a, span, text]
 import html.Attribute exposing [id, class, attribute, on_click]
-import pf.Effect exposing [Effect]
+import pf.Effect
 import random.Random
 
 # Joy entry for the js-framework-benchmark "table" app, non-keyed bracket:

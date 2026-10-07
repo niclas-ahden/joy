@@ -1,11 +1,11 @@
 app [Model, Msg, init, update, render, subscriptions] {
 	pf: platform "../../platform/main.roc",
-	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.16.0/56NBT6VkQ5xm87Wjzcv9mRuNT4RACiAmuAmPbXwc8cuk.tar.zst",
+	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.0/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 }
 
-import html.Html exposing [Html, div, button, input, text]
+import html.Html exposing [div, button, input, text]
 import html.Attribute exposing [id, type, value, on_input, on_click]
-import pf.Effect exposing [Effect]
+import pf.Effect
 
 # Probe: `value` names a live DOM property that drifts as the user types.
 # A render that leaves the model's value unchanged must still re-pin the

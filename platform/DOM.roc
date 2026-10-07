@@ -8,8 +8,8 @@
 ##     DOM.replace_url  rewrite the URL in place, no reload, no history entry
 ##     DOM.push_url     change the URL, no reload, adds a history entry
 ##     DOM.navigate     a full page load (leaves the current page)
-import Effect exposing [Effect]
-import Sub exposing [Sub]
+import Effect
+import Sub
 
 DOM := [].{
 

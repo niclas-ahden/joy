@@ -1,11 +1,11 @@
 app [Model, Msg, init, update, render, subscriptions] {
 	pf: platform "../../platform/main.roc",
-	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.16.0/56NBT6VkQ5xm87Wjzcv9mRuNT4RACiAmuAmPbXwc8cuk.tar.zst",
+	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.0/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 }
 
-import html.Html exposing [Html, div, button, article, h2, p, a, text, element]
+import html.Html exposing [div, button, article, h2, p, a, text, element]
 import html.Attribute exposing [class, href, attribute, on_click]
-import pf.Effect exposing [Effect]
+import pf.Effect
 
 # Benchmark app shaped like a listings search page: a header whose text
 # changes on every message (typing, a slideshow tick) above a large card

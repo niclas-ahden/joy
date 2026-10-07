@@ -1,12 +1,12 @@
 app [Model, Msg, init, update, render, subscriptions] {
 	pf: platform "../platform/main.roc",
-	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.16.0/56NBT6VkQ5xm87Wjzcv9mRuNT4RACiAmuAmPbXwc8cuk.tar.zst",
+	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.0/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 }
 
-import html.Html exposing [Html, div, p, button, input, text]
+import html.Html exposing [div, p, button, input, text]
 import html.Attribute exposing [id, on_click, on_key, on_keydown, placeholder]
-import pf.Effect exposing [Effect]
-import pf.Sub exposing [Sub]
+import pf.Effect
+import pf.Sub
 import pf.Keyboard
 
 Model : {

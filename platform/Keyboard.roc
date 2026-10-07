@@ -15,7 +15,7 @@
 ## case-sensitive: Shift makes "a" arrive as "A". List both to catch either.
 ##
 ## For keyboard events on a specific element, see `Attribute.on_keydown`.
-import Sub exposing [Sub]
+import Sub
 
 Keyboard := [].{
 

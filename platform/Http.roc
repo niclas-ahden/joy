@@ -8,7 +8,7 @@
 ## (network failure, CORS, ...), `Timeout` means the request's `timeout_ms`
 ## ran out first. A match on the result covers every outcome without magic
 ## status numbers.
-import Effect exposing [Effect]
+import Effect
 
 # The HTTP method, mirrored after basic-cli. `EXTENSION` carries any method
 # name the fixed set lacks.
@@ -25,7 +25,7 @@ timeout_to_u64 = |t|
 ## in real HTTP, so the runtime reports transport failures in-band: raw
 ## status 0 means the request never completed, raw status 1 means it timed
 ## out. Everything else is a response the server actually sent.
-to_try : { status : U16, headers : List({ name : Str, value : Str }), body : List(U8) } -> Try({ status : U16, headers : List({ name : Str, value : Str }), body : List(U8) }, [HttpErr([Timeout, NetworkError]), ..])
+to_try : { status : U16, headers : List({ name : Str, value : Str }), body : List(U8) } -> Try({ status : U16, headers : List({ name : Str, value : Str }), body : List(U8) }, [HttpErr([Timeout, NetworkError])])
 to_try = |raw|
 	if raw.status == 0 {
 		Err(HttpErr(NetworkError))
@@ -81,16 +81,16 @@ Http := [].{
 			EXTENSION(ext) => ext
 		}
 
-	get : Str, (Try(Response, [HttpErr([Timeout, NetworkError]), ..]) -> msg) -> Effect(msg)
+	get : Str, (Try(Response, [HttpErr([Timeout, NetworkError])]) -> msg) -> Effect(msg)
 	get = |url, on_result|
 		Effect.http_send("GET", url, [], [], 0, |raw| on_result(to_try(raw)))
 
-	post : Str, List(U8), (Try(Response, [HttpErr([Timeout, NetworkError]), ..]) -> msg) -> Effect(msg)
+	post : Str, List(U8), (Try(Response, [HttpErr([Timeout, NetworkError])]) -> msg) -> Effect(msg)
 	post = |url, body, on_result|
 		Effect.http_send("POST", url, [], body, 0, |raw| on_result(to_try(raw)))
 
 	## Full control: method, uri, headers, body, timeout.
-	request : Request, (Try(Response, [HttpErr([Timeout, NetworkError]), ..]) -> msg) -> Effect(msg)
+	request : Request, (Try(Response, [HttpErr([Timeout, NetworkError])]) -> msg) -> Effect(msg)
 	request = |req, on_result|
 		Effect.http_send(
 			method_to_str(req.method),
@@ -105,19 +105,19 @@ Http := [].{
 	## `Attribute.on_file`; the browser streams the File object directly, so
 	## the bytes never enter wasm memory (uploads of any size cost no wasm
 	## heap).
-	post_file : Str, U32, List(Header), (Try(Response, [HttpErr([Timeout, NetworkError]), ..]) -> msg) -> Effect(msg)
+	post_file : Str, U32, List(Header), (Try(Response, [HttpErr([Timeout, NetworkError])]) -> msg) -> Effect(msg)
 	post_file = |url, file, headers, on_result|
 		Effect.http_send_file("POST", url, headers, file, 0, 0, 0, |raw| on_result(to_try(raw)))
 
 	## PUT a user-picked file as the request body (see `post_file`).
-	put_file : Str, U32, List(Header), (Try(Response, [HttpErr([Timeout, NetworkError]), ..]) -> msg) -> Effect(msg)
+	put_file : Str, U32, List(Header), (Try(Response, [HttpErr([Timeout, NetworkError])]) -> msg) -> Effect(msg)
 	put_file = |url, file, headers, on_result|
 		Effect.http_send_file("PUT", url, headers, file, 0, 0, 0, |raw| on_result(to_try(raw)))
 
 	## Full control over a file-body request, including a byte range and a
 	## timeout. `start` and `len` slice the file (`len` 0 means through the
 	## end), the building block for chunked uploads of large files.
-	request_file : { method : Method, uri : Str, headers : List(Header), file : U32, start : U64, len : U64, timeout_ms : [TimeoutMilliseconds(U64), NoTimeout] }, (Try(Response, [HttpErr([Timeout, NetworkError]), ..]) -> msg) -> Effect(msg)
+	request_file : { method : Method, uri : Str, headers : List(Header), file : U32, start : U64, len : U64, timeout_ms : [TimeoutMilliseconds(U64), NoTimeout] }, (Try(Response, [HttpErr([Timeout, NetworkError])]) -> msg) -> Effect(msg)
 	request_file = |req, on_result|
 		Effect.http_send_file(
 			method_to_str(req.method),

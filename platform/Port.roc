@@ -27,8 +27,8 @@
 ## Port names are global to the app. Pick one per port, and prefix it with
 ## the component name when writing reusable components, so two instances
 ## cannot claim each other's messages.
-import Effect exposing [Effect]
-import Sub exposing [Sub]
+import Effect
+import Sub
 
 Port := [].{
 	listen : Str, (Str -> msg) -> Sub(msg)

@@ -12,8 +12,8 @@
 ## Unix epoch and the resulting msg goes to `update`. `every` is a
 ## subscription: return it from `subscriptions` for as long as it should
 ## tick, drop it from the list to stop it.
-import Effect exposing [Effect]
-import Sub exposing [Sub]
+import Effect
+import Sub
 
 Time := [].{
 

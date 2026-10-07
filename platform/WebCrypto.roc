@@ -16,7 +16,7 @@
 ## The callback receives the raw hash bytes (20 for Sha1, 32 for Sha256, 48
 ## for Sha384, 64 for Sha512). An EMPTY list means the digest failed (unknown
 ## file id, or the file changed on disk after being picked).
-import Effect exposing [Effect]
+import Effect
 
 WebCrypto := [].{
 
