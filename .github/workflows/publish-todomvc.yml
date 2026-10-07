@@ -25,21 +25,20 @@ concurrency:
 jobs:
   publish:
     name: Push the starter to joy-todomvc
+    if: github.repository == 'niclas-ahden/joy'
     runs-on: ubuntu-24.04
     steps:
-      # Disabled while Joy is released from growthagent/joy for testing.
-      # Uncomment to push to the starter repo again.
-#       # First, so a missing secret is one clear line instead of a failed
-#       # push at the end.
-#       - name: Require the push token
-#         env:
-#           TOKEN: ${{ secrets.TODOMVC_PUSH_TOKEN }}
-#         run: |
-#           [ -n "$TOKEN" ] || {
-#             echo "error: the TODOMVC_PUSH_TOKEN secret is missing. Create a fine-grained token with contents read/write on niclas-ahden/joy-todomvc and add it to this repo's secrets." >&2
-#             exit 1
-#           }
-#
+      # First, so a missing secret is one clear line instead of a failed
+      # push at the end.
+      - name: Require the push token
+        env:
+          TOKEN: ${{ secrets.TODOMVC_PUSH_TOKEN }}
+        run: |
+          [ -n "$TOKEN" ] || {
+            echo "error: the TODOMVC_PUSH_TOKEN secret is missing. Create a fine-grained token with contents read/write on niclas-ahden/joy-todomvc and add it to this repo's secrets." >&2
+            exit 1
+          }
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.release.tag_name || github.ref }}
@@ -84,30 +83,28 @@ jobs:
       - name: Build the starter against the published bundle
         run: ${{ steps.setup.outputs.prefix }} sh -c 'cd staging && ./build.roc'
 
-      # Disabled while Joy is released from growthagent/joy for testing.
-      # Uncomment to push to the starter repo again.
-#       - name: Push to niclas-ahden/joy-todomvc
-#         env:
-#           TOKEN: ${{ secrets.TODOMVC_PUSH_TOKEN }}
-#         run: |
-#           set -euo pipefail
-#           tag="${{ github.event.release.tag_name || github.ref_name }}"
-#
-#           # The verification build's outputs are gitignored in the starter
-#           # anyway, but leave nothing to chance.
-#           rm -f staging/www/app.wasm staging/www/runtime.js
-#
-#           git clone "https://x-access-token:${TOKEN}@github.com/niclas-ahden/joy-todomvc" target
-#           find target -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} +
-#           cp -a staging/. target/
-#
-#           cd target
-#           git config user.name "github-actions[bot]"
-#           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-#           git add -A
-#           if git diff --cached --quiet; then
-#             echo "joy-todomvc is already up to date"
-#           else
-#             git commit -m "Update to Joy $tag"
-#             git push
-#           fi
+      - name: Push to niclas-ahden/joy-todomvc
+        env:
+          TOKEN: ${{ secrets.TODOMVC_PUSH_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ github.event.release.tag_name || github.ref_name }}"
+
+          # The verification build's outputs are gitignored in the starter
+          # anyway, but leave nothing to chance.
+          rm -f staging/www/app.wasm staging/www/runtime.js
+
+          git clone "https://x-access-token:${TOKEN}@github.com/niclas-ahden/joy-todomvc" target
+          find target -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} +
+          cp -a staging/. target/
+
+          cd target
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "joy-todomvc is already up to date"
+          else
+            git commit -m "Update to Joy $tag"
+            git push
+          fi
