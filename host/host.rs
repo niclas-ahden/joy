@@ -776,6 +776,14 @@ pub extern "C" fn bench_phase_ms(phase: u32) -> f64 {
         }
     }
 }
+// platform/main.roc exports `bench_phase_ms` from every build, and the linker
+// fails on an export it cannot find, so a normal build defines it too. The
+// phases were never recorded, so every one reads 0.
+#[cfg(not(joy_bench))]
+#[no_mangle]
+pub extern "C" fn bench_phase_ms(_phase: u32) -> f64 {
+    0.0
+}
 
 #[inline]
 unsafe fn push(word: u32) {
