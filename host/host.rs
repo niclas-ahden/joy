@@ -46,7 +46,8 @@ use roc_platform_abi::RocStr;
 const PAGE: usize = 64 * 1024;
 // Bump cursor and the current end of grown heap, both in absolute byte offsets
 // into linear memory. Lazily initialised on first alloc to the module's current
-// memory end, so we never collide with the shadow stack or data below.
+// memory end, so we never collide with the shadow stack or data below, and
+// moved up again whenever something else grows memory (see bump_span).
 static mut NEXT: usize = 0;
 static mut END: usize = 0;
 
@@ -171,8 +172,15 @@ fn class_of(total: usize) -> Option<usize> {
 /// Bump a fresh 16-aligned span of `total` bytes off the top of the heap,
 /// growing linear memory when out of room. Returns 0 on out-of-memory.
 unsafe fn bump_span(total: usize) -> usize {
-    if END == 0 {
-        let cur = core::arch::wasm32::memory_size(0) * PAGE;
+    // We are not the only one growing memory. Roc's boxy runtime takes pages
+    // for its own bookkeeping straight from `memory.grow` on wasm, through
+    // Zig's page allocator. When the top of memory is no longer our END, those
+    // pages sit above us, so restart the bump region above them instead of
+    // handing them out a second time. The tail between the old NEXT and END is
+    // left unused. The first call lands here too: END is 0 and memory never
+    // is, since the data section and the stack are always mapped.
+    let cur = core::arch::wasm32::memory_size(0) * PAGE;
+    if cur != END {
         NEXT = align_up(cur, 16);
         END = cur;
     }
@@ -184,7 +192,7 @@ unsafe fn bump_span(total: usize) -> usize {
         if prev == usize::MAX {
             return 0;
         }
-        END += pages * PAGE; // contiguous: nobody else grows memory
+        END += pages * PAGE; // contiguous: END was the top of memory just above
     }
     NEXT = end;
     start
@@ -364,7 +372,9 @@ pub extern "C" fn roc_realloc(ptr: *mut u8, new_length: usize, alignment: usize)
 
 /// High-water mark of the bump region, in bytes. Once the free lists satisfy
 /// steady-state allocation, this stops growing: the memory harness asserts
-/// exactly that.
+/// exactly that. The mark also jumps when something else grows memory (see
+/// bump_span), so a climb here can be the boxy runtime's growth as well as a
+/// missing decref.
 #[no_mangle]
 pub extern "C" fn heap_used() -> usize {
     unsafe { NEXT }
