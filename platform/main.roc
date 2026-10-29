@@ -5,7 +5,7 @@ platform ""
 		render : Model -> Html(Msg),
 		subscriptions : Model -> List(Sub(Msg))
 	}
-	exposes [Effect, Sub, Http, Time, Keyboard, Console, DOM, Port, WebCrypto]
+	exposes [Effect, Sub, Http, Time, Keyboard, Console, DOM, Port, WebCrypto, Media]
 	packages {
 		# The Html/Attribute tree types live in the joy-html package so
 		# apps and view packages (e.g. joy-carousel) see the same nominal
@@ -80,6 +80,7 @@ import Port
 # (Crypto.SHA256/BLAKE3), and a platform module by the same name shadows it
 # with DUPLICATE DEFINITION warnings, which `roc build` treats as exit 2.
 import WebCrypto
+import Media
 import Wire
 
 # The host holds the model as an opaque `Box(Model)` between calls, and every
