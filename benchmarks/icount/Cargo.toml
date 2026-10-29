@@ -1,0 +1,8 @@
+[package]
+name = "icount"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wasm-encoder = { version = "0.262.0", features = ["wasmparser"] }
+wasmparser = "0.262.0"

@@ -15,16 +15,23 @@ We have two entries:
 Each entry is built from its own app in this repo, `tests/apps/jsbench_keyed.roc` and
 `tests/apps/jsbench_nonkeyed.roc`. They are separate apps rather than one app branching on
 a flag, so neither binary carries the other's code or tests a flag per row.
-`www/runtime.js` is minified with `uglify` on the way into `dist/`, and `run.roc` then
-runs `wasm-opt -O3 --low-memory-unused` over the wasm, so the bundle-size column
+`www/runtime.js` is minified with `uglify` on the way into `dist/`. The wasm is built with
+`--opt=size` and `run.roc` then runs `wasm-opt -Oz` over it, so the bundle-size column
 compares against the other entries' minified production builds like with like. Both
 entries are built the same way, and a missing `wasm-opt` fails the run rather than
 quietly measuring a bigger binary than the last one.
 
-The entry's own `build.sh`, which builds the published entry from a Joy release, applies
-the same `wasm-opt` flags through a `binaryen` dev dependency, so it stays standalone.
-We must keep the two flag lists in step, because If they drift, the size we track here and
-the size the published entry ships will be different.
+We build at `--opt=size` rather than `--opt=speed` because it was smaller with no
+measurable loss in speed. On 2026-10-18 with Roc `nightly-2026-10-18-1df370f`, the keyed wasm
+was 3% smaller raw and 2-3% smaller compressed than `--opt=speed` plus `wasm-opt -O3`.
+The CPU benchmarks moved by less than their run-to-run noise. The time here goes to DOM
+work, so the Roc code's opt level barely shows. `-Oz` on top of the size build only takes
+off another 0.5% or so, but it costs nothing at runtime.
+
+The entry's own `build.sh`, which builds the published entry from a Joy release, uses the
+same opt level and applies the same `wasm-opt` flags through a `binaryen` dev dependency,
+so it stays standalone. We must keep the two in step, because if they drift, the size we
+track here and the size the published entry ships will be different.
 
 ## Releasing
 
@@ -59,11 +66,15 @@ FULL=1 benchmarks/jsframework/run.roc   # also re-run Elm, Halogen, Leptos, Soli
 FAST=1 benchmarks/jsframework/run.roc   # Joy only, quick subset (create/swap/remove)
 ```
 
-Each run rebuilds both Joy entries from the current checkout, runs the suite in headed
-Chromium (windows will flash on your display, which is expected), and writes:
+Each run rebuilds both Joy entries from the current checkout, counts their instructions,
+runs the suite twice in headed Chromium (windows will flash on your display, which is
+expected), and writes:
 
-- `runs/<timestamp>/report.md`: full cross-framework tables (CPU, memory, bundle size) for that run
-- `runs/<timestamp>/results/`: the raw result JSONs
+- `runs/<timestamp>/report.md`: full cross-framework tables (CPU, memory, bundle size), the
+  dev vs released comparison with its noise band, and the instruction counts
+- `runs/<timestamp>/rounds/`: each round's raw result JSONs
+- `runs/<timestamp>/icount/`: the instruction counts of each Joy arm
+- `runs/<timestamp>/results/`: the raw result JSONs as the last round left them
 - `history.jsonl` + `HISTORY.md`: one row per run of Joy's headline numbers, so you can see how they move run to run
 
 Every (framework, benchmark) pair gets its own runner invocation, in the runner's own
@@ -79,9 +90,34 @@ comparable only to each other.
 
 The run records the Joy git commit it measured, so each snapshot is tied to a known version.
 
+### Keeping the numbers stable
+
+Every run follows the same procedure, so two runs differ only in the code and the machine.
+
+- **CPU governor.** The run stops unless every core runs the `performance` governor
+  (`sudo cpupower frequency-set -g performance`, and set it back afterwards). Under a
+  governor that scales the clock with load, a timing says as much about how busy the
+  machine was a moment earlier as about the code.
+- **Two rounds.** The suite runs twice, the second time with the arms in reverse order,
+  and the report pools both into one median per arm. One round in a fixed order is not
+  enough: on 2026-10-18 keyed replace 1k came out 5% slower in one round and 4% faster in
+  the next, with the same two binaries. Create 10k, which takes one sample per runner
+  invocation, gets three invocations a round.
+- **A noise band.** For each benchmark the report gives the dev vs released change with a
+  95% bootstrap interval and the change each round saw on its own. It calls a change
+  `faster` or `slower` only when the interval leaves out zero and every round moved
+  the same way, and `noise` otherwise.
+- **Instruction counts.** `benchmarks/icount` rewrites an entry's wasm to count the
+  instructions it executes, and `icount.mjs` replays each benchmark's warmups and
+  measured click on the fake DOM from `tests/`. For each click the report gives the wasm
+  instructions, the calls into the DOM, and the bytes moved by `memory.copy` and
+  `memory.fill`. No browser is involved, so the counts are the same on every run and
+  every machine, and a change of 0.1% is a real change. They leave out the browser's
+  style, layout and paint, and how well the engine compiles the wasm, so they sit beside
+  the timings rather than replace them. `HISTORY.md` tracks their geomean per bracket.
+
 Before trusting a run:
 
-- Pin the CPU governor to `performance` for the run, and set it back afterwards.
 - Re-measure at least one comparison framework in the same session (`FULL=1` does all of
   them). Without a control there is no telling a Joy change from machine drift.
 
@@ -95,7 +131,8 @@ Setup the `js-framework-benchmark`: `npm ci && npm run install-local` for the se
 and runner, and the comparison entries built with `npm ci && npm run build-prod` in
 each of `frameworks/keyed/elm`, `frameworks/non-keyed/elm`, `frameworks/non-keyed/halogen`,
 `frameworks/keyed/solid` and `frameworks/keyed/react-hooks` (`leptos` and `vanillajs`
-come prebuilt). The Joy entries are rebuilt from this repo's checkout by each entry's
+come prebuilt). The instruction counter is a Cargo crate that the run builds on first use,
+so it needs `cargo` (the dev shell has it). The Joy entries are rebuilt from this repo's checkout by each entry's
 `build-local.sh`, which runs `./build.roc` here (through direnv when available, directly
 otherwise). `npm ci` in a Joy entry installs its own pinned roc and binaryen, which only
 `build.sh` needs.

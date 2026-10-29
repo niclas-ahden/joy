@@ -5,7 +5,13 @@
 #
 # This is how we track Joy's cross-framework performance over time: make a
 # change in this repo, then run this to see the new numbers next to the
-# previous runs. Run from the repo root:
+# previous runs. Every run is the same procedure, so two runs differ only in
+# the code and the machine: the CPU governor must be `performance` or the run
+# stops, the suite runs twice with the arms in reverse order the second time,
+# and the report pools both rounds and says which deltas are bigger than the
+# noise. Next to the timings it counts each Joy arm's wasm instructions and
+# DOM calls per benchmark, which do not move with machine noise at all. Run
+# from the repo root:
 #
 #   benchmarks/jsframework/run.roc          # Joy only (reuses cached competitor results)
 #   FULL=1 benchmarks/jsframework/run.roc   # also re-run Elm, Halogen, Leptos, Solid, React, vanilla
@@ -38,15 +44,17 @@ main! = |_args| {
 		{}
 	}
 
+	check_governor!()?
+
 	full = !(Env.var_str!("FULL") ?? "").is_empty()
 	fast = !(Env.var_str!("FAST") ?? "").is_empty()
 
 	# The clone only has an .envrc when it uses the NixOS dev shell from
 	# clone-setup/. A standard setup has node and the Playwright chromium on
 	# PATH already and needs no wrapping.
-	use_direnv = match Cmd.new_str("bash").args_str(["-c", "test -f '${fork}/.envrc' && command -v direnv >/dev/null"]).exec_exit_code!() {
-		Ok(0) => Bool.True
-		_ => Bool.False
+	use_direnv = match Cmd.new(OsStr.from_str("bash")).args(["-c", "test -f '${fork}/.envrc' && command -v direnv >/dev/null"].map(OsStr.from_str)).run!() {
+		Ok(output) => output.status == Exited(0)
+		Err(_) => Bool.False
 	}
 	in_fork = if use_direnv { "direnv exec ." } else { "" }
 
@@ -63,10 +71,8 @@ main! = |_args| {
 		}
 	)
 
-	# 07_create10k is NOT in the main list: batched runs bleed warmup
-	# mousedowns into the trace and the runner rejects every sample after the
-	# first. It gets its own unbatched pass below, where every sample is
-	# accepted and it can have a median like the other benchmarks.
+	# 07_create10k is not in the main list. It gets its own unbatched pass in
+	# run_round!, see there for why.
 	benches = if fast {
 		"01_ 05_ 06_"
 	} else {
@@ -113,6 +119,9 @@ main! = |_args| {
 	optimize_wasm!("${fork}/frameworks/keyed/joy-dev/dist/app.wasm")?
 	optimize_wasm!("${fork}/frameworks/non-keyed/joy-dev/dist/app.wasm")?
 
+	Stdout.line!("== counting instructions ==")?
+	count_instructions!(fork, frameworks, "${out}/icount")?
+
 	Stdout.line!("== ensuring the benchmark server ==")?
 	sh_lines!([
 		"if ! curl -sf -o /dev/null http://localhost:8080/ls; then",
@@ -123,57 +132,17 @@ main! = |_args| {
 	])?
 
 	Stdout.line!("== running benchmarks: ${benches} ==")?
-	# Stale-result hygiene: per-bench JSONs survive failed re-measures and
-	# would get folded into the new report as if current. Delete what this run
-	# re-measures, so the report only contains what it actually measured. A
-	# result is named <name>-v<version>-<bracket>_<bench>.json, and "keyed"
-	# is a suffix of "non-keyed", so the keyed glob has to exclude the other.
-	sh_lines!([
-		"cd '${fork}/webdriver-ts/results' || exit 0",
-		"for entry in ${frameworks}; do",
-		"  name=$(basename \"$entry\"); bracket=$(dirname \"$entry\")",
-		"  if [ \"$bracket\" = keyed ]; then",
-		"    ls \"$name\"-v*-keyed_*.json 2>/dev/null | grep -v -- '-non-keyed_' | xargs -r rm -f",
-		"  else",
-		"    rm -f \"$name\"-v*-non-keyed_*.json \"$name\"-non-keyed_*.json",
-		"  fi",
-		"done",
-	])?
-	# One runner invocation per (framework, benchmark) pair, walked in the
-	# runner's own order: benchmark outer, framework inner. The runner has no
-	# barrier between one pair's browser dying and the next one launching, so
-	# a failed pair can leave renderer and GPU processes that the next pair
-	# launches into (seen as a hang on the pair after a failed one). Driving
-	# the pairs from here keeps the interleaving that makes the joy-dev vs joy
-	# comparison drift-free, both arms hit each benchmark seconds apart, while
-	# every pair starts against a clean process table. Costs one node startup
-	# per pair, a few minutes on a full run.
-	for bench in benches.split_on(" ") {
-		for framework in frameworks.split_on(" ") {
-			run_pair!(fork, in_fork, framework, bench, "")?
-		}
+	# Two rounds, the second walking the arms in reverse, pooled into one
+	# median per arm. One round in a fixed order is not enough to read a few
+	# percent off: on 2026-10-18 keyed replace 1k came out 5% slower in one
+	# round and 4% faster in the next, with the same two binaries. Each round's
+	# results are kept under rounds/<n>/, where render.mjs pools them and reads
+	# the round to round spread for its noise band.
+	arms = frameworks.split_on(" ")
+	for round in ["1", "2"] {
+		order = if round == "1" { arms } else { arms.fold([], |acc, arm| acc.prepend(arm)) }
+		run_round!(fork, in_fork, order, benches, fast, "${out}/rounds/${round}")?
 	}
-
-	_ = if fast {
-		{}
-	} else {
-		# --count 1 is the only count a stock clone survives here. Anything
-		# higher makes the runner batch every iteration into one browser
-		# session, where it stops resetting the trace after the second one, so
-		# a single trace ends up holding two clicks and the run dies on "at
-		# most one mousedown event is expected" with no result at all. One
-		# sample is therefore no median, and some frameworks are bimodal on
-		# this benchmark, so read the number with that in mind. render.mjs
-		# marks it in the report. README.md here has the recipe for a real
-		# median when a create10k number is worth settling.
-		Stdout.line!("== running create10k unbatched (batching bleeds traces) ==")?
-		for framework in frameworks.split_on(" ") {
-			run_pair!(fork, in_fork, framework, "07_", "--count 1")?
-		}
-		{}
-	}
-
-	retry_missing!(fork, in_fork, frameworks, benches, fast)?
 
 	Stdout.line!("== rendering report ==")?
 	# The browser lives under $PLAYWRIGHT_BROWSERS_PATH in the nix shell and in
@@ -188,6 +157,10 @@ main! = |_args| {
 			"${here}/render.mjs",
 			"--results",
 			"${fork}/webdriver-ts/results",
+			"--rounds",
+			"${out}/rounds",
+			"--icount",
+			"${out}/icount",
 			"--out",
 			out,
 			"--label",
@@ -337,6 +310,61 @@ barrier! = |fork, in_fork|
 		"'",
 	])
 
+# Samples of create 10k each round takes. See run_round!.
+create10k_samples = ["1", "2", "3"]
+
+# One round of the suite over the arms in the given order. The round starts
+# from an empty slate for those arms, so a result left over from an earlier
+# run or round cannot pass for one this round measured, and ends by copying
+# what it measured into `dest`. The copies stay in webdriver-ts/results/ as
+# well, where the next run that leaves a framework out reuses them.
+run_round! = |fork, in_fork, arms, benches, fast, dest| {
+	frameworks = Str.join_with(arms, " ")
+	Stdout.line!("== round ${dest}: ${frameworks} ==")?
+	with_results!(fork, frameworks, "", "rm -f")?
+	# One runner invocation per (framework, benchmark) pair, walked in the
+	# runner's own order: benchmark outer, framework inner. The runner has no
+	# barrier between one pair's browser dying and the next one launching, so
+	# a failed pair can leave renderer and GPU processes that the next pair
+	# launches into (seen as a hang on the pair after a failed one). Driving
+	# the pairs from here keeps the interleaving that makes the joy-dev vs joy
+	# comparison drift-free, both arms hit each benchmark seconds apart, while
+	# every pair starts against a clean process table. Costs one node startup
+	# per pair, a few minutes on a full run.
+	for bench in benches.split_on(" ") {
+		for framework in arms {
+			run_pair!(fork, in_fork, framework, bench, "")?
+		}
+	}
+	retry_missing!(fork, in_fork, frameworks, benches)?
+	stash_results!(fork, frameworks, "", dest)?
+
+	if fast {
+		Ok({})
+	} else {
+		# 07_create10k is not in the main list: batched runs bleed warmup
+		# mousedowns into the trace and the runner rejects every sample after
+		# the first. --count 1 is the only count a stock clone survives here.
+		# Anything higher makes the runner batch every iteration into one
+		# browser session, where it stops resetting the trace after the second
+		# one, so a single trace ends up holding two clicks and the run dies on
+		# "at most one mousedown event is expected" with no result at all.
+		# One invocation is therefore one sample, and some frameworks are
+		# bimodal on this benchmark, so it gets several invocations a round,
+		# each kept in its own directory for render.mjs to pool.
+		Stdout.line!("== create10k unbatched (batching bleeds traces) ==")?
+		for sample in create10k_samples {
+			with_results!(fork, frameworks, "07_", "rm -f")?
+			for framework in arms {
+				run_pair!(fork, in_fork, framework, "07_", "--count 1")?
+			}
+			retry_missing!(fork, in_fork, frameworks, "07_")?
+			stash_results!(fork, frameworks, "07_", "${dest}/07-${sample}")?
+		}
+		Ok({})
+	}
+}
+
 # Re-run any (framework, benchmark) pair that produced no result file.
 #
 # One bad trace costs a whole benchmark, not one sample: the runner puts all 15
@@ -354,11 +382,10 @@ barrier! = |fork, in_fork|
 # Detection stays in bash, where the result names are globbed. The retries go
 # through run_pair!, so a retried pair gets the same leash, deadline and
 # barrier as a first attempt.
-retry_missing! = |fork, in_fork, frameworks, benches, fast| {
-	all_benches = if fast { benches } else { "${benches} 07_" }
-	missing = (list_missing!(fork, frameworks, all_benches) ?? "").trim()
+retry_missing! = |fork, in_fork, frameworks, benches| {
+	missing = (list_missing!(fork, frameworks, benches) ?? "").trim()
 	if missing.is_empty() {
-		Stdout.line!("== every framework produced a result for every benchmark ==")
+		Ok({})
 	} else {
 		Stdout.line!("== retrying pairs that produced no result: ${missing} ==")?
 		for pair in missing.split_on(" ") {
@@ -377,7 +404,7 @@ retry_missing! = |fork, in_fork, frameworks, benches, fast| {
 # Emit "entry:bench" for every pair whose result JSON is missing. "keyed" is a
 # suffix of "non-keyed", so the keyed glob has to exclude the other. vanillajs
 # has no version, hence the second pattern.
-list_missing! = |fork, frameworks, all_benches|
+list_missing! = |fork, frameworks, benches|
 	sh_capture!(
 		Str.join_with(
 			[
@@ -385,11 +412,13 @@ list_missing! = |fork, frameworks, all_benches|
 				"missing=",
 				"for entry in ${frameworks}; do",
 				"  name=$(basename \"$entry\"); bracket=$(dirname \"$entry\")",
-				"  for b in ${all_benches}; do",
+				"  for b in ${benches}; do",
+				# 40_sizes writes its results as 41_, 42_ and 43_.
+				"    r=$b; [ \"$b\" = 40_ ] && r=41_",
 				"    if [ \"$bracket\" = keyed ]; then",
-				"      hits=$(ls \"$name\"-v*-keyed_\"$b\"*.json 2>/dev/null | grep -vc -- \"-non-keyed_\")",
+				"      hits=$(ls \"$name\"-v*-keyed_\"$r\"*.json 2>/dev/null | grep -vc -- \"-non-keyed_\")",
 				"    else",
-				"      hits=$(ls \"$name\"-v*-non-keyed_\"$b\"*.json \"$name\"-non-keyed_\"$b\"*.json 2>/dev/null | wc -l)",
+				"      hits=$(ls \"$name\"-v*-non-keyed_\"$r\"*.json \"$name\"-non-keyed_\"$r\"*.json 2>/dev/null | wc -l)",
 				"    fi",
 				"    if [ \"$hits\" -eq 0 ]; then missing=\"$missing $entry:$b\"; fi",
 				"  done",
@@ -399,6 +428,69 @@ list_missing! = |fork, frameworks, all_benches|
 			"\n",
 		),
 	)
+
+# Hand the result files of the given entries to `command`, every benchmark's
+# or, with `bench` set, that one's. A result is named
+# <name>-v<version>-<bracket>_<bench>.json, and "keyed" is a suffix of
+# "non-keyed", so the keyed glob has to exclude the other. vanillajs has no
+# version, hence the second pattern.
+with_results! = |fork, frameworks, bench, command|
+	sh_lines!([
+		"cd '${fork}/webdriver-ts/results' 2>/dev/null || exit 0",
+		"for entry in ${frameworks}; do",
+		"  name=$(basename \"$entry\"); bracket=$(dirname \"$entry\")",
+		"  if [ \"$bracket\" = keyed ]; then",
+		"    ls \"$name\"-v*-keyed_${bench}*.json 2>/dev/null | grep -v -- '-non-keyed_'",
+		"  else",
+		"    ls \"$name\"-v*-non-keyed_${bench}*.json \"$name\"-non-keyed_${bench}*.json 2>/dev/null",
+		"  fi",
+		"done | xargs -r ${command}",
+	])
+
+# Copy what a round measured into the run's directory.
+stash_results! = |fork, frameworks, bench, dest| {
+	sh!("mkdir -p '${dest}'")?
+	abs = sh_capture!("cd '${dest}' && pwd")?
+	with_results!(fork, frameworks, bench, "cp -t '${abs}'")
+}
+
+# Refuse to time anything unless every core runs the `performance` governor.
+# Under a governor that scales the clock with load, a timing says as much
+# about how busy the machine was a moment earlier as about the code. A
+# machine with no cpufreq interface (a VM, or not Linux) has no governor to
+# pin, and is let through.
+check_governor! = ||
+	sh_lines!([
+		"govs=$(cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null | sort -u | tr '\\n' ' ')",
+		"[ -n \"$govs\" ] || exit 0",
+		"if [ \"$govs\" != 'performance ' ]; then",
+		"  echo \"error: the CPU governor is $govs, not performance. Pin it for the run:\" >&2",
+		"  echo '  sudo cpupower frequency-set -g performance' >&2",
+		"  echo 'and set it back afterwards.' >&2",
+		"  exit 1",
+		"fi",
+	])
+
+# Count what each benchmark's measured click costs each Joy arm, exactly:
+# wasm instructions, bytes moved by memory.copy and memory.fill, and DOM calls
+# (see icount.mjs). No browser is involved, so this takes seconds, and the
+# counts are the same on every run and every machine. Missing cargo fails the
+# run like missing wasm-opt does, so every report carries the table.
+count_instructions! = |fork, frameworks, dest|
+	sh_lines!([
+		"set -e",
+		"cargo build --quiet --release --locked --manifest-path benchmarks/icount/Cargo.toml",
+		"mkdir -p '${dest}'",
+		"for entry in ${frameworks}; do",
+		"  name=$(basename \"$entry\"); bracket=$(dirname \"$entry\")",
+		"  case \"$name\" in joy|joy-dev) ;; *) continue ;; esac",
+		"  dist='${fork}'/frameworks/$entry/dist",
+		"  wasm='${dest}'/$name-$bracket.wasm",
+		"  benchmarks/icount/target/release/icount \"$dist/app.wasm\" \"$wasm\"",
+		"  node --no-warnings ${here}/icount.mjs \"$dist/runtime.js\" \"$wasm\" > '${dest}'/$name-$bracket.json",
+		"  rm \"$wasm\"",
+		"done",
+	])
 
 # Name the joy-dev results after the commit that built them, so a snapshot read
 # months later says which binary produced it. Only joy-dev is touched: the
@@ -416,14 +508,14 @@ set_entry_version! = |fork, version|
 
 # Shrink an entry's wasm the way the other entries ship minified production
 # builds, so the size column compares like with like. Every other framework
-# here is measured through its own optimizer, and without this ours is the
-# only raw one, which costs about 3% compressed and 4% uncompressed.
+# here is measured through its own optimizer. The entries are built at
+# `--opt=size` (build-local.sh), which already does most of the shrinking,
+# and `-Oz` takes off about 0.5% more without costing any speed.
 #
 # The features are listed one by one so a newer Binaryen cannot fold a later
-# proposal into the output. `--low-memory-unused` is sound here because nothing
-# lives below linear address 1024, and a shadow stack overflow is a loud error
-# either way: the canary band at the stack floor and the stack pointer check in
-# `roc_alloc` both trap rather than corrupt.
+# proposal into the output. `--low-memory-unused` is left out even though it
+# shrinks the output by about 1%. It assumes nothing lives below address 1024,
+# and with the stack linked first that is the deepest part of the stack.
 #
 # Missing binaryen is fatal rather than a warning. Skipping would silently
 # publish a number measured on a different binary from the last run's, and a
@@ -434,7 +526,7 @@ optimize_wasm! = |wasm|
 		"  echo 'error: wasm-opt not found. It comes from binaryen, which the dev shell provides, so run this from nix develop (or direnv allow).' >&2",
 		"  exit 1",
 		"fi",
-		"wasm-opt --enable-bulk-memory --enable-simd --enable-sign-ext --enable-mutable-globals --enable-nontrapping-float-to-int -O3 --low-memory-unused '${wasm}' -o '${wasm}'",
+		"wasm-opt --enable-bulk-memory --enable-simd --enable-sign-ext --enable-mutable-globals --enable-nontrapping-float-to-int -Oz '${wasm}' -o '${wasm}'",
 	])
 
 sh! = |script| run!("bash", ["-c", script])

@@ -5,7 +5,15 @@
 // Usage:
 //   node render.mjs --results <webdriver-ts/results dir> --label "<iso datetime>" \
 //        --commit <joy-git-short-sha> --subject "<joy commit subject>" \
-//        --chromium "<version>" --out <runs/<slug> dir> [--note "<caveat>"]
+//        --chromium "<version>" --out <runs/<slug> dir> [--note "<caveat>"] \
+//        [--rounds <runs/<slug>/rounds dir>] [--icount <runs/<slug>/icount dir>]
+//
+// With --rounds, every result found under that directory is pooled with the
+// other copies of the same result, so one median covers every round, and the
+// first directory level under it names the round a copy came from. A result
+// with no copy there is read from --results, which is how frameworks this run
+// did not re-measure keep their cached numbers. --icount is where run.roc put
+// the instruction counts, one <entry>-<bracket>.json per Joy arm.
 //
 // Reads result JSONs ("<frameworkVersionString>_<benchmarkId>.json") with shape
 //   { framework, benchmark, type, values: { total|DEFAULT: { median, ... } } }
@@ -31,16 +39,35 @@ const SUBJECT = args.subject ?? "";
 const CHROMIUM = args.chromium ?? "";
 const ROC = args.roc ?? "";
 const NOTE = args.note ?? "";
+const ROUNDS = args.rounds ?? null;
+const ICOUNT = args.icount ?? null;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+
+// Every copy of each result under --rounds: file name -> [{ round, file }].
+const copies = new Map();
+const walk = (dir, round) => {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) walk(p, round ?? e.name);
+    else if (e.name.endsWith(".json")) {
+      if (!copies.has(e.name)) copies.set(e.name, []);
+      copies.get(e.name).push({ round, file: p });
+    }
+  }
+};
+if (ROUNDS && fs.existsSync(ROUNDS)) walk(ROUNDS, null);
+const roundNames = [...new Set([...copies.values()].flat().map((c) => c.round))].sort();
 
 // A Joy entry's version string comes from its package.json, so find the result
 // files by shape instead of pinning a version here. `joy-dev` is this checkout
 // (labelled with the commit that built it) and `joy` is the published release,
 // measured in the same session so a Joy-vs-Joy delta carries no machine drift.
 // `^joy-v` cannot match `joy-dev-v...`, so the two never collide.
+// A version this run measured wins over one cached from an earlier run, so
+// swapping the release for another build does not pick up the old numbers.
 const joyKey = (entry, bracket) => {
   const re = new RegExp(`^(${entry}-v[^_-]*-${bracket})_`);
-  const hit = fs.readdirSync(RESULTS).map((f) => f.match(re)).find(Boolean);
+  const hit = [...copies.keys(), ...fs.readdirSync(RESULTS)].map((f) => f.match(re)).find(Boolean);
   return hit ? hit[1] : `${entry}-v?-${bracket}`;
 };
 // The dev entry is what the history tracks: it is the number that moves.
@@ -94,7 +121,36 @@ const MEM = [
 const SIZE_COMPRESSED = "42_size-compressed";
 const SIZE_UNCOMPRESSED = "41_size-uncompressed";
 
+const sampleValues = (file) => {
+  try {
+    const j = JSON.parse(fs.readFileSync(file, "utf8"));
+    const v = j.values.total ?? j.values.DEFAULT ?? Object.values(j.values)[0];
+    return Array.isArray(v?.values) ? v.values : v?.median != null ? [v.median] : [];
+  } catch {
+    return [];
+  }
+};
+const median = (xs) => {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+
+// A result's samples from every round, and per round.
+function pooled(fwKey, benchId) {
+  const found = copies.get(`${fwKey}_${benchId}.json`);
+  if (!found) return null;
+  const byRound = new Map();
+  for (const { round, file } of found) {
+    byRound.set(round, [...(byRound.get(round) ?? []), ...sampleValues(file)]);
+  }
+  return { values: [...byRound.values()].flat(), byRound };
+}
+
 function readValues(fwKey, benchId) {
+  const p = pooled(fwKey, benchId);
+  if (p) return { median: median(p.values), values: p.values };
   const f = path.join(RESULTS, `${fwKey}_${benchId}.json`);
   if (!fs.existsSync(f)) return null;
   try {
@@ -164,6 +220,7 @@ md += `# js-framework-benchmark snapshot: ${LABEL}\n\n`;
 md += `- **Joy commit:** \`${COMMIT}\`${SUBJECT ? ` (${SUBJECT})` : ""}\n`;
 md += `- **Browser:** chromium ${CHROMIUM} (headed)\n`;
 if (ROC) md += `- **Roc:** ${ROC}\n`;
+if (roundNames.length) md += `- **Rounds:** ${roundNames.length}, the arms in reverse order in each one after the first, medians pooled over all of them\n`;
 md += `- **Frameworks:** ${FRAMEWORKS.map((f) => f.name).join(", ")}\n`;
 if (NOTE) md += `- _note: ${NOTE}_\n`;
 md += `\n`;
@@ -206,6 +263,52 @@ md += `| uncompressed KB | ${FRAMEWORKS.map((fw) => fmt(sizeU[fw.key], 1)).join(
 const pct = (dev, rel) => (dev == null || rel == null ? null : ((dev - rel) / rel) * 100);
 const signed = (x) => (x == null ? "-" : `${x >= 0 ? "+" : ""}${x.toFixed(1)}%`);
 md += `## Dev vs released, same session\n\n`;
+// A seeded generator, so the same results always render the same interval.
+const rng = (() => {
+  let a = 0x9e3779b9;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+})();
+const resample = (xs) => xs.map(() => xs[Math.floor(rng() * xs.length)]);
+// 95% bootstrap interval of the change in median, in percent.
+const interval = (dev, rel) => {
+  const changes = [];
+  for (let i = 0; i < 2000; i++) changes.push((median(resample(dev)) / median(resample(rel)) - 1) * 100);
+  changes.sort((a, b) => a - b);
+  return [changes[49], changes[1949]];
+};
+const noiseTable = (devKey, relKey) => {
+  let t = `| benchmark | dev (ms) | released (ms) | change | 95% interval | ${roundNames.map((r) => `round ${r}`).join(" | ")} | verdict |\n`;
+  t += `|---|---|---|---|---|${"---|".repeat(roundNames.length)}---|\n`;
+  for (const [id, label] of CPU) {
+    const d = pooled(devKey, id);
+    const r = pooled(relKey, id);
+    if (!d || !r || !d.values.length || !r.values.length) {
+      t += `| ${label} | ${fmt(cpu[devKey][id])} | ${fmt(cpu[relKey][id])} | ${signed(pct(cpu[devKey][id], cpu[relKey][id]))} | - | ${roundNames.map(() => "-").join(" | ")} | - |\n`;
+      continue;
+    }
+    const change = pct(median(d.values), median(r.values));
+    const [lo, hi] = interval(d.values, r.values);
+    const perRound = roundNames.map((n) => pct(median(d.byRound.get(n) ?? []), median(r.byRound.get(n) ?? [])));
+    // A change counts only when the interval leaves out zero and every round
+    // moved the same way. The interval alone treats all samples as one
+    // batch, so it cannot see a round that drifted as a whole.
+    const agree = perRound.every((x) => x != null && Math.sign(x) === Math.sign(change));
+    const verdict = (lo > 0 || hi < 0) && agree ? (change > 0 ? "slower" : "faster") : "noise";
+    t += `| ${label} | ${fmt(median(d.values))} | ${fmt(median(r.values))} | ${signed(change)} | ${signed(lo)} to ${signed(hi)} | ${perRound.map(signed).join(" | ")} | ${verdict} |\n`;
+  }
+  return t;
+};
+if (roundNames.length) {
+  md += `### Keyed\n\n` + noiseTable(JOY_KEYED, JOY_REL_KEYED) + `\n`;
+  md += `### Non-keyed\n\n` + noiseTable(JOY_NONKEYED, JOY_REL_NONKEYED) + `\n`;
+  md += `A change is called only when its 95% bootstrap interval leaves out zero and every\n`;
+  md += `round moved the same way. Everything else is \`noise\`, whatever the size of the change.\n\n`;
+}
 md += `| | dev | ${relName(JOY_REL_KEYED, "keyed").replace(" (keyed)", "")} | change |\n|---|---|---|---|\n`;
 for (const [label, dev, rel] of [
   ["CPU geomean, keyed (ms)", cpuGeomeanMs[JOY_KEYED], cpuGeomeanMs[JOY_REL_KEYED]],
@@ -219,6 +322,42 @@ md += `\nNegative is dev being better. Both arms ran back to back in one session
 md += `this comparison is free of the day-to-day drift that makes cross-run Joy deltas\n`;
 md += `hard to read. The apps are not identical, though: the released entry is frozen at\n`;
 md += `the app it shipped with, so a delta is product-level, not platform-only.\n\n`;
+
+// ---- Instruction counts ----
+const counts = (entry, bracket) => {
+  const f = ICOUNT && path.join(ICOUNT, `${entry}-${bracket}.json`);
+  if (!f || !fs.existsSync(f)) return null;
+  return JSON.parse(fs.readFileSync(f, "utf8"));
+};
+const ic = {
+  keyed: { dev: counts("joy-dev", "keyed"), rel: counts("joy", "keyed") },
+  nonKeyed: { dev: counts("joy-dev", "non-keyed"), rel: counts("joy", "non-keyed") },
+};
+const instrGeomean = (c) => (c ? geomean(CPU.map(([id]) => c[id]?.instr)) : null);
+const millions = (x) => (x == null ? null : x / 1e6);
+const countTable = ({ dev, rel }) => {
+  let t = `| benchmark | dev instr (M) | released instr (M) | change | dev DOM calls | released DOM calls | dev bulk (KB) | released bulk (KB) |\n`;
+  t += `|---|---|---|---|---|---|---|---|\n`;
+  for (const [id, label] of CPU) {
+    const d = dev?.[id];
+    const r = rel?.[id];
+    t += `| ${label} | ${fmt(millions(d?.instr), 2)} | ${fmt(millions(r?.instr), 2)} | ${signed(pct(d?.instr, r?.instr))} | ${d?.dom ?? "-"} | ${r?.dom ?? "-"} | ${fmt(d && d.bulk / 1024)} | ${fmt(r && r.bulk / 1024)} |\n`;
+  }
+  const gd = instrGeomean(dev);
+  const gr = instrGeomean(rel);
+  t += `| **geomean** | **${fmt(millions(gd), 2)}** | **${fmt(millions(gr), 2)}** | **${signed(pct(gd, gr))}** | | | | |\n`;
+  return t;
+};
+if (ic.keyed.dev || ic.nonKeyed.dev) {
+  md += `## Instruction counts: per measured click (exact, lower is better)\n\n`;
+  md += `Wasm instructions executed, calls into the DOM, and bytes moved by \`memory.copy\`\n`;
+  md += `and \`memory.fill\` for each benchmark's measured click, replayed on the fake DOM\n`;
+  md += `after the same warmups as the browser run (icount.mjs). They are the same on every\n`;
+  md += `run and every machine, so any change here is real. What they leave out is the\n`;
+  md += `browser's style, layout and paint, and how well the engine compiles the wasm.\n\n`;
+  md += `### Keyed\n\n` + countTable(ic.keyed) + `\n`;
+  md += `### Non-keyed\n\n` + countTable(ic.nonKeyed) + `\n`;
+}
 
 md += `> Headline for tracking: **Joy keyed CPU geomean = ${fmt(cpuGeomeanMs[JOY_KEYED])} ms** `;
 md += `(${fmt(factorGeomean[JOY_KEYED], 2)}× the per-benchmark best), `;
@@ -242,12 +381,15 @@ const histLine = {
   // The commit subject says what changed between rows, so the history reads
   // as a changelog. Commit before benchmarking to keep it truthful.
   subject: SUBJECT,
+  rounds: roundNames.length || 1,
   keyed: {
     cpuGeomeanMs: round(cpuGeomeanMs[JOY_KEYED]),
     slowdownVsBest: round(factorGeomean[JOY_KEYED], 3),
     memGeomeanMb: round(memGeomeanMb[JOY_KEYED]),
     bundleKb: round(sizeC[JOY_KEYED]),
     cpu: Object.fromEntries(CPU.map(([id]) => [id, round(cpu[JOY_KEYED][id])])),
+    instrGeomeanM: round(millions(instrGeomean(ic.keyed.dev)), 3),
+    instr: ic.keyed.dev ? Object.fromEntries(CPU.map(([id]) => [id, ic.keyed.dev[id]?.instr ?? null])) : null,
   },
   nonKeyed: {
     cpuGeomeanMs: round(cpuGeomeanMs[JOY_NONKEYED]),
@@ -255,6 +397,8 @@ const histLine = {
     memGeomeanMb: round(memGeomeanMb[JOY_NONKEYED]),
     bundleKb: round(sizeC[JOY_NONKEYED]),
     cpu: Object.fromEntries(CPU.map(([id]) => [id, round(cpu[JOY_NONKEYED][id])])),
+    instrGeomeanM: round(millions(instrGeomean(ic.nonKeyed.dev)), 3),
+    instr: ic.nonKeyed.dev ? Object.fromEntries(CPU.map(([id]) => [id, ic.nonKeyed.dev[id]?.instr ?? null])) : null,
   },
 };
 const histPath = path.join(HERE, "history.jsonl");
@@ -268,9 +412,10 @@ const hist = fs
 let h = `# Joy performance history (js-framework-benchmark)\n\n`;
 h += `Each row is one run. Lower is better, and "slowdown" is the geomean factor vs\n`;
 h += `the fastest framework on each CPU benchmark. See \`runs/<timestamp>/report.md\` for\n`;
-h += `the full cross-framework table of that run.\n\n`;
-h += `| run | commit | roc | change | keyed CPU (ms) | keyed slowdown | non-keyed CPU (ms) | non-keyed slowdown | memory (MB) | bundle (KB) |\n`;
-h += `|---|---|---|---|---|---|---|---|---|---|\n`;
+h += `the full cross-framework table of that run. The instruction columns are the geomean of\n`;
+h += `the wasm instructions per measured click, exact and free of machine noise.\n\n`;
+h += `| run | commit | roc | change | keyed CPU (ms) | keyed slowdown | non-keyed CPU (ms) | non-keyed slowdown | memory (MB) | bundle (KB) | keyed instr (M) | non-keyed instr (M) |\n`;
+h += `|---|---|---|---|---|---|---|---|---|---|---|---|\n`;
 // Rows may carry a hand-written `note` (add it to the row's line in history.jsonl) for
 // caveats that must survive regeneration, e.g. "geomean not comparable, stale results".
 const notes = [];
@@ -280,7 +425,7 @@ for (const r of hist) {
     notes.push(r.note);
     mark = `<sup>${notes.length}</sup>`;
   }
-  h += `| ${r.timestamp}${mark} | \`${r.joyCommit}\` | ${r.roc ?? ""} | ${r.subject ?? ""} | ${fmt(r.keyed?.cpuGeomeanMs)} | ${fmt(r.keyed?.slowdownVsBest, 2)}× | ${fmt(r.nonKeyed?.cpuGeomeanMs)} | ${fmt(r.nonKeyed?.slowdownVsBest, 2)}× | ${fmt(r.keyed?.memGeomeanMb, 1)} | ${fmt(r.keyed?.bundleKb, 1)} |\n`;
+  h += `| ${r.timestamp}${mark} | \`${r.joyCommit}\` | ${r.roc ?? ""} | ${r.subject ?? ""} | ${fmt(r.keyed?.cpuGeomeanMs)} | ${fmt(r.keyed?.slowdownVsBest, 2)}× | ${fmt(r.nonKeyed?.cpuGeomeanMs)} | ${fmt(r.nonKeyed?.slowdownVsBest, 2)}× | ${fmt(r.keyed?.memGeomeanMb, 1)} | ${fmt(r.keyed?.bundleKb, 1)} | ${fmt(r.keyed?.instrGeomeanM, 2)} | ${fmt(r.nonKeyed?.instrGeomeanM, 2)} |\n`;
 }
 if (notes.length) {
   h += `\n`;
