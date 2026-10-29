@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Joy Guide</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="shell">
+    <!-- index -->
+    <main class="reader"><!-- topics --></main>
+  </div>
+  <script>
+    // The guide's few interactions. The index and the topics are in the
+    // page already, and the stylesheet shows the topic the address names,
+    // so the guide reads without this script.
+    const shell = document.querySelector('.shell');
+    const menu = document.querySelector('.bar button');
+    const filter = document.getElementById('filter');
+    const empty = document.querySelector('.toc-empty');
+    const topics = [...document.querySelectorAll('.topic')];
+    const links = [...document.querySelectorAll('.toc a')];
+    const parts = [...document.querySelectorAll('.toc-part')];
+
+    // The topic the address names, or the first one.
+    const current = () => topics.find((topic) => topic.id === location.hash.slice(1)) ?? topics[0];
+
+    const closeMenu = () => {
+      shell.classList.remove('menu-open');
+      menu.setAttribute('aria-expanded', 'false');
+    };
+
+    // The topic on screen: marked in the index and named in the tab.
+    const mark = () => {
+      const topic = current();
+      for (const link of links) {
+        if (link.hash === '#' + topic.id) {
+          link.setAttribute('aria-current', 'page');
+          document.title = link.lastChild.textContent + ' · Joy Guide';
+        } else {
+          link.removeAttribute('aria-current');
+        }
+      }
+    };
+    mark();
+
+    // Another topic, from a link, the arrows or Back and Forward: read from
+    // the top, with the phone's index closed.
+    addEventListener('hashchange', () => {
+      mark();
+      closeMenu();
+      scrollTo(0, 0);
+    });
+
+    // Finding a topic by a word, and Enter to open the first one found.
+    filter.addEventListener('input', () => {
+      const words = filter.value.trim().toLowerCase();
+      for (const link of links) link.hidden = !link.dataset.words.includes(words);
+      for (const part of parts) part.hidden = !part.querySelector('a:not([hidden])');
+      empty.hidden = links.some((link) => !link.hidden);
+    });
+    filter.addEventListener('keydown', (event) => {
+      const first = links.find((link) => !link.hidden);
+      if (event.key === 'Enter' && first) location.hash = first.hash;
+    });
+
+    // The phone's index.
+    menu.addEventListener('click', () => {
+      const open = shell.classList.toggle('menu-open');
+      menu.setAttribute('aria-expanded', String(open));
+    });
+
+    // The left and right arrows page through the topics, except in the
+    // search box, where they move the caret, and in a playground.
+    addEventListener('keydown', (event) => {
+      if (event.target.closest?.('input, textarea, [data-playground]') || event.ctrlKey || event.altKey || event.metaKey) return;
+      const step = { ArrowLeft: -1, ArrowRight: 1 }[event.key];
+      const next = step && topics[topics.indexOf(current()) + step];
+      if (next) location.hash = next.id;
+    });
+
+    // A code block's Copy button copies its code, and says how that went.
+    addEventListener('click', async (event) => {
+      const button = event.target.closest?.('.copy');
+      if (!button) return;
+      try {
+        await navigator.clipboard.writeText(button.closest('.code').querySelector('code').textContent);
+        button.textContent = 'Copied';
+      } catch {
+        button.textContent = 'Not copied';
+      }
+      clearTimeout(button.reset);
+      button.reset = setTimeout(() => { button.textContent = 'Copy'; }, 1500);
+    });
+  </script>
+  <script type="module">
+    // The walk-throughs. Each [data-walk] block (see Walk.roc) is code and
+    // the steps it goes through. This script makes it follow the scroll. On a wide
+    // window the code and the app stay put while the reader scrolls, and one step
+    // shows at a time. On a narrow one only the app stays, above the steps.
+    // Which of the two it is, the stylesheet decides.
+    //
+    // A step is its number, counting from 0. An element with data-at shows during
+    // the steps it names, and one with data-lit is lit during them.
+    for (const walk of document.querySelectorAll('[data-walk]')) start(walk);
+
+    function start(walk) {
+      const stage = walk.querySelector('.walk-stage');
+      const now = walk.querySelector('.walk-now');
+      const steps = [...walk.querySelectorAll('.walk-step')];
+      const bars = [...walk.querySelectorAll('.walk-bars span')];
+      const number = walk.querySelector('[data-walk-n]');
+      const back = walk.querySelector('[data-walk-back]');
+      const next = walk.querySelector('[data-walk-next]');
+      const shown = [...walk.querySelectorAll('[data-at]')];
+      const lit = [...walk.querySelectorAll('[data-lit]')];
+      const last = steps.length - 1;
+      const during = (names, step) => names.split(' ').includes(String(step));
+      let step = -1;
+
+      const show = (to) => {
+        if (to === step) return;
+        step = to;
+        for (const el of shown) el.classList.toggle('on', during(el.dataset.at, step));
+        for (const el of lit) el.classList.toggle('lit', during(el.dataset.lit, step));
+        // The rest of the code steps back only when some of it is lit.
+        walk.classList.toggle('lighting', lit.some((el) => el.classList.contains('lit')));
+        bars.forEach((bar, at) => bar.classList.toggle('on', at <= step));
+        number.textContent = String(step + 1);
+        back.disabled = step === 0;
+        next.disabled = step === last;
+      };
+
+      // The wide layout is the one whose stage stays put.
+      const wide = () => getComputedStyle(stage).position === 'sticky';
+      const stageTop = () => parseFloat(getComputedStyle(stage).top) || 0;
+      // How far the page scrolls while the stage stays put.
+      const room = () => walk.getBoundingClientRect().height - stage.getBoundingClientRect().height;
+
+      const follow = () => {
+        // Its topic is not the one on screen.
+        if (!walk.getClientRects().length) return;
+        if (wide()) {
+          const done = (stageTop() - walk.getBoundingClientRect().top) / room();
+          show(Math.max(0, Math.min(last, Math.round(done * last))));
+          return;
+        }
+        // The last step whose card has come up to a little under the app.
+        const line = now.getBoundingClientRect().bottom + innerHeight * 0.2;
+        let at = 0;
+        steps.forEach((card, i) => {
+          if (card.getBoundingClientRect().top <= line) at = i;
+        });
+        show(at);
+      };
+
+      // Back and Next scroll to where their step is, so the two never disagree.
+      const go = (to) => {
+        const top = scrollY + walk.getBoundingClientRect().top - stageTop() + (room() * to) / last;
+        scrollTo({ top, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+      };
+      back.addEventListener('click', () => go(step - 1));
+      next.addEventListener('click', () => go(step + 1));
+
+      // Where things stay. On a narrow window the app stays under the phone's
+      // bar, which is as tall as its text. On a wide one the stage stays in
+      // the middle of the window, or at its top when it is nearly as tall.
+      const measure = () => {
+        const bar = document.querySelector('.bar');
+        const height = bar && getComputedStyle(bar).position === 'sticky' ? bar.getBoundingClientRect().height : 0;
+        walk.style.setProperty('--walk-top', `${height}px`);
+        const spare = innerHeight - stage.getBoundingClientRect().height;
+        walk.style.setProperty('--walk-middle', `${Math.max(16, Math.round(spare / 2))}px`);
+        follow();
+      };
+
+      walk.style.setProperty('--walk-steps', String(last));
+      walk.querySelector('.walk-steps').setAttribute('aria-live', 'polite');
+      walk.classList.add('live');
+      addEventListener('scroll', follow, { passive: true });
+      addEventListener('resize', measure);
+      // The stage has no size while another topic is on screen, so it is
+      // measured again when it gets one.
+      new ResizeObserver(measure).observe(stage);
+      show(0);
+      measure();
+    }
+  </script>
+  <script type="module" src="./editor.js"></script>
+</body>
+</html>

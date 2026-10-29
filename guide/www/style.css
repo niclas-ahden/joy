@@ -1,0 +1,675 @@
+:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}
+/* Layout: a fixed index column on the left, one topic at a time in a centered
+   reading column on the right, code in blocks that may scroll on their own.
+   The look follows the Roc docs at roc-lang.org/docs. */
+:root {
+  --body-bg: #ffffff;
+  --sidebar-bg: hsl(262 91.5% 91.2%);
+  --violet-bg: hsl(262 87% 96%);
+  --text: #000000;
+  --faded: #4c4c4c;
+  --gray: hsl(0 0% 18%);
+  --violet: #7c38f5;
+  --violet-border: rgb(124 56 245 / 0.4);
+  --violet-border-hover: rgb(124 56 245 / 0.6);
+  --search-border: hsl(262 50% 72%);
+  --link-hover: #333333;
+  --magenta: #a20031;
+  --code-bg: hsl(262 33% 96%);
+  --code-ink: #000000;
+  --block-bg: hsl(262 33% 96%);
+  --block-ink: #202746;
+  --syn-kw: #6633bf;
+  --syn-lit: #087f78;
+  --syn-com: #596078;
+  --lit-bg: hsl(262 91.5% 91.2%);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: SFMono-Regular, Consolas, "Liberation Mono", Menlo, Courier, monospace;
+
+  --font-xs: 0.75rem;
+  --font-sm: 0.875rem;
+  --font-base: 1rem;
+  --font-lg: 1.3125rem;
+  --font-xl: 1.75rem;
+  --font-2xl: 2.3125rem;
+
+  --index-width: clamp(220px, 18vw, 320px);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --body-bg: hsl(262 25% 7.5%);
+    --sidebar-bg: hsl(262 27.5% 11.25%);
+    --violet-bg: hsl(262 25% 15%);
+    --text: #eaeaea;
+    --faded: #bbbbbb;
+    --gray: hsl(0 0% 70%);
+    --violet: #caadfb;
+    --violet-border: rgb(202 173 251 / 0.4);
+    --violet-border-hover: rgb(202 173 251 / 0.6);
+    --search-border: hsl(262 35% 40%);
+    --link-hover: #ffffff;
+    --magenta: hsl(348 79% 80%);
+    --code-bg: hsl(228.95 37.25% 15%);
+    --code-ink: #eeeeee;
+    --block-bg: #202746;
+    --block-ink: #e0d6f0;
+    --syn-kw: #9b6bf2;
+    --syn-lit: #4eefd9;
+    --syn-com: #cccccc;
+    --lit-bg: hsl(262 45% 32%);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --body-bg: hsl(262 25% 7.5%);
+  --sidebar-bg: hsl(262 27.5% 11.25%);
+  --violet-bg: hsl(262 25% 15%);
+  --text: #eaeaea;
+  --faded: #bbbbbb;
+  --gray: hsl(0 0% 70%);
+  --violet: #caadfb;
+  --violet-border: rgb(202 173 251 / 0.4);
+  --violet-border-hover: rgb(202 173 251 / 0.6);
+  --search-border: hsl(262 35% 40%);
+  --link-hover: #ffffff;
+  --magenta: hsl(348 79% 80%);
+  --code-bg: hsl(228.95 37.25% 15%);
+  --code-ink: #eeeeee;
+  --block-bg: #202746;
+  --block-ink: #e0d6f0;
+  --syn-kw: #9b6bf2;
+  --syn-lit: #4eefd9;
+  --syn-com: #cccccc;
+  --lit-bg: hsl(262 45% 32%);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body {
+  margin: 0;
+  background: var(--body-bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--font-base);
+  line-height: 1.6;
+}
+a { color: var(--violet); text-decoration: none; }
+a:hover { text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 5px; }
+a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
+
+.shell {
+  display: grid;
+  grid-template-columns: var(--index-width) minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+/* The index */
+.index {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  scrollbar-color: var(--violet) var(--sidebar-bg);
+  background: var(--sidebar-bg);
+  padding-block: 0 2rem;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.brand {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-inline: -16px;
+  padding: 16px;
+  background: var(--violet-bg);
+}
+.brand-name {
+  font-weight: 700;
+  font-size: var(--font-xl);
+  line-height: 1.2;
+  color: var(--violet);
+  margin: 0;
+}
+.brand-sub { color: var(--faded); font-size: var(--font-sm); margin: 0; }
+.docs-links {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  font-size: var(--font-sm);
+}
+.docs-links span { color: var(--faded); }
+
+.filter {
+  width: 100%;
+  margin-top: -8px;
+  font: inherit;
+  padding: 12px 16px;
+  border: 2px solid var(--search-border);
+  border-radius: 0;
+  background: var(--body-bg);
+  color: var(--text);
+}
+.filter::placeholder { color: var(--faded); opacity: 1; }
+.filter:hover, .filter:focus { outline: 2px solid var(--violet); outline-offset: 0; }
+
+.toc { display: flex; flex-direction: column; gap: 16px; }
+.toc-part { display: flex; flex-direction: column; }
+.toc-part h2 {
+  margin: 0 0 4px;
+  font-size: var(--font-base);
+  font-weight: 700;
+  color: var(--text);
+}
+.toc a {
+  display: grid;
+  grid-template-columns: 1.6rem minmax(0, 1fr);
+  align-items: baseline;
+  align-content: center;
+  gap: 4px;
+  min-height: 40px;
+  padding-block: 4px;
+  text-decoration: none;
+  color: var(--text);
+  line-height: 1.35;
+}
+.toc a .n {
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  color: var(--faded);
+  font-variant-numeric: tabular-nums;
+}
+.toc a:hover, .toc a:hover .n { color: var(--violet); }
+.toc a[aria-current="page"] { color: var(--violet); font-weight: 700; }
+.toc a[aria-current="page"] .n { color: var(--violet); }
+.toc-empty { color: var(--faded); font-size: var(--font-sm); margin: 0; }
+
+/* The phone bar, shown instead of the sticky index on narrow screens */
+.bar { display: none; }
+
+/* The reading column */
+.reader {
+  min-width: 0;
+  padding-block: 2.25rem 5rem;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.topic {
+  max-width: 80ch;
+  margin-inline: auto;
+  /* A topic is the only one on screen and starts the page, so a link to its
+     #anchor reads it from the top, not from just under the reader's padding. */
+  scroll-margin-top: 100vh;
+}
+/* One topic at a time: the one the address names, or the first. */
+.topic { display: none; }
+.topic:first-child, .topic:target { display: block; }
+.reader:has(> .topic:target) > .topic:first-child:not(:target) { display: none; }
+.eyebrow {
+  font-size: var(--font-sm);
+  color: var(--faded);
+}
+.topic .eyebrow { margin: 0 0 4px; }
+.topic h1 {
+  font-weight: 700;
+  font-size: var(--font-2xl);
+  line-height: 1.2;
+  color: var(--violet);
+  margin: 0 0 16px;
+}
+.topic h2 {
+  font-weight: 700;
+  font-size: var(--font-xl);
+  margin: 1.45rem 0 0;
+}
+.topic h3 { font-size: var(--font-lg); margin: 1.45rem 0 0; }
+.topic p { overflow-wrap: break-word; margin: 24px 0; }
+.topic ul, .topic ol { padding-left: 40px; margin: 12px 0; }
+.topic li { margin: 4px 0; }
+.topic code {
+  font-family: var(--font-mono);
+  background: var(--code-bg);
+  color: var(--code-ink);
+  padding: 0 4px;
+  overflow-wrap: anywhere;
+}
+
+/* Code blocks */
+.code {
+  position: relative;
+  margin: 36px 0;
+  background: var(--block-bg);
+}
+.code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 8px 8px 0 16px;
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  color: var(--faded);
+}
+.code-head .file { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* A playground's buttons look like Copy but are not Copy buttons. */
+.copy, .pg-button {
+  font: inherit;
+  color: var(--magenta);
+  background: var(--block-bg);
+  border: 1px solid var(--magenta);
+  padding: 0.15rem 0.5rem;
+  cursor: pointer;
+}
+.copy:hover, .pg-button:hover { color: var(--link-hover); border-color: var(--link-hover); }
+.code pre {
+  margin: 0;
+  padding: 8px 16px;
+  overflow-x: auto;
+  scrollbar-color: var(--violet) var(--block-bg);
+  scrollbar-width: thin;
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  line-height: 1.6;
+  color: var(--block-ink);
+  tab-size: 4;
+}
+.code pre code { background: none; padding: 0; font-size: inherit; color: inherit; }
+/* A playground's editor colours Roc with CodeMirror's Elm mode, which gives
+   types and every symbol the keywords' colour. The code blocks do the same,
+   so the two look alike. */
+.k { color: var(--syn-kw); }
+.t { color: var(--syn-kw); }
+.s { color: var(--syn-lit); }
+.c { color: var(--syn-com); }
+.u { color: var(--syn-lit); }
+.o { color: var(--syn-kw); }
+
+/* Notes */
+.note {
+  margin: 24px 0;
+  padding: 12px 16px;
+  background: var(--violet-bg);
+  border-left: 4px solid var(--violet);
+}
+.note-label {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.note p { margin: 0 0 1rem; }
+.note p:last-child, .note ul:last-child { margin-bottom: 0; }
+
+/* The loop, a drawing. Topic/Loop.roc lays it out. */
+.loop { display: block; width: 100%; max-width: 500px; height: auto; margin: 24px 0 8px; }
+.loop .you { fill: var(--violet-bg); stroke: var(--violet); }
+.loop .joy { fill: var(--code-bg); stroke: var(--violet-border); }
+.loop .flow { fill: none; stroke: var(--faded); stroke-width: 1.5; }
+.loop marker path { fill: var(--faded); }
+.loop text { dominant-baseline: central; font-family: var(--font-sans); font-size: 12px; fill: var(--faded); }
+.loop text.name { font-family: var(--font-mono); font-size: 15px; font-weight: 600; fill: var(--violet); }
+.loop text.title { font-size: 15px; fill: var(--text); }
+.loop text.data { font-family: var(--font-mono); font-size: 13px; fill: var(--text); }
+.topic .loop-caption { color: var(--faded); font-size: var(--font-sm); margin: 0 0 24px; }
+
+/* Tables */
+.table-wrap { overflow-x: auto; margin: 16px 0; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 6px 13px; border: 1px solid var(--gray); vertical-align: top; }
+td code { white-space: nowrap; }
+
+/* Paging between topics */
+.pager {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 3rem;
+}
+.pager a {
+  display: flex;
+  flex-direction: column;
+  text-decoration: none;
+  padding: 12px 16px;
+  border: 2px solid var(--search-border);
+  min-width: 0;
+}
+.pager a:hover { border-color: var(--violet-border-hover); background: var(--violet-bg); }
+.pager .dir { font-size: var(--font-sm); color: var(--faded); }
+.pager .name { color: var(--violet); }
+.pager .next { text-align: right; grid-column: 2; }
+
+/* What Joy gives you, under the lead */
+.features {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 24px 0;
+}
+.feature { padding: 14px 16px; border: 1px solid var(--violet-border); background: var(--violet-bg); min-width: 0; }
+.topic .feature p { margin: 0; }
+.topic .feature-name { font-weight: 700; color: var(--violet); }
+.topic .feature-name + p { font-size: var(--font-sm); color: var(--faded); }
+
+/* A playground: the editor beside the running app. It is wider than the
+   reading column when the window has room, and centred on it. */
+.playground { margin: 36px 0; }
+.playground .code { margin: 0; }
+.pg {
+  --pg-width: max(100%, min(1440px, calc(100vw - var(--index-width) - 48px)));
+  width: var(--pg-width);
+  margin-left: calc((100% - var(--pg-width)) / 2);
+  background: var(--block-bg);
+  border: 1px solid var(--violet-border);
+}
+.pg-head { padding-bottom: 8px; gap: 12px; }
+.pg-status { margin-left: auto; white-space: nowrap; }
+.pg-open { white-space: nowrap; }
+.pg-body { display: grid; grid-template-columns: minmax(0, var(--pg-split, 55%)) 9px minmax(0, 1fr); min-height: 20rem; }
+.pg-editor { min-width: 0; }
+/* The line between the code and the app. Drag it, or focus it and use the
+   arrow keys, to give one side more room. A double click evens it out. */
+.pg-split {
+  position: relative;
+  cursor: col-resize;
+  touch-action: none;
+  background: var(--block-bg);
+}
+.pg-split::before {
+  content: "";
+  position: absolute;
+  inset: 0 4px;
+  background: var(--violet-border);
+}
+.pg-split:hover::before, .pg-split:focus-visible::before, .pg-split.dragging::before { inset: 0 3px; background: var(--violet); }
+.pg-split:focus-visible { outline: none; }
+.pg.resizing { user-select: none; cursor: col-resize; }
+.pg.resizing .pg-output { pointer-events: none; }
+.pg-editor .CodeMirror {
+  height: auto;
+  background: var(--block-bg);
+  color: var(--block-ink);
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  line-height: 1.6;
+}
+.pg-editor .CodeMirror-gutters { background: var(--block-bg); border-right: 0; }
+.pg-editor .CodeMirror-linenumber { color: var(--faded); }
+.pg-editor .CodeMirror-cursor { border-left-color: var(--block-ink); }
+.pg-editor .CodeMirror-selected { background: var(--violet-border) !important; }
+.pg .pg-editor .cm-keyword, .pg .pg-editor .cm-builtin, .pg .pg-editor .cm-variable-2 { color: var(--syn-kw); }
+.pg .pg-editor .cm-string, .pg .pg-editor .cm-number { color: var(--syn-lit); }
+.pg .pg-editor .cm-comment { color: var(--syn-com); }
+.pg .pg-editor .cm-def, .pg .pg-editor .cm-variable { color: var(--block-ink); }
+.pg-textarea {
+  width: 100%;
+  height: 100%;
+  min-height: 20rem;
+  border: 0;
+  padding: 8px 16px;
+  resize: vertical;
+  background: var(--block-bg);
+  color: var(--block-ink);
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  line-height: 1.6;
+  tab-size: 4;
+}
+.pg-output { position: relative; min-width: 0; overflow: auto; background: var(--body-bg); }
+.pg-app { padding: 16px; }
+.pg-app button { font: inherit; font-size: var(--font-lg); min-width: 2.5rem; margin: 0 8px; cursor: pointer; }
+.pg-report {
+  display: none;
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  white-space: pre-wrap;
+  background: #16161b;
+  color: #e9e9ee;
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  line-height: 1.5;
+}
+.pg-report.shown { display: block; }
+.pg-report .pg-quote { white-space: pre; }
+/* What an editor suggests. CodeMirror puts the list on the page's body. */
+.CodeMirror-hints {
+  z-index: 40;
+  max-height: 17em;
+  border: 1px solid var(--violet-border);
+  border-radius: 0;
+  background: var(--body-bg);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.15);
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+}
+.CodeMirror-hint { display: flex; justify-content: space-between; gap: 24px; max-width: 44em; padding: 3px 8px; border-radius: 0; color: var(--text); }
+.pg-hint-type { color: var(--faded); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.CodeMirror-hints li.CodeMirror-hint-active { background: var(--violet); color: var(--body-bg); }
+.CodeMirror-hints li.CodeMirror-hint-active .pg-hint-type { color: inherit; }
+/* Where the compiler found a problem. */
+.pg-squiggle { text-decoration: underline wavy #e5484d; text-decoration-skip-ink: none; text-underline-offset: 3px; }
+/* A header the playground folded away. A click opens it. */
+.pg-fold {
+  font: inherit;
+  color: var(--faded);
+  background: none;
+  border: 1px solid var(--violet-border);
+  padding: 0 6px;
+  cursor: pointer;
+}
+.pg-fold:hover { color: var(--violet); border-color: var(--violet); }
+
+/* A walk-through: code and the steps it goes through (see Walk.roc). As the
+   page is written it is the code and then the steps, each with its lines.
+   The page's script makes it follow the scroll and marks it .live. Then a narrow
+   window keeps only the app on screen, above the steps, and a wide one keeps
+   the code and the app and shows one step at a time. */
+.walk { margin: 36px 0; }
+.walk-stage { border: 1px solid var(--violet-border); background: var(--block-bg); }
+.walk-code pre {
+  margin: 0;
+  padding: 8px 0 16px;
+  overflow-x: auto;
+  scrollbar-color: var(--violet) var(--block-bg);
+  scrollbar-width: thin;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--block-ink);
+  tab-size: 4;
+}
+.topic .walk pre code { display: inline-block; min-width: 100%; background: none; padding: 0; font-size: inherit; color: inherit; overflow-wrap: normal; }
+.walk-lines { display: block; padding-inline: 16px; }
+.walk-gap { display: block; height: 0.7em; }
+.walk-side { background: var(--body-bg); }
+.walk-now, .walk-nav { display: none; }
+.topic .walk-steps { list-style: none; margin: 0; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+.topic .walk-step { margin: 0; padding: 14px 16px; border: 2px solid var(--violet-border); }
+.topic .walk-step h3 { margin: 0 0 4px; font-size: var(--font-base); }
+.topic .walk-step p { margin: 0; }
+.walk-excerpt {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  overflow-x: auto;
+  background: var(--block-bg);
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  line-height: 1.6;
+  color: var(--block-ink);
+}
+.walk-label { font-family: var(--font-mono); font-size: var(--font-xs); color: var(--faded); }
+.walk-counter { display: inline-flex; align-items: center; gap: 10px; }
+.walk-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 2px solid var(--gray);
+  background: var(--code-bg);
+  font-size: var(--font-lg);
+  line-height: 1;
+}
+.walk-key.pressed { border-color: var(--violet); background: var(--lit-bg); }
+.walk-stack { display: inline-flex; flex-direction: column; align-items: center; gap: 6px; }
+.walk-button { padding: 2px 12px; border: 2px solid var(--gray); background: var(--code-bg); }
+.walk-button.pressed { border-color: var(--violet); background: var(--lit-bg); }
+.walk-number { min-width: 24px; text-align: center; font-size: 1.375rem; font-weight: 700; }
+.walk-bars { display: flex; gap: 4px; }
+.walk-bars span { flex: 1; height: 4px; background: var(--violet-border); }
+.walk-bars span.on { background: var(--violet); }
+.walk-nav button {
+  flex: 1;
+  min-height: 44px;
+  font: inherit;
+  color: var(--violet);
+  background: var(--body-bg);
+  border: 1px solid var(--violet);
+  cursor: pointer;
+}
+.walk-nav [data-walk-next] { color: var(--body-bg); background: var(--violet); font-weight: 700; }
+.walk-nav button:disabled { opacity: 0.45; cursor: default; }
+
+/* Following the scroll, narrow: the app stays under the top of the window. */
+.walk.live .walk-stage { border: 0; background: none; }
+.walk.live .walk-code { display: none; }
+.walk.live .walk-at:not(.on) { display: none; }
+.walk.live .walk-now {
+  position: sticky;
+  top: var(--walk-top, 0px);
+  z-index: 10;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: "app count" "bars bars";
+  align-items: center;
+  gap: 10px 14px;
+  margin-inline: -16px;
+  padding: 10px 16px 12px;
+  background: var(--block-bg);
+  border-block: 1px solid var(--violet-border);
+}
+.walk.live .walk-app { grid-area: app; }
+.walk.live .walk-app .walk-label, .walk.live .walk-values { display: none; }
+.walk-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 150px;
+  min-height: 48px;
+  padding: 4px 12px;
+  background: var(--body-bg);
+  border: 1px solid var(--violet-border);
+  font-size: var(--font-sm);
+  color: var(--faded);
+}
+.walk-screen .walk-counter, .walk-screen .walk-stack { color: var(--text); }
+.walk.live .walk-progress { display: contents; }
+.walk.live .walk-count { grid-area: count; text-align: right; font-size: var(--font-sm); color: var(--faded); }
+.walk.live .walk-bars { grid-area: bars; }
+.topic .walk.live .walk-steps { padding: 16px 0 0; }
+.topic .walk.live .walk-step.on { border-color: var(--violet); background: var(--violet-bg); }
+
+/* Following the scroll, wide and tall enough for the stage: it stays put
+   while the page scrolls through the walk-through's height, which the script
+   reads as the steps. It is wider than the reading column, as a playground is. */
+@media (min-width: 1180px) and (min-height: 640px) {
+  .walk.live {
+    --walk-width: max(100%, min(1040px, calc(100vw - var(--index-width) - 48px)));
+    width: var(--walk-width);
+    margin-left: calc((100% - var(--walk-width)) / 2);
+  }
+  /* The height to scroll through. It is in the flow, as padding would give
+     the stage nowhere to stay. */
+  .walk.live::after { content: ""; display: block; height: calc(var(--walk-steps, 6) * 9rem); }
+  .walk.live .walk-stage {
+    position: sticky;
+    top: var(--walk-middle, 16px);
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(20rem, 2fr);
+    border: 1px solid var(--violet-border);
+    background: var(--block-bg);
+  }
+  .walk.live .walk-code { display: block; }
+  .walk.live .walk-lines.lit { background: var(--lit-bg); }
+  .walk.live.lighting .walk-lines:not(.lit) { opacity: 0.7; }
+  .walk.live .walk-side { display: flex; flex-direction: column; border-left: 1px solid var(--violet-border); }
+  .walk.live .walk-now { position: static; display: block; margin: 0; padding: 0; border: 0; background: none; }
+  .walk.live .walk-app { display: flex; flex-direction: column; gap: 10px; padding: 14px 20px 20px; border-bottom: 1px solid var(--violet-border); }
+  .walk.live .walk-app .walk-label { display: block; }
+  .walk.live .walk-screen { min-height: 100px; }
+  .walk.live .walk-key { width: 52px; height: 52px; font-size: var(--font-xl); }
+  .walk.live .walk-number { min-width: 40px; font-size: 2rem; }
+  .walk.live .walk-values { display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--violet-border); }
+  .walk.live .walk-values { padding-block: 6px; }
+  .walk-value { flex: 1 1 100%; min-width: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 6px 20px; }
+  /* A value's states lie on top of each other too, as a long one wraps. */
+  .topic .walk .walk-value code { display: grid; justify-items: end; background: none; padding: 0; font-size: 0.8125rem; }
+  .walk.live .walk-value .walk-at { grid-area: 1 / 1; }
+  .walk.live .walk-value .walk-at:not(.on) { display: block; visibility: hidden; }
+  .walk.live .walk-progress { display: flex; align-items: center; gap: 10px; padding: 14px 20px 0; }
+  .walk.live .walk-count { white-space: nowrap; }
+  .walk.live .walk-bars { flex: 1; }
+  /* The steps lie on top of each other and only one shows, so the stage is
+     as tall as its longest step and does not move when the step changes. */
+  .topic .walk.live .walk-steps { display: grid; align-content: start; flex: 1; min-height: 13rem; padding: 12px 20px 0; }
+  .topic .walk.live .walk-step, .topic .walk.live .walk-step.on { grid-area: 1 / 1; border: 0; padding: 0; background: none; }
+  .topic .walk.live .walk-step:not(.on) { visibility: hidden; }
+  .walk.live .walk-excerpt[data-lang="roc"] { display: none; }
+  .walk.live .walk-nav { display: flex; gap: 12px; padding: 12px 20px 20px; }
+}
+
+@media (max-width: 880px) {
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  .bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    position: sticky;
+    top: env(safe-area-inset-top, 0px);
+    z-index: 20;
+    background: var(--violet-bg);
+    padding-block: 8px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--violet-bg); }
+  .bar .brand-name { font-size: var(--font-lg); }
+  .bar button {
+    font: inherit;
+    color: var(--violet);
+    background: transparent;
+    border: 2px solid var(--search-border);
+    padding: 4px 12px;
+    cursor: pointer;
+  }
+  .index {
+    position: static;
+    height: auto;
+    padding-block: 16px 2rem;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .index .brand { display: none; }
+  .shell:not(.menu-open) .index { display: none; }
+  .reader {
+    padding-block: 1.5rem 4rem;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .code { margin-inline: -16px; }
+  .features { grid-template-columns: minmax(0, 1fr); }
+  .pg { --pg-width: calc(100% + 32px); border-inline: 0; }
+  .pg-head { flex-wrap: wrap; row-gap: 6px; }
+  .pg-body { grid-template-columns: minmax(0, 1fr); }
+  .pg-editor { border-bottom: 1px solid var(--violet-border); }
+  .pg-split { display: none; }
+  .pg-output { min-height: 12rem; }
+}
