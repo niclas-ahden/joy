@@ -1,0 +1,68 @@
+name: Refresh versions.json
+
+# Attach versions.json to the latest release, where ./joy reads it from
+# releases/latest/download/versions.json, a plain download rather than a
+# rate-limited API call. It is written from the releases every time (see
+# .github/scripts/versions.roc), so this runs whenever they change:
+#
+# - a release published, deleted or edited here, by hand
+# - every morning from test-nightly-roc.yml, which may have moved the
+#   recommended nightly. Its notes edit is made with GITHUB_TOKEN, and events
+#   from GITHUB_TOKEN start no workflow, so `edited` never fires for it.
+#
+# A deleted release drops out on the next run, and if it was the latest one,
+# the release that is latest now gets a fresh file. Release events run the
+# workflow as it was at the release's tag, so a release tagged before this
+# file existed only reaches the index through the morning run.
+
+on:
+  release:
+    types: [published, deleted, edited]
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    name: Attach versions.json to the latest release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    # One at a time. Each run writes the whole file from the releases, so the
+    # one that finishes last is right, and none needs to be cancelled.
+    concurrency:
+      group: versions-index
+      cancel-in-progress: false
+    steps:
+      # The default branch's script, whatever triggered the run. A deleted
+      # release's tag may be gone, and an old tag's script may predate this.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - id: setup
+        uses: ./.github/actions/setup
+        with:
+          roc: pinned
+          github-token: ${{ github.token }}
+
+      - name: Write versions.json from the releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ${{ steps.setup.outputs.prefix }} roc .github/scripts/versions.roc "$GITHUB_REPOSITORY" versions.json
+
+      # --clobber deletes the old file before uploading the new one, so the
+      # file is missing for a few seconds. ./joy retries once.
+      - name: Attach it to the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          latest=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName 2>/dev/null) || {
+            echo "No published release yet, so there is nothing to attach versions.json to."
+            exit 0
+          }
+          gh release upload "$latest" versions.json --clobber --repo "$GITHUB_REPOSITORY"
+          echo "versions.json attached to $latest"
