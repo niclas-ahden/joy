@@ -1,8 +1,8 @@
 #!/usr/bin/env roc
 # Run:
 #
-#   ./build.roc -- --opt=speed                       every app, what tests.roc and CI want
-#   ./build.roc -- --opt=speed examples/counter.roc  just that one, what watch.roc wants
+#   ./build.roc --opt=speed                       every app, what tests.roc and CI want
+#   ./build.roc --opt=speed examples/counter.roc  just that one, what watch.roc wants
 #
 # To build the Rust host and link each app into `build/<opt>/<name>.wasm`.
 # Run from the repo root.
@@ -21,11 +21,13 @@
 # exercises their growth path, and `JOY_BENCH` to compile in the host's phase
 # instrumentation (see tests/bench/).
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
+	runtime: "tools/runtime/main.roc",
 }
 
 import pf.Cmd
+import pf.OsStr
 import pf.Env
 import pf.Path
 import pf.Stderr
@@ -269,6 +271,9 @@ parser = Cli.assert_valid(
 
 # Read the counts out of a line like "0 errors and 1 warning found in 704ms".
 # Lines that are not a summary fail to parse and are skipped by the caller.
+# WORKAROUND: roc-lang/roc#12707. Without this annotation roc can panic with
+# `guarded list invalidated` while building. Drop the annotation when fixed.
+summary_counts : Str -> Try({ errors : U64, warnings : U64 }, [NotFound])
 summary_counts = |line| {
 	at_error = line.split_first(" error")?
 	at_and = at_error.after.split_first(" and ")?
@@ -281,11 +286,8 @@ summary_counts = |line| {
 # roc spreads its diagnostics across stdout and stderr, and a run that reports
 # errors can exit 0, so gather both streams whatever the exit code was.
 capture! = |cmd| {
-	match cmd.exec_output_bytes!() {
-		Ok(streams) => Ok(Str.from_utf8_lossy(streams.stdout_bytes.concat(streams.stderr_bytes)))
-		Err(NonZeroExitCodeB(streams)) =>
-			Ok(Str.from_utf8_lossy(streams.stdout_bytes.concat(streams.stderr_bytes)))
-
-		Err(FailedToGetExitCodeB(_)) => fail!("could not run ${Cmd.to_str(cmd)}")
+	match cmd.run!() {
+		Ok(output) => Ok(Str.from_utf8_lossy(output.stdout_bytes.concat(output.stderr_bytes)))
+		Err(_) => fail!("could not run ${cmd.to_str()}")
 	}
 }

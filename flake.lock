@@ -77,11 +77,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1791260994,
-        "narHash": "sha256-Miqqk/ammqnTUxaoCyvtwoPeLbI1ksFyLxi/CazZpWY=",
+        "lastModified": 1792773339,
+        "narHash": "sha256-rZLrzrC6i+jnTAlvPZHogKDulY7WWDEv9hJeHieO7Zw=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "151fa4e8ddfdd8dd25d945ad94ed54a13de9f6e4",
+        "rev": "3ec636362e1816bc2f0888fa0fa2c69f1bc9e504",
         "type": "github"
       },
       "original": {
@@ -134,11 +134,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1788770534,
-        "narHash": "sha256-eeq/DJMNfhF24LiOVO7o9iAUn4ds/RwuuSBOL4vWsBY=",
+        "lastModified": 1793007942,
+        "narHash": "sha256-BYKfT66Je0KUf5Km3/f5PFzhYzILBPIqqR/gz6Le8Dw=",
         "owner": "niclas-ahden",
         "repo": "roc-nix",
-        "rev": "96d7f3c02ec11bdf7439df251c1d6d80ecd6fc5b",
+        "rev": "b8e0ae8afa4fff924221fab238df3605c5550cf4",
         "type": "github"
       },
       "original": {
@@ -155,18 +155,18 @@
       },
       "locked": {
         "dir": "src",
-        "lastModified": 1791298792,
-        "narHash": "sha256-HUtZGFaCQQxnU9Fk67v86KEBwV0xiAH4XZFyKFKo23o=",
+        "lastModified": 1793259283,
+        "narHash": "sha256-jD5o3BjlTZxBtlH+RjBIK4FzjHoh62U5A+UYyBu1HHU=",
         "owner": "roc-lang",
         "repo": "roc",
-        "rev": "233bb124dc2ded5bcc0a551b1fdf0fa7a4dda0e9",
+        "rev": "0c440e5f316f70438af984f2b548da69ab721de9",
         "type": "github"
       },
       "original": {
         "dir": "src",
         "owner": "roc-lang",
         "repo": "roc",
-        "rev": "233bb124dc2ded5bcc0a551b1fdf0fa7a4dda0e9",
+        "rev": "0c440e5f316f70438af984f2b548da69ab721de9",
         "type": "github"
       }
     },

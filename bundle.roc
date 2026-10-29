@@ -16,10 +16,11 @@
 # Archive names are the blake3 hash of their contents, so re-bundling
 # unchanged sources yields the same name.
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
 }
 
 import pf.Cmd
+import pf.OsStr
 import pf.Path
 import pf.Stdout
 import Util exposing [fail!, run!]
@@ -27,7 +28,9 @@ import Util exposing [fail!, run!]
 main! = |_args| {
 	# The host ships inside the platform bundle, so it must be fresh.
 	# Naming an example is the cheapest way through build.roc.
-	run!("roc", ["./build.roc", "--", "--opt=speed", "hello"])?
+	# WORKAROUND: roc-lang/roc#12693 and #12701. A shared roc cache can crash
+	# this compile. Drop `--no-cache` when fixed.
+	run!("roc", ["--no-cache", "./build.roc", "--opt=speed", "hello"])?
 
 	# Start from an empty dist/ so it holds exactly one archive. A leftover
 	# from an earlier run would make `dist/*.tar.zst` ambiguous, and the
@@ -71,12 +74,9 @@ main! = |_args| {
 # "Created: <path>" on success, so a missing line means it failed, whatever
 # the exit code was.
 bundle! = |command| {
-	output = match Cmd.new_str("bash").args_str(["-c", command]).exec_output_bytes!() {
-		Ok(streams) => Str.from_utf8_lossy(streams.stdout_bytes.concat(streams.stderr_bytes))
-		Err(NonZeroExitCodeB(streams)) =>
-			Str.from_utf8_lossy(streams.stdout_bytes.concat(streams.stderr_bytes))
-
-		Err(FailedToGetExitCodeB(_)) => fail!("could not run: ${command}")?
+	output = match Cmd.new(OsStr.from_str("bash")).args(["-c", command].map(OsStr.from_str)).run!() {
+		Ok(ran) => Str.from_utf8_lossy(ran.stdout_bytes.concat(ran.stderr_bytes))
+		Err(_) => fail!("could not run: ${command}")?
 	}
 
 	created = output.split_on("\n").keep_oks(|line| line.split_first("Created: ")).first()

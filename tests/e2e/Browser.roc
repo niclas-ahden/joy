@@ -1,5 +1,7 @@
 import pf.Cmd
+import pf.Duration
 import pf.Env
+import pf.OsStr
 import playwright.Playwright exposing [assert!]
 
 ## Shared plumbing for the browser tests in this directory. Every test is a
@@ -31,7 +33,7 @@ Browser :: [].{
 			_ => Chromium(DefaultChannel)
 		}
 		Playwright.launch_page_with!(
-			{ new: Cmd.new_str, spawn!: Cmd.spawn_leashed! },
+			{ new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis },
 			{ browser_type, timeout: TimeoutMilliseconds(10000) },
 		)
 	}
@@ -47,7 +49,7 @@ Browser :: [].{
 			_ => Chromium(DefaultChannel)
 		}
 		{ browser, page } = Playwright.launch_page_with!(
-			{ new: Cmd.new_str, spawn!: Cmd.spawn_leashed! },
+			{ new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis },
 			{ browser_type, timeout: TimeoutMilliseconds(10000) },
 		)?
 		page.navigate!("${base}/${app_name}/")?

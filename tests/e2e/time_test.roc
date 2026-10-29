@@ -5,8 +5,8 @@
 # must start a fresh one. The one test here that waits on wall-clock time,
 # by nature: it costs a few seconds.
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
-	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.11.1/GJz6pEptEAmK2FqGnzJQUhF9cymdiV3vwETDdCDevAZ1.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
+	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.13.1/AWahhV9oKjtqpZNTG5mUK5i86Fy1Lwssrg6yeDG52Bvy.tar.zst",
 }
 
 import pf.Sleep
@@ -36,7 +36,7 @@ main! = |_args| {
 	# a window longer than a tick, nothing moves.
 	page.find("#pause").click!()?
 	paused_at = page.find(level).text!()?
-	Sleep.millis!(1500)
+	Sleep.millis!(1500)?
 	assert!(page.find(level).has_text(paused_at))?
 
 	# Unpause declares the subscription again: a fresh interval ticks.

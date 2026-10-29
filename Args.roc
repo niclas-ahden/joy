@@ -9,10 +9,8 @@ import Util exposing [fail!]
 ## on weaver. Every script takes `--opt=<level>`, mirroring roc's own flag,
 ## and each level builds into its own build/<opt>/ tree.
 ##
-## The scripts run through a plain `#!/usr/bin/env roc` shebang, so roc's `--`
-## separator has to come before these flags: `./tests.roc -- --opt=dev`.
-## Without it roc claims --opt and --help for itself. Plain arguments, like an
-## app name, need no separator.
+## The scripts run through a plain `#!/usr/bin/env roc` shebang, and roc hands
+## every argument after the script to it: `./tests.roc --opt=dev`.
 Args :: [].{
 
 	## The `--opt` option itself, one definition for every script's parser.
@@ -38,7 +36,7 @@ Args :: [].{
 	## Run a script's parser over its args. Help and version requests print
 	## and exit zero, usage errors print and exit non-zero, so callers only
 	## see a parsed config. `example` is the script's own arguments, e.g.
-	## "--opt=speed", shown by separator_hint! when they went missing.
+	## "--opt=speed", shown by separator_hint! after a stray `--`.
 	parse! = |parser, args, example| {
 		match Cli.parse_or_display_message(parser, args, |arg| Utf8(OsStr.display(arg))) {
 			Err(Help(message)) => {
@@ -61,11 +59,11 @@ Args :: [].{
 		}
 	}
 
-	## A forgotten `--` leaves the script with no arguments at all: roc took
-	## them. Weaver can only report the option it did not get, so name the
-	## likely cause when the script was handed nothing.
+	## roc passes `--` on to the script, so after one weaver reads every flag
+	## as a plain argument and reports only the option it did not get. Name
+	## the likely cause when the arguments start with `--`.
 	separator_hint! = |args, example|
-		if !args.is_empty() {
+		if args.first().map_ok(OsStr.display) != Ok("--") {
 			Ok({})
 		} else {
 			match Env.program_name!() {
@@ -75,10 +73,9 @@ Args :: [].{
 						Str.join_with(
 							[
 								"",
-								"This script received no arguments. If you passed some, roc claimed",
-								"them: its `--` separator has to come before a script's own flags.",
+								"roc passes `--` on to the script, so leave it out:",
 								"",
-								"    ${OsStr.display(script)} -- ${example}",
+								"    ${OsStr.display(script)} ${example}",
 							],
 							"\n",
 						),

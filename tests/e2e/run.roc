@@ -3,8 +3,8 @@
 # roc-playwright). Invoked by e2e.roc, which builds the examples, serves the
 # repo root and exports E2E_URL first.
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
-	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.6.1/55UFmX5Ye5dNxWYzbzxQfsE54KTNwaoHNmYan163HbzB.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
+	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.7.0/BGjQKbG9U3V8cH6mRbypUAFVqFoVEu6n9bsA3QmFL1f4.tar.zst",
 }
 
 import pf.Cmd
@@ -16,31 +16,31 @@ import pf.Utc
 import spec.Spec
 
 hooks = {
-	spawn_test!: |file, envs|
-		# WORKAROUND: roc-lang/roc#11442. With a warm module cache,
-		# `--opt=speed` builds fail to link with `undefined symbol:
-		# roc__static_const_N`. Drop `--no-cache` when fixed.
-		Cmd.new(OsStr.utf8("roc"))
-			.args_str(["--opt=speed", "--no-cache", file])
-			.envs_str(envs)
-			.stdout(Capture)
-			.stderr(Capture)
-			.spawn_leashed!(),
-	try_wait!: Cmd.Child.try_wait!,
-	kill!: Cmd.Child.kill!,
+	new: Cmd.new,
+	os_str: OsStr.from_str,
+	# Leashed, so a test killed on timeout takes its browser with it.
+	spawn!: Cmd.Command.spawn_leashed!,
+	poll!: Cmd.Child.poll!,
 	wait!: Cmd.Child.wait!,
+	kill!: Cmd.Child.kill!,
+	close!: Cmd.Child.close!,
+	path: Path.utf8,
 	# tests/e2e/ itself, plus each directory example's own tests/
 	# (examples/spa-todomvc/tests/): a directory example keeps its browser tests
 	# next to its app, and this runner spawns them all the same way.
-	list_dir!: |dir| {
-		base = Path.utf8(dir).list!()?.map(Path.display)
-		per_example = Path.utf8("examples").list!()?
-			.map_try!(|entry| Ok((Path.utf8("${Path.display(entry)}/tests").list!() ?? []).map(Path.display)))?
-		Ok(base.concat(per_example.join()))
+	list!: |dir| {
+		base = Path.list!(dir)?
+		if Path.display(dir) == "tests/e2e" {
+			per_example = Path.utf8("examples").list!()?
+				.map_try!(|entry| Ok(Path.utf8("${Path.display(entry)}/tests").list!() ?? []))?
+			Ok(base.concat(per_example.join()))
+		} else {
+			Ok(base)
+		}
 	},
 	print!: Stdout.line!,
-	utc_now!: Utc.now!,
-	sleep_millis!: Sleep.millis!,
+	now!: Utc.now!,
+	sleep!: Sleep.millis!,
 }
 
 main! = |_args| {
@@ -48,6 +48,9 @@ main! = |_args| {
 		hooks,
 		"tests/e2e",
 		{
+			# WORKAROUND: roc-lang/roc#12693 and #12701. A shared roc cache can crash
+			# the compile of each test. Drop `--no-cache` when fixed.
+			test_command: ["roc", "--opt=speed", "--no-cache"],
 			# Each test runs its own browser; two in flight keeps memory sane.
 			max_workers: 2,
 			worker_envs: |_index| [],

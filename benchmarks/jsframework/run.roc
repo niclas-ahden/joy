@@ -18,12 +18,12 @@
 # (clone-setup/ here), and this script detects its .envrc and wraps the
 # benchmark work in `direnv exec`.
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
 }
 
 import pf.Cmd
+import pf.OsStr
 import pf.Env
-import pf.IOErr
 import pf.Sleep
 import pf.Stderr
 import pf.Stdout
@@ -248,9 +248,9 @@ run_pair! = |fork, in_fork, framework, bench, extra| {
 		],
 		"\n",
 	)
-	child = match Cmd.new_str("bash").args_str(["-c", script]).stdout(Capture).stderr(Capture).spawn_leashed!() {
+	child = match Cmd.new(OsStr.from_str("bash")).args(["-c", script].map(OsStr.from_str)).stdout(Capture).stderr(Capture).spawn_leashed!() {
 		Ok(c) => c
-		Err(err) => fail!("could not start the benchmark runner: ${IOErr.to_str(err)}")?
+		Err(err) => fail!("could not start the benchmark runner: ${Str.inspect(err)}")?
 	}
 	report_pair!(framework, bench, wait_pair!(child, pair_deadline_polls))?
 	barrier!(fork, in_fork)
@@ -260,10 +260,10 @@ run_pair! = |fork, in_fork, framework, bench, extra| {
 # when the deadline passes. SIGKILL skips puppeteer's exit handlers, so a
 # timed out pair reliably leaves its browser behind for barrier! to sweep.
 wait_pair! = |child, polls_left| {
-	match child.try_wait!() {
-		Ok([exit, ..]) => Finished(exit)
+	match poll!(child) {
+		Ok(Finished(exit)) => Finished(exit)
 		Err(_) => Lost
-		Ok([]) => {
+		Ok(Running) => {
 			if polls_left == 0 {
 				_ = child.kill!()
 				match child.wait!() {
@@ -271,7 +271,7 @@ wait_pair! = |child, polls_left| {
 					Err(_) => Lost
 				}
 			} else {
-				Sleep.millis!(1000)
+				_ = Sleep.millis!(1000)
 				wait_pair!(child, polls_left - 1)
 			}
 		}
@@ -446,21 +446,26 @@ sh_capture! = |script| capture_line!("bash", ["-c", script])
 # Run a command with inherited stdio, exiting with the child's code when it
 # fails.
 run! = |program, args| {
-	match Cmd.new_str(program).args_str(args).exec_exit_code!() {
-		Ok(0) => Ok({})
-		Ok(code) => Err(Exit(code))
+	match Cmd.new(OsStr.from_str(program)).args(args.map(OsStr.from_str)).inherit_stdio().run!() {
+		Ok(output) =>
+			match output.status {
+				Exited(0) => Ok({})
+				Exited(code) => Err(Exit(code))
+				Signaled(_) => Err(Exit(1))
+			}
+
 		Err(_) => Err(Exit(1))
 	}
 }
 
 # Run a command and return its first line of stdout, trimmed.
 capture_line! = |program, args| {
-	match Cmd.new_str(program).args_str(args).exec_output_bytes!() {
-		Ok(streams) => {
-			line = Str.from_utf8_lossy(streams.stdout_bytes).split_on("\n").first() ?? ""
+	match Cmd.new(OsStr.from_str(program)).args(args.map(OsStr.from_str)).run!() {
+		Ok(output) if output.status == Exited(0) => {
+			line = Str.from_utf8_lossy(output.stdout_bytes).split_on("\n").first() ?? ""
 			Ok(line.trim())
 		}
-		Err(_) => Err(CaptureFailed)
+		_ => Err(CaptureFailed)
 	}
 }
 
@@ -469,3 +474,8 @@ fail! = |message| {
 	Stderr.line!("error: ${message}") ?? {}
 	Err(Exit(1))
 }
+
+# WORKAROUND: roc-lang/roc#12692. A dev build frees a Child whose method a
+# `match` with an early return called, which kills the child. Call
+# `child.poll!()` directly when fixed.
+poll! = |child| child.poll!()

@@ -13,7 +13,7 @@ platform ""
 		# this exact URL and `import html.Html`. It must be the same URL, or
 		# the app's Html is a different nominal type than the one `render`
 		# is required to return.
-		html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.0/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
+		html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.1/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 	}
 	provides {
 		"roc_init": init_for_host,

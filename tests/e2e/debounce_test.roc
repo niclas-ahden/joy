@@ -6,8 +6,8 @@
 # hand, because clicking inside a real 200ms window would race the timer on
 # a busy machine.
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
-	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.11.1/GJz6pEptEAmK2FqGnzJQUhF9cymdiV3vwETDdCDevAZ1.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
+	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.13.1/AWahhV9oKjtqpZNTG5mUK5i86Fy1Lwssrg6yeDG52Bvy.tar.zst",
 }
 
 import pf.Sleep
@@ -26,7 +26,7 @@ main! = |_args| {
 
 	# The timer fired once. Well past another debounce window it must not
 	# have fired again.
-	Sleep.millis!(300)
+	Sleep.millis!(300)?
 	assert!(page.find("#searches").has_text("searches: 1"))?
 
 	# The key is reusable: another keystroke arms a fresh timer.

@@ -5,10 +5,12 @@
 # Optional args: a filename pattern (substring) and --fail-fast.
 # Optional env: ROC_SPEC_MAX_WORKERS (default 4).
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
-	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.6.1/55UFmX5Ye5dNxWYzbzxQfsE54KTNwaoHNmYan163HbzB.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
+	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.7.0/BGjQKbG9U3V8cH6mRbypUAFVqFoVEu6n9bsA3QmFL1f4.tar.zst",
+	http: "https://github.com/roc-lang/http/releases/download/2.0.0/6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst",
 }
 
+import http.Request
 import pf.Cmd
 import pf.Env
 import pf.Http
@@ -17,29 +19,24 @@ import pf.Path
 import pf.Sleep
 import pf.Stderr
 import pf.Stdout
-import pf.Url
 import pf.Utc
 import spec.Spec
 import spec.TestEnvironment
 
-effects = {
-	spawn_test!: |file, envs|
-		# WORKAROUND: roc-lang/roc#11442. With a warm module cache,
-		# `--opt=speed` builds fail to link with `undefined symbol:
-		# roc__static_const_N`. Drop `--no-cache` when fixed.
-		Cmd.new(OsStr.utf8("roc"))
-			.args_str(["--opt=speed", "--no-cache", file])
-			.envs_str(envs)
-			.stdout(Capture)
-			.stderr(Capture)
-			.spawn_leashed!(),
-	try_wait!: Cmd.Child.try_wait!,
-	kill!: Cmd.Child.kill!,
+hooks = {
+	new: Cmd.new,
+	os_str: OsStr.from_str,
+	# Leashed, so a test killed on timeout takes its browser with it.
+	spawn!: Cmd.Command.spawn_leashed!,
+	poll!: Cmd.Child.poll!,
 	wait!: Cmd.Child.wait!,
-	list_dir!: |dir| Path.list!(Path.utf8(dir)).map_ok(|entries| entries.map(Path.display)),
+	kill!: Cmd.Child.kill!,
+	close!: Cmd.Child.close!,
+	path: Path.utf8,
+	list!: Path.list!,
 	print!: Stdout.line!,
-	utc_now!: Utc.now!,
-	sleep_millis!: Sleep.millis!,
+	now!: Utc.now!,
+	sleep!: Sleep.millis!,
 }
 
 # ./watch.roc serves on 8000, so the test servers start above it and a dev
@@ -100,7 +97,7 @@ warm_package_cache! = |test_dir|
 			Stdout.line!("Warming the package cache...")?
 			# Whatever this reports about the file itself is the test run's
 			# business, so the output and the exit code are both dropped here.
-			_ = Cmd.new(OsStr.utf8("roc")).args_str(["check", file]).exec_output!()
+			_ = Cmd.new(OsStr.from_str("roc")).args(["check", file].map(OsStr.from_str)).run!()
 			Ok({})
 		}
 	}
@@ -111,23 +108,22 @@ warm_package_cache! = |test_dir|
 spawn_worker! : U16 => Try(Cmd.Child, _)
 spawn_worker! = |index| {
 	port = base_port + index
-	cmd =
-		Cmd.new_str("caddy")
-			.args_str(["run", "--config", "Caddyfile", "--adapter", "caddyfile"])
-			.env_str("JOY_WATCH_PORT", port.to_str())
-			.stdout(Null)
-			.stderr(Null)
-	Cmd.spawn_leashed!(cmd).map_err(|e| ServerSpawnFailed(index, CaddyErr(e)))
+	Cmd.new(OsStr.from_str("caddy"))
+		.args(["run", "--config", "Caddyfile", "--adapter", "caddyfile"].map(OsStr.from_str))
+		.env(OsStr.from_str("JOY_WATCH_PORT"), OsStr.from_str(port.to_str()))
+		.stdout(Null)
+		.stderr(Null)
+		.spawn_leashed!()
+		.map_err(|e| ServerSpawnFailed(index, CaddyErr(e)))
 }
 
 ## One readiness probe against a worker's server: any HTTP response means it
 ## is up
 check_worker! : U16 => Bool
-check_worker! = |port|
-	match Url.parse("http://localhost:${port.to_str()}") {
-		Err(_) => Bool.False
-		Ok(u) => Http.get_utf8!(u).is_ok()
-	}
+check_worker! = |port| {
+	request = Request.from_method(GET).with_uri("http://localhost:${port.to_str()}")
+	Http.send!(request, {}).is_ok()
+}
 
 main! : List(OsStr) => Try({}, _)
 main! = |os_args| {
@@ -141,7 +137,7 @@ main! = |os_args| {
 
 	# Spawn all test servers first (spawn_leashed! so they die with the
 	# runner), then poll them all until every one answers (up to ~30s).
-	servers = TestEnvironment.start!({ sleep!: Sleep.millis! }, {
+	servers = TestEnvironment.start!(hooks, {
 		count: workers,
 		spawn!: spawn_worker!,
 		ready!: |index| check_worker!(base_port + index),
@@ -151,7 +147,10 @@ main! = |os_args| {
 
 	Stdout.line!("All ${workers.to_str()} test servers ready")?
 
-	results = Spec.run_filtered!(effects, "tests", {
+	results = Spec.run_filtered!(hooks, "tests", {
+		# WORKAROUND: roc-lang/roc#12693 and #12701. A shared roc cache can crash
+		# the compile of each test. Drop `--no-cache` when fixed.
+		test_command: ["roc", "--opt=speed", "--no-cache"],
 		max_workers: workers,
 		worker_envs,
 		before_each!: |_index| Ok({}),

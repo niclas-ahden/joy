@@ -1,8 +1,8 @@
 #!/usr/bin/env roc
 # Run:
 #
-#   ./tests.roc -- --opt=speed
-#   ./tests.roc -- --opt=dev
+#   ./tests.roc --opt=speed
+#   ./tests.roc --opt=dev
 #
 # To build everything at that optimization level (see build.roc) and run the
 # node harness checks against it. `--opt` is required and is handed explicitly
@@ -13,10 +13,10 @@
 # --opt and --help for itself instead of passing them on.
 #
 # Environment variables pass straight through to build.roc, so
-# `SMALL_BUFFERS=1 ./tests.roc -- --opt=speed` runs the whole suite with tiny
+# `SMALL_BUFFERS=1 ./tests.roc --opt=speed` runs the whole suite with tiny
 # initial outbound buffers, exercising the buffer growth path on every render.
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
 }
 
@@ -36,7 +36,9 @@ main! = |args| {
 	run!("roc", ["test", "platform/main.roc"])?
 
 	Stdout.line!("== building and testing with --opt=${opt}")?
-	run!("roc", ["./build.roc", "--", "--opt=${opt}"])?
+	# WORKAROUND: roc-lang/roc#12693 and #12701. A shared roc cache can crash
+	# this compile. Drop `--no-cache` when fixed.
+	run!("roc", ["--no-cache", "./build.roc", "--opt=${opt}"])?
 
 	# node:test runs each harness in its own child process (concurrently) and
 	# keeps going past a failing file, so one broken harness can't hide the

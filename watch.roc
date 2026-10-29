@@ -2,7 +2,7 @@
 # Run:
 #
 #   ./watch.roc examples/counter.roc               at --opt=speed, the default
-#   ./watch.roc -- --opt=dev examples/counter.roc  at another level
+#   ./watch.roc --opt=dev examples/counter.roc  at another level
 #
 # To build the given example at that optimization level and serve it at
 # http://localhost:8000. You can then edit the example and it'll rebuild
@@ -16,13 +16,13 @@
 #
 # Set the environment variable `JOY_WATCH_PORT` to change the port (default 8000).
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
 }
 
 import pf.Cmd
 import pf.Env
-import pf.IOErr
+import pf.OsStr
 import pf.Sleep
 import pf.Stdout
 import weaver.Cli
@@ -38,7 +38,7 @@ main! = |args| {
 	full_name = config.app_name
 	name = example_name(full_name)
 
-	check_watchexec!(Cmd.new_str("watchexec").arg_str("--version"))?
+	check_watchexec!(Cmd.new(OsStr.from_str("watchexec")).arg(OsStr.from_str("--version")))?
 
 	server = start_server!(port, opt, name)?
 
@@ -46,9 +46,14 @@ main! = |args| {
 
 	# check_watchexec! has already ruled out the usual failure, a missing
 	# binary, so an error here is something rarer and worth naming.
-	exit_code = match watchexec_cmd(opt, full_name).exec_exit_code!() {
-		Ok(code) => code
-		Err(FailedToGetExitCode(problem)) => fail!("watchexec: ${IOErr.to_str(problem.err)}")?
+	exit_code = match watchexec_cmd(opt, full_name).inherit_stdio().run!() {
+		Ok(output) =>
+			match output.status {
+				Exited(code) => code
+				Signaled(_) => 1
+			}
+
+		Err(problem) => fail!("watchexec: ${Str.inspect(problem)}")?
 	}
 
 	server.close!() ?? {}
@@ -61,24 +66,24 @@ main! = |args| {
 }
 
 # The rebuild loop: watchexec reruns build.roc whenever a source file changes.
+# WORKAROUND: roc-lang/roc#12693 and #12701. A shared roc cache can crash the
+# build.roc compile. Drop `--no-cache` when fixed.
 watchexec_cmd = |opt, full_name|
-	Cmd.new_str("watchexec")
-		.args_str(["--no-global-ignore", "--restart", "--print-events", "--debounce", "500ms", "--exts", "roc,rs,html,css,js,mjs,toml", "--", "roc", "./build.roc", "--", "--opt=${opt}", full_name])
+	Cmd.new(OsStr.from_str("watchexec"))
+		.args(["--no-global-ignore", "--restart", "--print-events", "--debounce", "500ms", "--exts", "roc,rs,html,css,js,mjs,toml", "--", "roc", "--no-cache", "./build.roc", "--opt=${opt}", full_name].map(OsStr.from_str))
 
 # Check that watchexec is installed
 check_watchexec! = |probe|
-	match probe.exec_output_bytes!() {
+	# Any exit status will do: the only thing this check is for is whether
+	# watchexec is there at all, not whether it liked being asked.
+	match probe.run!() {
 		Ok(_) => Ok({})
 
-		# It is installed, it just did not like being asked. Good enough, the
-		# only thing this check is for is whether it is there at all.
-		Err(NonZeroExitCodeB(_)) => Ok({})
-
-		Err(FailedToGetExitCodeB(err)) =>
+		Err(err) =>
 			fail!(
 				Str.join_with(
 					[
-						"Could not run watchexec: ${IOErr.to_str(err)}",
+						"Could not run watchexec: ${Str.inspect(err)}",
 						"",
 						"The watch loop needs watchexec to rebuild on change. Please install it ",
 						"using `brew install watchexec`, `cargo install watchexec-cli`, or see",
@@ -94,13 +99,13 @@ check_watchexec! = |probe|
 # down with us.
 start_server! = |port, opt, name| {
 	server =
-		match Cmd.new_str("node").args_str(["www/serve.mjs", port, opt, name]).stdout(Capture).stderr(Capture).spawn_leashed!() {
+		match Cmd.new(OsStr.from_str("node")).args(["www/serve.mjs", port, opt, name].map(OsStr.from_str)).stdout(Capture).stderr(Capture).spawn_leashed!() {
 			Ok(child) => child
 			Err(err) =>
 				fail!(
 					Str.join_with(
 						[
-							"Could not run node: ${IOErr.to_str(err)}",
+							"Could not run node: ${Str.inspect(err)}",
 							"",
 							"Joy's dev server is a node script. Install node (v22) and make sure",
 							"it is on your PATH.",
@@ -110,12 +115,12 @@ start_server! = |port, opt, name| {
 				)?
 			}
 
-	Sleep.millis!(300)
+	Sleep.millis!(300)?
 
-	match server.try_wait!() {
-		Ok([]) => Ok(server)
+	match poll!(server) {
+		Ok(Running) => Ok(server)
 
-		Ok([exit, ..]) => {
+		Ok(Finished(exit)) => {
 			said = Str.from_utf8_lossy(exit.stdout_bytes.concat(exit.stderr_bytes)).trim()
 			code = match exit.status {
 				Exited(c) => c.to_str()
@@ -131,7 +136,7 @@ start_server! = |port, opt, name| {
 						"./watch.roc whose dev server outlived the terminal it ran in. Stop that",
 						"process, or pick another port:",
 						"",
-						"    JOY_WATCH_PORT=8001 ./watch.roc -- --opt=${opt} ${name}",
+						"    JOY_WATCH_PORT=8001 ./watch.roc --opt=${opt} ${name}",
 					],
 					"\n",
 				)
@@ -139,8 +144,7 @@ start_server! = |port, opt, name| {
 			)
 		}
 
-		Err(IO(err)) => fail!("Could not check on the dev server: ${IOErr.to_str(err)}")
-		Err(other) => fail!("Could not check on the dev server: ${Str.inspect(other)}")
+		Err(problem) => fail!("Could not check on the dev server: ${Str.inspect(problem)}")
 	}
 }
 
@@ -164,3 +168,8 @@ parser = Cli.assert_valid(
 		},
 	),
 )
+
+# WORKAROUND: roc-lang/roc#12692. A dev build frees a Child whose method a
+# `match` with an early return called, which kills the child. Call
+# `child.poll!()` directly when fixed.
+poll! = |child| child.poll!()

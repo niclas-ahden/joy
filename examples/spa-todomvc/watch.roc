@@ -14,12 +14,12 @@
 #
 # Set the environment variable `JOY_WATCH_PORT` to change the port (default 8000).
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
 }
 
 import pf.Cmd
 import pf.Env
-import pf.IOErr
+import pf.OsStr
 import pf.Sleep
 import pf.Stderr
 import pf.Stdout
@@ -28,11 +28,13 @@ main! = |_args| {
 	port = Env.var_str!("JOY_WATCH_PORT") ?? "8000"
 
 	# ./build.roc once up front so that Joy's assets are in place when the server starts
-	build = Cmd.new_str("roc").args_str(["./build.roc"]).exec_exit_code!()
+	# WORKAROUND: roc-lang/roc#12693 and #12701. A shared roc cache can crash
+	# this compile. Drop `--no-cache` when fixed.
+	build = Cmd.new(OsStr.from_str("roc")).args([OsStr.from_str("--no-cache"), OsStr.from_str("./build.roc")]).inherit_stdio().run!()
 
 	build_code = match build {
-		Ok(code) => code
-		Err(FailedToGetExitCode(failure)) => log_and_exit!("./build.roc", failure.err)?
+		Ok(output) => exit_code(output.status)
+		Err(failure) => log_and_exit!("./build.roc", failure)?
 	}
 
 	if build_code != 0 {
@@ -42,9 +44,9 @@ main! = |_args| {
 	}
 
 	spawned =
-		Cmd.new_str("caddy")
-			.args_str(["run", "--config", "Caddyfile", "--adapter", "caddyfile"])
-			.env_str("JOY_WATCH_PORT", port)
+		Cmd.new(OsStr.from_str("caddy"))
+			.args(["run", "--config", "Caddyfile", "--adapter", "caddyfile"].map(OsStr.from_str))
+			.env(OsStr.from_str("JOY_WATCH_PORT"), OsStr.from_str(port))
 			.stderr(Capture)
 			.spawn!()
 
@@ -54,12 +56,12 @@ main! = |_args| {
 	}
 
 	# spawn! only reports that the process started, so give caddy a moment to parse its
-	# config, then try_wait! to verify it's running
-	Sleep.millis!(200)
+	# config, then poll! to verify it's running
+	Sleep.millis!(200)?
 
-	match caddy.try_wait!() {
-		Ok([]) => {}
-		Ok([exited, ..]) => {
+	match poll!(caddy) {
+		Ok(Running) => {}
+		Ok(Finished(exited)) => {
 			code = match exited.status {
 				Exited(c) => c.to_str()
 				Signaled(signal) => "signal ${signal.to_str()}"
@@ -74,24 +76,42 @@ main! = |_args| {
 	Stdout.line!("=> Serving the app at http://localhost:${port}")?
 
 	watch =
-		Cmd.new_str("roc")
-			.args_str(["build", "--watch", "--target=wasm32", "--output=www/app.wasm", "app.roc"])
-			.exec_exit_code!()
+		Cmd.new(OsStr.from_str("roc"))
+			.args(["build", "--watch", "--target=wasm32", "--output=www/app.wasm", "app.roc"].map(OsStr.from_str))
+			.inherit_stdio()
+			.run!()
 
 	# `roc build --watch` above blocks, so we're killing caddy only when roc is dead
 	caddy.close!() ?? {}
 
 	match watch {
-		Ok(0) => Ok({})
-		Ok(code) => Err(Exit(code))
-		Err(FailedToGetExitCode(failure)) => log_and_exit!("roc", failure.err)
+		Ok(output) =>
+			match exit_code(output.status) {
+				0 => Ok({})
+				code => Err(Exit(code))
+			}
+
+		Err(failure) => log_and_exit!("roc", failure)
 	}
 }
 
+# WORKAROUND: roc-lang/roc#12692. A dev build frees a Child whose method a
+# `match` with an early return called, which kills the child. Call
+# `child.poll!()` directly when fixed.
+poll! = |child| child.poll!()
+
+# A child's exit code, 1 for one killed by a signal.
+exit_code : Cmd.ExitStatus -> I32
+exit_code = |status|
+	match status {
+		Exited(code) => code
+		Signaled(_) => 1
+	}
+
 log_and_exit! = |program, err| {
 	reason = match err {
-		NotFound => "Not found (is it installed and available on PATH?)"
-		other => IOErr.to_str(other)
+		CmdErr(StartFailed(NotFound, _)) => "Not found (is it installed and available on PATH?)"
+		other => Str.inspect(other)
 	}
 
 	Stderr.line!("Error: Could not run `${program}`: ${reason}")?

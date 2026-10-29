@@ -25,11 +25,12 @@
 # instrumentation is compiled out entirely without JOY_BENCH, so normal
 # builds pay nothing.
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
-	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.11.1/GJz6pEptEAmK2FqGnzJQUhF9cymdiV3vwETDdCDevAZ1.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
+	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.13.1/AWahhV9oKjtqpZNTG5mUK5i86Fy1Lwssrg6yeDG52Bvy.tar.zst",
 }
 
 import pf.Cmd
+import pf.Duration
 import pf.Env
 import pf.OsStr
 import pf.Path
@@ -52,12 +53,14 @@ main! = |args| {
 	threshold = F64.from_str(Env.var_str!("BENCH_THRESHOLD") ?? "") ?? 1.10
 
 	Stdout.line!("== building jsbench_keyed with joy_bench instrumentation ==")?
-	build_code = Cmd.new_str("roc").args_str(["./build.roc"])
-		.args_str(["--", "--opt=speed", "tests/apps/jsbench_keyed.roc"])
-		.env_str("JOY_BENCH", "1")
-		.exec_exit_code!()
-		.ok_or(1)
-	_ = if build_code == 0 {
+	# WORKAROUND: roc-lang/roc#12693 and #12701. A shared roc cache can crash
+	# this compile. Drop `--no-cache` when fixed.
+	built = Cmd.new(OsStr.from_str("roc"))
+		.args(["--no-cache", "./build.roc", "--opt=speed", "tests/apps/jsbench_keyed.roc"].map(OsStr.from_str))
+		.env(OsStr.from_str("JOY_BENCH"), OsStr.from_str("1"))
+		.inherit_stdio()
+		.run!()
+	_ = if built.map_ok(|output| output.status == Exited(0)) == Ok(Bool.True) {
 		{}
 	} else {
 		fail!("build failed")?
@@ -67,8 +70,8 @@ main! = |args| {
 	# exits, pass or fail. Pinned mode: jsbench_keyed is the site's only app.
 	# The keyed bracket is the one tracked here, since it is the bracket the
 	# results table compares Joy on.
-	server = Cmd.new_str("node")
-		.args_str(["www/serve.mjs", port, "speed", "jsbench_keyed"])
+	server = Cmd.new(OsStr.from_str("node"))
+		.args(["www/serve.mjs", port, "speed", "jsbench_keyed"].map(OsStr.from_str))
 		.stdout(Null)
 		.stderr(Null)
 		.spawn_leashed!() ? |e| SpawnFailed(e)
@@ -77,7 +80,7 @@ main! = |args| {
 
 	Stdout.line!("== driving ${steps.to_str()} steps (${warmup.to_str()} warmup) in Chromium ==")?
 	{ browser, page } = Playwright.launch_page!(
-		{ new: Cmd.new_str, spawn!: Cmd.spawn_leashed! },
+		{ new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis },
 		Chromium(DefaultChannel),
 	)?
 	page.navigate!(url)?
@@ -164,10 +167,11 @@ wait_for_server! = |url, attempts_left| {
 	if attempts_left == 0 {
 		Err(ServerNeverAnswered(url))
 	} else {
-		match Cmd.new_str("curl").args_str(["-sf", "-o", "/dev/null", url]).exec_exit_code!() {
-			Ok(0) => Ok({})
+		ran = Cmd.new(OsStr.from_str("curl")).args(["-sf", "-o", "/dev/null", url].map(OsStr.from_str)).run!()
+		match ran.map_ok(|output| output.status) {
+			Ok(Exited(0)) => Ok({})
 			_ => {
-				Sleep.millis!(100)
+				Sleep.millis!(100)?
 				wait_for_server!(url, attempts_left - 1)
 			}
 		}

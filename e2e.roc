@@ -1,8 +1,8 @@
 #!/usr/bin/env roc
 # Run:
 #
-#   ./e2e.roc -- --opt=speed
-#   ./e2e.roc -- --opt=dev
+#   ./e2e.roc --opt=speed
+#   ./e2e.roc --opt=dev
 #
 # To build the examples at that optimization level (flags need roc's `--`
 # separator in front of them, otherwise roc claims --opt instead of passing
@@ -18,13 +18,14 @@
 #
 # Set the environment variable `E2E_PORT` to change the port (default 8787).
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
-	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.6.1/55UFmX5Ye5dNxWYzbzxQfsE54KTNwaoHNmYan163HbzB.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
+	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.7.0/BGjQKbG9U3V8cH6mRbypUAFVqFoVEu6n9bsA3QmFL1f4.tar.zst",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
 }
 
 import pf.Cmd
 import pf.Env
+import pf.OsStr
 import pf.Http
 import pf.Sleep
 import pf.Stdout
@@ -47,7 +48,9 @@ main! = |args| {
 		fail!("playwright not found. The nix devShell provides it, or install it with `npm install -g playwright && playwright install chromium`.")?
 	}
 
-	run!("roc", ["./build.roc", "--", "--opt=${opt}"])?
+	# WORKAROUND: roc-lang/roc#12693 and #12701. A shared roc cache can crash
+	# this compile. Drop `--no-cache` when fixed.
+	run!("roc", ["--no-cache", "./build.roc", "--opt=${opt}"])?
 
 	port = Env.var_str!("E2E_PORT") ?? "8787"
 	url = "http://127.0.0.1:${port}"
@@ -56,9 +59,9 @@ main! = |args| {
 	# spawned) when this script exits, pass or fail.
 	# The same dev server watch.roc uses, started without an app name so every
 	# app is reachable under its own prefix and the tests can share one port.
-	server = Cmd.new_str("node")
-		.args_str(["www/serve.mjs", port, opt])
-		.env_str("E2E_URL", url)
+	server = Cmd.new(OsStr.from_str("node"))
+		.args(["www/serve.mjs", port, opt].map(OsStr.from_str))
+		.env(OsStr.from_str("E2E_URL"), OsStr.from_str(url))
 		.stdout(Null)
 		.stderr(Null)
 		.spawn_leashed!() ? |e| SpawnFailed(e)
@@ -67,7 +70,10 @@ main! = |args| {
 	# Bounded, so a server that never comes up fails the run instead of
 	# hanging it.
 	Wait.for_server!(
-		{ http_send!: Http.send!, sleep!: Sleep.millis! },
+		# WORKAROUND: roc-lang/roc#12606. roc-spec passing a bare `{}` as the
+		# `SendOptions` of `Http.send!` crashes roc, so this passes a lambda. Pass
+		# `Http.send!` itself when fixed.
+		{ http_send!: |request| Http.send!(request, {}), sleep!: Sleep.millis! },
 		"${url}/counter/",
 		{
 			max_attempts: 100,
@@ -79,21 +85,30 @@ main! = |args| {
 
 	# The runner is interpreted (default --opt=dev). It is only orchestration,
 	# each test is spawned compiled (`roc --opt=speed`) by roc-spec. JOY_OPT
-	# names the build under test (stack_canary_test gates its deep budget on
+	# names the build under test (stack_depth_test gates its deep budget on
 	# it), JOY_BROWSER the engine (see tests/e2e/Browser.roc). One runner
 	# pass per engine, so a red engine shows next to the others instead of
 	# hiding behind the first.
 	codes = browsers.map_try!(
 		|engine| {
 			Stdout.line!("== ${engine}")?
+			ran = Cmd.new(OsStr.from_str("roc"))
+				.args([OsStr.from_str("tests/e2e/run.roc")])
+				.env(OsStr.from_str("E2E_URL"), OsStr.from_str(url))
+				.env(OsStr.from_str("JOY_OPT"), OsStr.from_str(opt))
+				.env(OsStr.from_str("JOY_BROWSER"), OsStr.from_str(engine))
+				.inherit_stdio()
+				.run!()
 			Ok(
-				Cmd.new_str("roc")
-					.args_str(["tests/e2e/run.roc"])
-					.env_str("E2E_URL", url)
-					.env_str("JOY_OPT", opt)
-					.env_str("JOY_BROWSER", engine)
-					.exec_exit_code!()
-					.ok_or(1),
+				match ran {
+					Ok(output) =>
+						match output.status {
+							Exited(c) => c
+							Signaled(_) => 1
+						}
+
+					Err(_) => 1
+				},
 			)
 		},
 	)?
@@ -118,11 +133,19 @@ main! = |args| {
 # when every test passed.
 on_path! : Str => Bool
 on_path! = |program|
-	Cmd.new_str(program).args_str(["--version"]).exec_output_bytes!().is_ok()
+	succeeds!(program)
 	# npm installs the CLI as `<name>.cmd` on Windows, and a spawn's PATH
 	# search there only ever appends `.exe`, so the bare name resolves on
 	# Unix and nowhere else. Try the shim second.
-		or Cmd.new_str("${program}.cmd").args_str(["--version"]).exec_output_bytes!().is_ok()
+		or succeeds!("${program}.cmd")
+
+# Whether `program --version` runs and exits 0.
+succeeds! : Str => Bool
+succeeds! = |program|
+	match Cmd.new(OsStr.from_str(program)).args([OsStr.from_str("--version")]).run!() {
+		Ok(output) => output.status == Exited(0)
+		Err(_) => Bool.False
+	}
 
 parser : Cli.CliParser({ opt : Str, browser : Str })
 parser = Cli.assert_valid(

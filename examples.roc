@@ -10,10 +10,11 @@
 # fails, and the run fails if any of them did. Run from the repo root, inside
 # the nix devShell (it provides playwright, its browsers and caddy).
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
 }
 
 import pf.Cmd
+import pf.OsStr
 import pf.Path
 import pf.Stdout
 import Util exposing [fail!]
@@ -31,12 +32,17 @@ main! = |_args| {
 		.map_try!(
 			|dir| {
 				Stdout.line!("== ${dir}")?
-				code = Cmd.new_str("roc")
-					.args_str(["./tests.roc"])
+				ran = Cmd.new(OsStr.from_str("roc"))
+					.args([OsStr.from_str("./tests.roc")])
 					.cwd(Path.utf8(dir))
-					.exec_exit_code!()
-					.ok_or(1)
-				Ok(if code == 0 [] else [dir])
+					.inherit_stdio()
+					.run!()
+				passed =
+					match ran {
+						Ok(output) => output.status == Exited(0)
+						Err(_) => Bool.False
+					}
+				Ok(if passed [] else [dir])
 			},
 		)?
 		.join()

@@ -3,6 +3,8 @@
 # spelled out rather than borrowed from tests/e2e/Browser.roc, so this
 # directory stands on its own.
 import pf.Cmd
+import pf.OsStr
+import pf.Duration
 import pf.Env
 import playwright.Playwright exposing [assert!]
 
@@ -24,7 +26,7 @@ TodoPage :: [].{
 			_ => Chromium(DefaultChannel)
 		}
 		{ browser, page } = Playwright.launch_page_with!(
-			{ new: Cmd.new_str, spawn!: Cmd.spawn_leashed! },
+			{ new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis },
 			{ browser_type, timeout: TimeoutMilliseconds(10000) },
 		)?
 		watch_port = Env.var_str!("JOY_WATCH_PORT") ?? "8000"
