@@ -59,7 +59,7 @@ jobs:
           tag="${{ github.event.release.tag_name || github.ref_name }}"
 
           archive=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets \
-                      -q '.assets[].name | select(endswith(".tar.zst"))')
+                      -q '.assets[] | select(.label != "cli") | .name | select(endswith(".tar.zst"))')
           [ -n "$archive" ] && [ "$(wc -l <<<"$archive")" -eq 1 ] || {
             echo "error: expected exactly one .tar.zst asset on $tag, got: '$archive'" >&2
             exit 1

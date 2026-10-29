@@ -7,7 +7,8 @@ name: Release
 # 1. `required` gates `draft`: the pinned compiler at speed on Linux and
 #    macOS, plus the small-buffers leg. The tagged commit already passed the
 #    full browser matrix on main. This proves the compiler that bundles.
-# 2. `draft` bundles the platform and creates a DRAFT release with the bundle,
+# 2. `draft` bundles the platform and the CLI, starts and builds a project
+#    with that CLI, and creates a DRAFT release with both bundles,
 #    docs and starter notes attached. A human presses Publish. Drafting before
 #    the bundle is tested is deliberate: the draft is what the rest of the run
 #    tests, so it has to exist first, and nothing is public until Publish.
@@ -91,7 +92,7 @@ jobs:
           # shellcheck disable=SC2016  # the backticks are markdown, not a subshell
           recommended=$(gh release view --repo "$GITHUB_REPOSITORY" --json body -q .body 2>/dev/null \
             | sed -n 's|.*Compatible with: \[`roc \(nightly-[^`]*\)`\].*|\1|p' | head -1 || true)
-          [ -n "$recommended" ] || recommended=$(sed -n 's|.*/roc-lang/nightlies/releases/tag/\(nightly-[^)]*\)).*|\1|p' README.md | head -1)
+          [ -n "$recommended" ] || recommended=$(sed -n '/latest release is tested with/s|.*/roc-lang/nightlies/releases/tag/\(nightly-[^)]*\)).*|\1|p' README.md | head -1)
           [ "$recommended" != "$tag" ] || recommended=
           {
             echo "tag=$tag"
@@ -188,6 +189,43 @@ jobs:
           ${{ steps.setup.outputs.prefix }} roc build --opt=speed --target=wasm32 --no-cache --output=build/speed/hello.wasm verify/hello.roc
           ${{ steps.setup.outputs.prefix }} env JOY_OPT=speed node tests/check_hello.mjs
 
+      # The CLI names the platform by the URL it has once the release is
+      # published, and points at the notes for the command that installs it.
+      - name: Bundle the CLI
+        id: cli
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          ${{ steps.setup.outputs.prefix }} ./bundle-cli.roc --tag="$tag" \
+            --platform-url="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/${{ steps.bundle.outputs.archive }}" \
+            --notes-url="https://github.com/$GITHUB_REPOSITORY/releases/tag/$tag"
+          echo "archive=$(basename dist/cli/*.tar.zst)" >> "$GITHUB_OUTPUT"
+
+      # Nothing on the draft can be downloaded yet, so this bundles a second
+      # CLI that names the platform on localhost, then starts a project the
+      # way the notes say and builds it. The path keeps `/joy/` in the URL,
+      # which is how ./joy tells Joy's platform from others.
+      - name: Verify the CLI end to end
+        run: |
+          set -euo pipefail
+          mkdir -p verify-cli/serve verify-cli/app
+          cp dist/*.tar.zst verify-cli/serve/
+          ${{ steps.setup.outputs.prefix }} ./bundle-cli.roc --tag="$GITHUB_REF_NAME" \
+            --platform-url="http://127.0.0.1:8789/joy/${{ steps.bundle.outputs.archive }}" \
+            --notes-url="https://github.com/$GITHUB_REPOSITORY/releases/tag/$GITHUB_REF_NAME" \
+            --output-dir=verify-cli/cli
+          cp verify-cli/cli/*.tar.zst verify-cli/serve/
+          cli=$(basename verify-cli/cli/*.tar.zst)
+          nohup ${{ steps.setup.outputs.prefix }} node .github/scripts/serve.mjs verify-cli/serve 8789 > verify-cli/server.log 2>&1 &
+          for _ in $(seq 1 20); do
+            curl -sfI "http://127.0.0.1:8789/$cli" > /dev/null && break
+            sleep 0.5
+          done
+          cd verify-cli/app
+          ${{ steps.setup.outputs.prefix }} roc run --opt=speed "http://127.0.0.1:8789/joy/$cli" init --template spa --no-input
+          ${{ steps.setup.outputs.prefix }} ./joy build
+          test -f dist/client/index.html
+
       # For `bundle`. Draft assets need a token and roc fetches anonymously,
       # so the bundle travels as an artifact and each leg serves it to roc
       # over localhost.
@@ -217,21 +255,28 @@ jobs:
               --repo "$GITHUB_REPOSITORY"
           fi
 
-          gh release upload "$tag" dist/*.tar.zst docs.tar.gz \
+          # The labels tell the two bundles apart, for versions.json and the
+          # workflows that look for the platform.
+          gh release upload "$tag" \
+            "dist/${{ steps.bundle.outputs.archive }}#platform" \
+            "dist/cli/${{ steps.cli.outputs.archive }}#cli" \
+            docs.tar.gz \
             --clobber --repo "$GITHUB_REPOSITORY"
 
           url="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/${{ steps.bundle.outputs.archive }}"
+          cli_url="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/${{ steps.cli.outputs.archive }}"
           html=$(grep -o 'https://[^"]*' platform/main.roc | head -1)
           [ -n "$html" ] || {
             echo "error: no joy-html URL in platform/main.roc" >&2
             exit 1
           }
-          # Start from the nightly the README names, which is the last one
-          # known to pass. The `recommend` job moves it forward if the newest
-          # nightly passed too. If it did not, this is the right claim to keep.
-          nightly=$(sed -n 's|.*/roc-lang/nightlies/releases/tag/\(nightly-[^)]*\)).*|\1|p' README.md | head -1)
+          # Start from the nightly the README says the latest release is
+          # tested with, which is the last one known to pass. The `recommend`
+          # job moves it forward if the newest nightly passed too. If it did
+          # not, this is the right claim to keep.
+          nightly=$(sed -n '/latest release is tested with/s|.*/roc-lang/nightlies/releases/tag/\(nightly-[^)]*\)).*|\1|p' README.md | head -1)
           [ -n "$nightly" ] || {
-            echo "error: no roc nightly link in README.md" >&2
+            echo "error: README.md has no line saying which roc nightly the latest release is tested with" >&2
             exit 1
           }
 
@@ -249,6 +294,22 @@ jobs:
               echo "Roc is currently a moving target and which version you're using matters a lot. We test the latest Joy release against the latest Roc nightly and update the compatibility here every day."
               echo ""
               echo "Oftentimes you'll still be able to use Joy with other Roc versions than what's listed here, but if you run into any issues, please try the Roc version above."
+            } >> notes.md
+            edited=1
+          fi
+
+          if ! grep -q '## Starting a project' notes.md; then
+            {
+              echo ""
+              echo "## Starting a project"
+              echo ""
+              echo "In an empty folder, with the Roc above:"
+              echo ""
+              echo '```sh'
+              echo "roc run --opt=speed $cli_url init"
+              echo '```'
+              echo ""
+              echo "It asks what kind of app you want, writes it into the folder, and installs \`./joy\`. In a fresh clone of a project, the same command installs \`./joy\` and leaves the app as it is."
             } >> notes.md
             edited=1
           fi

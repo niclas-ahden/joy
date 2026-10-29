@@ -1,0 +1,246 @@
+import Asset
+import Bundle
+
+## The names a build gave the files a page loads, read from its assets.json,
+## and the folders those files are in. Written by ./joy: do not edit.
+##
+## A server reads assets.json when it starts, from the file JOY_ASSETS_JSON
+## names or from the output directory its binary is in, and passes the text
+## to [parse]. A server that would serve another build's files, or miss a
+## bundle, stops there and says why, instead of failing in a browser.
+Names := {
+	roots : List((Str, Str)),
+	joy : Str,
+	runtime : Str,
+	bundles : List((Str, Str)),
+	assets : List((Str, Str)),
+	public : List(Str),
+}.{
+
+	## Why assets.json was refused.
+	Problem : [NotAssetsJson(Str), NoWasm(Str), AssetsDiffer(Str)]
+
+	## Read assets.json, given its text and the folder it is in. Refuses one
+	## without a wasm for a bundle of `Bundle.all`, or whose assets have other
+	## names than the ones this program was compiled with.
+	parse : Str, Str -> Try(Names, Problem)
+	parse = |text, folder| {
+		value =
+			match read_value(Str.to_utf8(text)) {
+				Ok((found, _)) => found
+				Err(_) => return Err(NotAssetsJson("it is not JSON"))
+			}
+		roots = fields(value, "roots").keep_oks(|(name, path)| text_of(path).map_ok(|dir| (name, "${folder}/${dir}")))
+		joy = text_of(field(value, "joy")) ? |_| NotAssetsJson("it has no joy")
+		runtime = text_of(field(value, "runtime")) ?? "runtime.js"
+		bundles = fields(value, "bundles").keep_oks(|(id, path)| text_of(path).map_ok(|file| (id, file)))
+		assets = fields(value, "assets").keep_oks(|(name, path)| text_of(path).map_ok(|file| (name, file)))
+		public =
+			match field(value, "public") {
+				Items(items) => items.keep_oks(text_of)
+				_ => []
+			}
+		for bundle in Bundle.all {
+			if !bundles.any(|(id, _)| id == Bundle.path(bundle)) {
+				return Err(NoWasm(Bundle.path(bundle)))
+			}
+		}
+		for (name, path) in Asset.all {
+			if !assets.contains((name, path)) {
+				return Err(AssetsDiffer(name))
+			}
+		}
+		Ok({ roots, joy, runtime, bundles, assets, public })
+	}
+
+	## The loader's path below the client URL.
+	joy : Names -> Str
+	joy = |names| names.joy
+
+	## The runtime the loader imports, as a path below the client URL.
+	runtime : Names -> Str
+	runtime = |names| names.runtime
+
+	## The URLs of Joy's files, the way joy-html's `Html.document` takes them:
+	## the loader's, the runtime's and each bundle's wasm by the bundle's id.
+	joy_files : Names -> { loader : Str, runtime : Str, wasm : Str -> Str }
+	joy_files = |names| {
+		loader: Str.concat(client_url, names.joy),
+		runtime: Str.concat(client_url, names.runtime),
+		wasm: |id|
+			match names.bundles.find_first(|(bundle, _)| bundle == id) {
+				Ok((_, file)) => Str.concat(client_url, file)
+				Err(_) => "${client_url}${id}/app.wasm"
+			},
+	}
+
+	## A bundle's wasm, as a path below the client URL.
+	wasm : Names, Bundle -> Str
+	wasm = |names, bundle|
+		match names.bundles.find_first(|(id, _)| id == Bundle.path(bundle)) {
+			Ok((_, file)) => file
+			Err(_) => "${Bundle.path(bundle)}/app.wasm"
+		}
+
+	## The folders the files are in, to declare as a server's file roots:
+	## `joy` for the loader, the runtime and the bundles, `assets` and
+	## `public`. In a build all three are the same folder.
+	roots : Names -> List({ name : Str, folder : Str })
+	roots = |names| names.roots.map(|(name, folder)| { name, folder })
+
+	## Where a path below the client URL is, and how long a cache may keep
+	## it: a file with a hash in its name for good, anything else until it
+	## has asked again.
+	file : Names, Str -> [Found({ root : Str, path : Str, cache : [Immutable, Revalidate] }), NotFound]
+	file = |names, path| {
+		hashed = |plain| if (plain == path) Revalidate else Immutable
+		if path == names.joy {
+			Found({ root: "joy", path, cache: hashed("joy.js") })
+		} else if path == names.runtime or path == "runtime.js" {
+			Found({ root: "joy", path, cache: hashed("runtime.js") })
+		} else if names.bundles.any(|(_, file)| file == path) {
+			Found({ root: "joy", path, cache: if (path.ends_with("/app.wasm")) Revalidate else Immutable })
+		} else {
+			match names.assets.find_first(|(_, file)| file == path) {
+				Ok((name, _)) => Found({ root: "assets", path, cache: hashed(name) })
+				Err(_) => if (names.public.contains(path)) Found({ root: "public", path, cache: Revalidate }) else NotFound
+			}
+		}
+	}
+}
+
+## Where the app serves the files, JOY_CLIENT_URL, which ./joy writes here.
+client_url : Str
+client_url = "/"
+
+# Just enough JSON for assets.json: objects, arrays and strings.
+
+Value := [Text(Str), Items(List(Value)), Fields(List((Str, Value))), Other]
+
+field : Value, Str -> Value
+field = |value, key|
+	match value {
+		Fields(pairs) =>
+			match pairs.find_first(|(name, _)| name == key) {
+				Ok((_, found)) => found
+				Err(_) => Other
+			}
+		_ => Other
+	}
+
+fields : Value, Str -> List((Str, Value))
+fields = |value, key|
+	match field(value, key) {
+		Fields(pairs) => pairs
+		_ => []
+	}
+
+text_of : Value -> Try(Str, [NotText])
+text_of = |value|
+	match value {
+		Text(text) => Ok(text)
+		_ => Err(NotText)
+	}
+
+read_value : List(U8) -> Try((Value, List(U8)), [Bad])
+read_value = |input|
+	match skip_space(input) {
+		['"', .. as rest] => read_text(rest, []).map_ok(|(text, after)| (Text(text), after))
+		['[', .. as rest] => read_items(skip_space(rest), [])
+		['{', .. as rest] => read_fields(skip_space(rest), [])
+		_ => Err(Bad)
+	}
+
+read_items : List(U8), List(Value) -> Try((Value, List(U8)), [Bad])
+read_items = |input, items|
+	match input {
+		[']', .. as rest] => Ok((Items(items), rest))
+		_ => {
+			(item, after) = read_value(input)?
+			match skip_space(after) {
+				[',', .. as rest] => read_items(skip_space(rest), items.append(item))
+				[']', .. as rest] => Ok((Items(items.append(item)), rest))
+				_ => Err(Bad)
+			}
+		}
+	}
+
+read_fields : List(U8), List((Str, Value)) -> Try((Value, List(U8)), [Bad])
+read_fields = |input, pairs|
+	match input {
+		['}', .. as rest] => Ok((Fields(pairs), rest))
+		['"', .. as rest] => {
+			(key, after_key) = read_text(rest, [])?
+			match skip_space(after_key) {
+				[':', .. as after_colon] => {
+					(value, after) = read_value(after_colon)?
+					match skip_space(after) {
+						[',', .. as more] => read_fields(skip_space(more), pairs.append((key, value)))
+						['}', .. as more] => Ok((Fields(pairs.append((key, value))), more))
+						_ => Err(Bad)
+					}
+				}
+				_ => Err(Bad)
+			}
+		}
+		_ => Err(Bad)
+	}
+
+read_text : List(U8), List(U8) -> Try((Str, List(U8)), [Bad])
+read_text = |input, bytes|
+	match input {
+		['"', .. as rest] =>
+			match Str.from_utf8(bytes) {
+				Ok(text) => Ok((text, rest))
+				Err(_) => Err(Bad)
+			}
+		['\\', escaped, .. as rest] =>
+			match escaped {
+				'n' => read_text(rest, bytes.append('\n'))
+				't' => read_text(rest, bytes.append('\t'))
+				'r' => read_text(rest, bytes.append('\r'))
+				'u' => read_unicode(rest, bytes)
+				other => read_text(rest, bytes.append(other))
+			}
+		[byte, .. as rest] => read_text(rest, bytes.append(byte))
+		[] => Err(Bad)
+	}
+
+## `\uXXXX`, written out as UTF-8.
+read_unicode : List(U8), List(U8) -> Try((Str, List(U8)), [Bad])
+read_unicode = |input, bytes|
+	match input {
+		[a, b, c, d, .. as rest] => {
+			code : U32
+			code = [a, b, c, d].fold_try(0, |sum, digit| hex_digit(digit).map_ok(|value| sum * 16 + value))?
+			encoded =
+				if code < 0x80 {
+					[code.to_u8_wrap()]
+				} else if code < 0x800 {
+					[(0xC0 + code // 64).to_u8_wrap(), (0x80 + code % 64).to_u8_wrap()]
+				} else {
+					[(0xE0 + code // 4096).to_u8_wrap(), (0x80 + (code // 64) % 64).to_u8_wrap(), (0x80 + code % 64).to_u8_wrap()]
+				}
+			read_text(rest, bytes.concat(encoded))
+		}
+		_ => Err(Bad)
+	}
+
+hex_digit : U8 -> Try(U32, [Bad])
+hex_digit = |digit|
+	if digit >= '0' and digit <= '9' {
+		Ok((digit - '0').to_u32())
+	} else if digit >= 'a' and digit <= 'f' {
+		Ok((digit - 'a' + 10).to_u32())
+	} else if digit >= 'A' and digit <= 'F' {
+		Ok((digit - 'A' + 10).to_u32())
+	} else {
+		Err(Bad)
+	}
+
+skip_space : List(U8) -> List(U8)
+skip_space = |input|
+	match input {
+		[' ', .. as rest] | ['\n', .. as rest] | ['\r', .. as rest] | ['\t', .. as rest] => skip_space(rest)
+		_ => input
+	}

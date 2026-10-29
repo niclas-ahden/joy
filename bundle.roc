@@ -49,17 +49,17 @@ main! = |_args| {
 	run!("rm", ["-rf", "dist/.platform"])?
 	run!("cp", ["-r", "platform", "dist/.platform"])?
 
-	# The client runtime ships inside the bundle so an app always serves the
-	# runtime its platform was built with. It lands in roc's package cache
-	# next to the platform sources, where an app's build script copies it
-	# from (see joy-frontend-example's build.roc).
+	# The client runtime and the loader, joy.js, ship inside the bundle so an
+	# app always serves the ones its platform was built with. They land in
+	# roc's package cache next to the platform sources, where ./joy reads
+	# them from.
 	# The browser features (www/features/*.js) ship beside it, for the app's
 	# build to pick from with tools/runtime: an app's runtime.js is the
 	# runtime plus the feature code its wasm calls.
 	run!("mkdir", ["-p", "dist/.platform/www/features"])?
-	run!("bash", ["-c", "cp www/runtime.js dist/.platform/www/ && cp www/features/*.js dist/.platform/www/features/"])?
+	run!("bash", ["-c", "cp www/runtime.js www/joy.js dist/.platform/www/ && cp www/features/*.js dist/.platform/www/features/"])?
 
-	platform_archive = bundle!("cd dist/.platform && roc bundle main.roc targets/wasm32/host.wasm www/runtime.js www/features/*.js --output-dir ..")?
+	platform_archive = bundle!("cd dist/.platform && roc bundle main.roc targets/wasm32/host.wasm www/runtime.js www/joy.js www/features/*.js --output-dir ..")?
 
 	run!("rm", ["-rf", "dist/.platform"])?
 

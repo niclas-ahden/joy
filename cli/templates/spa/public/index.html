@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Joy app</title>
+  <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+  <div id="app" data-joy-bundle="app"></div>
+  <script>
+    // The app opens the page its URL names, so the path is its flags.
+    document.getElementById("app").dataset.joyFlags = location.pathname;
+  </script>
+  <script type="module" src="/joy.js"></script>
+</body>
+</html>
