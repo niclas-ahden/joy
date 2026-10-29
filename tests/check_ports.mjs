@@ -4,9 +4,10 @@
 // (registered via mount's setup hook, in time for sends from init).
 // Run from the repo root: node tests/check_ports.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, fakeDom, htmlBare } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('ports');
 
 const logged = [];
 const realLog = console.log;

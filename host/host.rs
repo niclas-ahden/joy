@@ -514,32 +514,11 @@ type Attr = abi::AttributeType52;
 type AttrTag = abi::AttributeType52Tag;
 type Cmd = abi::CmdType36;
 type CmdTag = abi::CmdType36Tag;
-type CryptoDigestPayload = abi::CmdType36CryptoDigestPayload;
-type CryptoDigestFilePayload = abi::CmdType36CryptoDigestFilePayload;
-type HttpSendPayload = abi::CmdType36HttpSendPayload;
-type HttpSendFilePayload = abi::CmdType36HttpSendFilePayload;
-type PortSendPayload = abi::CmdType36PortSendPayload;
-type TimeAfterPayload = abi::CmdType36TimeAfterPayload;
-type TimeDebouncePayload = abi::CmdType36TimeDebouncePayload;
-/// `Sub(msg)`: Every / Keyboard / PortListen / UrlChanged, each a record payload.
+type CallPayload = abi::CmdType36CallPayload;
+type SendPayload = abi::CmdType36SendPayload;
+/// `Sub(msg)`: a nominal record `{ id : Str, args : List(U8), on_event :
+/// Box(List(U8) -> Box(msg)) }` (fields in layout order: by name).
 type Sub = abi::SubType9;
-type SubTag = abi::SubType9Tag;
-/// `Every`'s record `{ ms : U32, on_tick : Box(I64 -> Box(msg)) }` (fields
-/// in layout order: the callable first).
-type SubEvery = abi::AnonStruct10;
-/// `Keyboard`'s record `{ event : Str, keys : List(Str), prevent_default :
-/// Bool, on_key : Box(Str -> Box(msg)) }`.
-type SubKeyboard = abi::AnonStruct17;
-/// `PortListen`'s record `{ name : Str, on_value : Box(Str -> Box(msg)) }`.
-type SubPortListen = abi::AnonStruct25;
-/// `UrlChanged`'s record `{ on_change : Box(Str -> Box(msg)) }`.
-type SubUrlChanged = abi::AnonStruct29;
-/// The Http header record `{ name : Str, value : Str }`.
-type HeaderPair = abi::AnonStruct38;
-/// The HTTP callback's argument record `{ status : U16, headers :
-/// List(Header), body : List(U8) }` (fields in layout order: the lists
-/// first, body before headers by name).
-type HttpArgs = abi::AnonStruct43;
 /// The key callbacks' argument record (the platform's `KeyEvent`): two
 /// strings and five bools, built per dispatch from what JS passes.
 type KeyArgs = abi::AnonStruct22;
@@ -2630,136 +2609,49 @@ unsafe fn str_from_parts(ptr: usize, len: usize) -> RocStr {
 
 // --- Effect queue ---
 // `Effect(Msg)` layout facts (discriminants by name, payload field order
-// chosen by the compiler, e.g. the timer payloads place the callback Box
-// BEFORE the U32) all come from the generated bindings below. The `Cmd`
-// names in the bindings and in the derived constants are the type's
-// pre-rename schema names, kept so the committed bindings file and the
-// exported `roc_drop_cmds` symbol stay stable.
+// chosen by the compiler) all come from the bindings. The `Cmd` names in the
+// bindings and in the derived constants are the type's pre-rename schema
+// names, kept so the bindings file and the exported `roc_drop_cmds` symbol
+// stay stable.
 //
-// The host cannot start a fetch or a timer (the module is import-free), so
-// each effect is serialised into this queue as u32 words and the JS runtime
-// drains + executes them after every entry call:
-//   HTTP:      [1, cb, method_ptr, method_len, url_ptr, url_len,
-//                  body_ptr, body_len, timeout_lo, timeout_hi,
-//                  n_headers, (np, nl, vp, vl) * n]
-//   AFTER:     [2, cb, ms]
-//   NAV:       [5|6|7, url_ptr, url_len]  (navigate | push_url | replace_url)
-//   SUB START: [8, id, ms]   (from sync_subs, not run_cmds)
-//   SUB STOP:  [9, id]       (from sync_subs; stops every kind of sub)
-//   KEYBOARD:  [10, id, prevent_default, event_ptr, event_len,
-//                  n_keys, (kp, kl) * n]   (from sync_subs)
-//   PORT SEND: [11, name_ptr, name_len, value_ptr, value_len]
-//   PORT START:[12, id, name_ptr, name_len]   (from sync_subs; incoming port)
-//   URL START: [13, id]                        (from sync_subs; url change)
-//   MODAL:     [14|15, sel_ptr, sel_len]  (show_modal | close_modal)
-//   DEBOUNCE:  [16, cb, ms, key_ptr, key_len]
-//   CANCEL:    [17, key_ptr, key_len]     (discard a pending debounce)
-//   HTTP FILE: [18, cb, method_ptr, method_len, url_ptr, url_len, file_id,
-//                  start_lo, start_hi, len_lo, len_hi, timeout_lo, timeout_hi,
-//                  n_headers, (np, nl, vp, vl) * n]
-//   DIGEST:    [19, cb, alg_ptr, alg_len, data_ptr, data_len]
-//   DIGEST FILE: [20, cb, alg_ptr, alg_len, file_id,
-//                  start_lo, start_hi, len_lo, len_hi]
-//   FOCUS:     [21, sel_ptr, sel_len]
-// U64s cross as two u32 words, low first. Strings and bytes are pushed as
-// host-owned copies (the effect list that produced them is dropped right
-// after queuing); `effects_clear` frees them once JS has decoded the batch.
+// The host cannot reach the browser (the module is import-free), so each
+// effect is serialised into this queue as u32 words and the JS runtime
+// drains and executes them after every entry call. Every effect but
+// ConsoleLog is an operation of a browser feature, by its id, with its
+// arguments as Wire bytes (see platform/Wire.roc):
+//   CALL:         [1, cb, id_ptr, id_len, args_ptr, args_len]
+//                     (the reply goes to dispatch_bytes)
+//   SEND:         [2, id_ptr, id_len, args_ptr, args_len]
+//                     (an operation that answers nothing)
+//   LISTEN START: [3, slot, id_ptr, id_len, args_ptr, args_len]
+//                     (from sync_subs; events go to dispatch_sub_bytes)
+//   SUB STOP:     [4, slot]   (from sync_subs)
+// Strings and bytes are pushed as host-owned copies (the effect list that
+// produced them is dropped right after queuing); `effects_clear` frees them
+// once JS has decoded the batch.
 const CMD_STRIDE: usize = size_of::<Cmd>();
 const CMD_DISC_OFFSET: usize = offset_of!(Cmd, tag);
-const CMD_CLOSE_MODAL: u8 = CmdTag::CloseModal as u8;
+const CMD_CALL: u8 = CmdTag::Call as u8;
 const CMD_CONSOLE_LOG: u8 = CmdTag::ConsoleLog as u8;
-const CMD_CRYPTO_DIGEST: u8 = CmdTag::CryptoDigest as u8;
-const CMD_CRYPTO_DIGEST_FILE: u8 = CmdTag::CryptoDigestFile as u8;
-const CMD_FOCUS: u8 = CmdTag::Focus as u8;
-const CMD_HTTP_SEND: u8 = CmdTag::HttpSend as u8;
-const CMD_HTTP_SEND_FILE: u8 = CmdTag::HttpSendFile as u8;
-const CMD_NAVIGATE: u8 = CmdTag::Navigate as u8;
-const CMD_PORT_SEND: u8 = CmdTag::PortSend as u8;
-const CMD_PUSH_URL: u8 = CmdTag::PushUrl as u8;
-const CMD_REPLACE_URL: u8 = CmdTag::ReplaceUrl as u8;
-const CMD_SHOW_MODAL: u8 = CmdTag::ShowModal as u8;
-const CMD_TIME_AFTER: u8 = CmdTag::TimeAfter as u8;
-const CMD_TIME_CANCEL: u8 = CmdTag::TimeCancel as u8;
-const CMD_TIME_DEBOUNCE: u8 = CmdTag::TimeDebounce as u8;
-// Payload field offsets. HttpSend(Str method, Str url, List headers,
-// List(U8) body, U64 timeout, Box callback); PortSend(Str name, Str value);
-// TimeAfter(Box callback, U32 ms). (Port.listen is a subscription now, not an
-// Effect, see the Sub section.) The U64 timeouts and byte ranges sort ahead of
-// everything else (align 8), and TimeDebounce's callable (_2) sorts ahead of
-// its U32 (_1).
-const HTTP_METHOD: usize = offset_of!(HttpSendPayload, _0);
-const HTTP_URL: usize = offset_of!(HttpSendPayload, _1);
-const HTTP_HEADERS: usize = offset_of!(HttpSendPayload, _2);
-const HTTP_BODY: usize = offset_of!(HttpSendPayload, _3);
-const HTTP_TIMEOUT: usize = offset_of!(HttpSendPayload, _4);
-const HTTP_CALLBACK: usize = offset_of!(HttpSendPayload, _5);
-const PORT_SEND_VALUE: usize = offset_of!(PortSendPayload, _1);
-const TIMER_CALLBACK: usize = offset_of!(TimeAfterPayload, _0);
-const TIMER_MS: usize = offset_of!(TimeAfterPayload, _1);
-const HEADER_STRIDE: usize = size_of::<HeaderPair>();
-// CryptoDigest(Str algorithm, List(U8) bytes, Box callback).
-const CRYPTO_BYTES: usize = offset_of!(CryptoDigestPayload, _1);
-const CRYPTO_CB: usize = offset_of!(CryptoDigestPayload, _2);
-// CryptoDigestFile(Str algorithm, U32 file, U64 start, U64 len, Box callback).
-const CRYPTO_FILE_ALG: usize = offset_of!(CryptoDigestFilePayload, _0);
-const CRYPTO_FILE_ID: usize = offset_of!(CryptoDigestFilePayload, _1);
-const CRYPTO_FILE_START: usize = offset_of!(CryptoDigestFilePayload, _2);
-const CRYPTO_FILE_LEN: usize = offset_of!(CryptoDigestFilePayload, _3);
-const CRYPTO_FILE_CB: usize = offset_of!(CryptoDigestFilePayload, _4);
-// HttpSendFile(Str method, Str url, List headers, U32 file, U64 start,
-// U64 len, U64 timeout, Box callback).
-const HTTP_FILE_METHOD: usize = offset_of!(HttpSendFilePayload, _0);
-const HTTP_FILE_URL: usize = offset_of!(HttpSendFilePayload, _1);
-const HTTP_FILE_HEADERS: usize = offset_of!(HttpSendFilePayload, _2);
-const HTTP_FILE_ID: usize = offset_of!(HttpSendFilePayload, _3);
-const HTTP_FILE_START: usize = offset_of!(HttpSendFilePayload, _4);
-const HTTP_FILE_LEN: usize = offset_of!(HttpSendFilePayload, _5);
-const HTTP_FILE_TIMEOUT: usize = offset_of!(HttpSendFilePayload, _6);
-const HTTP_FILE_CB: usize = offset_of!(HttpSendFilePayload, _7);
-// TimeDebounce(Str key, U32 ms, Box callback).
-const DEBOUNCE_MS: usize = offset_of!(TimeDebouncePayload, _1);
-const DEBOUNCE_CB: usize = offset_of!(TimeDebouncePayload, _2);
+const CMD_SEND: u8 = CmdTag::Send as u8;
+// Call(Str id, List(U8) args, Box callback).
+const CALL_ID: usize = offset_of!(CallPayload, _0);
+const CALL_ARGS: usize = offset_of!(CallPayload, _1);
+const CALL_CB: usize = offset_of!(CallPayload, _2);
+// Send(Str id, List(U8) args).
+const SEND_ID: usize = offset_of!(SendPayload, _0);
+const SEND_ARGS: usize = offset_of!(SendPayload, _1);
 
-// `List(Sub(msg))` element layout: the Sub union, whose per-variant record
-// sits at payload offset 0 (see `SubEvery` / `SubKeyboard`).
+// `List(Sub(msg))` element layout: the record itself.
 const SUB_STRIDE: usize = size_of::<Sub>();
-const SUB_DISC_OFFSET: usize = offset_of!(Sub, tag);
-const SUB_TAG_EVERY: u8 = SubTag::Every as u8;
-const SUB_TAG_KEYBOARD: u8 = SubTag::Keyboard as u8;
-const SUB_TAG_PORT_LISTEN: u8 = SubTag::PortListen as u8;
-const SUB_TAG_URL_CHANGED: u8 = SubTag::UrlChanged as u8;
-const EVERY_CB: usize = offset_of!(SubEvery, on_tick);
-const EVERY_MS: usize = offset_of!(SubEvery, ms);
-const KB_EVENT: usize = offset_of!(SubKeyboard, event);
-const KB_KEYS: usize = offset_of!(SubKeyboard, keys);
-const KB_CB: usize = offset_of!(SubKeyboard, on_key);
-const KB_PD: usize = offset_of!(SubKeyboard, prevent_default);
-const PORT_LISTEN_NAME: usize = offset_of!(SubPortListen, name);
-const PORT_LISTEN_CB: usize = offset_of!(SubPortListen, on_value);
-const URL_CHANGED_CB: usize = offset_of!(SubUrlChanged, on_change);
+const LISTEN_ID: usize = offset_of!(Sub, id);
+const LISTEN_ARGS: usize = offset_of!(Sub, args);
+const LISTEN_CB: usize = offset_of!(Sub, on_event);
 
-const EFFECT_HTTP: u32 = 1;
-const EFFECT_AFTER: u32 = 2;
-// 3 was EFFECT_EVERY; retired when Time.every became a subscription.
-// 4 was EFFECT_PORT (Port.listen as an effect); retired when it became a Sub
-// (it now starts via EFFECT_PORT_START below).
-const EFFECT_NAVIGATE: u32 = 5;
-const EFFECT_PUSH_URL: u32 = 6;
-const EFFECT_REPLACE_URL: u32 = 7;
-const EFFECT_SUB_START: u32 = 8; // [8, id, ms]
-const EFFECT_SUB_STOP: u32 = 9; // [9, id]
-const EFFECT_KEYBOARD_START: u32 = 10; // [10, id, prevent_default, event_ptr, event_len, n_keys, (kp, kl) * n]
-const EFFECT_PORT_SEND: u32 = 11; // [11, name_ptr, name_len, value_ptr, value_len]
-const EFFECT_PORT_START: u32 = 12; // [12, id, name_ptr, name_len] (incoming-port sub)
-const EFFECT_URL_START: u32 = 13; // [13, id] (url-change sub)
-const EFFECT_SHOW_MODAL: u32 = 14; // [14, sel_ptr, sel_len]
-const EFFECT_CLOSE_MODAL: u32 = 15; // [15, sel_ptr, sel_len]
-const EFFECT_DEBOUNCE: u32 = 16; // [16, cb, ms, key_ptr, key_len]
-const EFFECT_TIME_CANCEL: u32 = 17; // [17, key_ptr, key_len]
-const EFFECT_HTTP_FILE: u32 = 18; // [18, cb, method, url, file_id, start x2, len x2, n_headers, (k, v) * n]
-const EFFECT_CRYPTO_DIGEST: u32 = 19; // [19, cb, alg_ptr, alg_len, data_ptr, data_len]
-const EFFECT_CRYPTO_DIGEST_FILE: u32 = 20; // [20, cb, alg, file_id, start x2, len x2]
-const EFFECT_FOCUS: u32 = 21; // [21, sel_ptr, sel_len]
+const EFFECT_CALL: u32 = 1;
+const EFFECT_SEND: u32 = 2;
+const EFFECT_LISTEN_START: u32 = 3;
+const EFFECT_SUB_STOP: u32 = 4;
 
 static mut EFFECTS_PTR: usize = 0;
 static mut EFFECTS_CAP: usize = 0;
@@ -2794,13 +2686,6 @@ unsafe fn push_effect_str(off: usize) {
     push_effect_copy(p as usize, l as usize);
 }
 
-/// Push the u64 at `off` as two u32 words, low first (matching how the
-/// runtime reassembles byte offsets that can exceed 4GB files' 32 bits).
-unsafe fn push_effect_u64(off: usize) {
-    push_effect(read_u32(off));
-    push_effect(read_u32(off + 4));
-}
-
 /// Serialise every effect in a `List(Effect(Msg))` into the effects queue.
 /// Strings and bytes are copied (host-owned, freed by `effects_clear`);
 /// callbacks the JS side will hold are increfed, so the caller can drop the
@@ -2811,119 +2696,26 @@ unsafe fn run_cmds<T>(cmds: &abi::RocList<T>) {
     for i in 0..cmds.length {
         let c = data + i * CMD_STRIDE;
         match *((c + CMD_DISC_OFFSET) as *const u8) {
-            CMD_HTTP_SEND => {
-                let cb = read_u32(c + HTTP_CALLBACK) as usize;
-                incref(cb); // held by JS until the response dispatches
-                push_effect(EFFECT_HTTP);
+            CMD_CALL => {
+                let cb = read_u32(c + CALL_CB) as usize;
+                incref(cb); // held by JS until the reply dispatches
+                push_effect(EFFECT_CALL);
                 push_effect(cb as u32);
-                push_effect_str(c + HTTP_METHOD);
-                push_effect_str(c + HTTP_URL);
-                let body = &*((c + HTTP_BODY) as *const abi::RocListWith<u8, false>);
-                push_effect_copy(body.elements as usize, body.length);
-                push_effect_u64(c + HTTP_TIMEOUT);
-                let headers = &*((c + HTTP_HEADERS) as *const abi::RocList<HeaderPair>);
-                push_effect(headers.length as u32);
-                let hdata = headers.elements as usize;
-                for h in 0..headers.length {
-                    let pair = hdata + h * HEADER_STRIDE;
-                    push_effect_str(pair + offset_of!(HeaderPair, name));
-                    push_effect_str(pair + offset_of!(HeaderPair, value));
-                }
+                push_effect_str(c + CALL_ID);
+                let args = &*((c + CALL_ARGS) as *const abi::RocListWith<u8, false>);
+                push_effect_copy(args.elements as usize, args.length);
             }
-            CMD_HTTP_SEND_FILE => {
-                let cb = read_u32(c + HTTP_FILE_CB) as usize;
-                incref(cb); // held by JS until the response dispatches
-                push_effect(EFFECT_HTTP_FILE);
-                push_effect(cb as u32);
-                push_effect_str(c + HTTP_FILE_METHOD);
-                push_effect_str(c + HTTP_FILE_URL);
-                push_effect(read_u32(c + HTTP_FILE_ID));
-                push_effect_u64(c + HTTP_FILE_START);
-                push_effect_u64(c + HTTP_FILE_LEN);
-                push_effect_u64(c + HTTP_FILE_TIMEOUT);
-                let headers = &*((c + HTTP_FILE_HEADERS) as *const abi::RocList<HeaderPair>);
-                push_effect(headers.length as u32);
-                let hdata = headers.elements as usize;
-                for h in 0..headers.length {
-                    let pair = hdata + h * HEADER_STRIDE;
-                    push_effect_str(pair + offset_of!(HeaderPair, name));
-                    push_effect_str(pair + offset_of!(HeaderPair, value));
-                }
-            }
-            CMD_PORT_SEND => {
-                push_effect(EFFECT_PORT_SEND);
-                push_effect_str(c); // port name
-                push_effect_str(c + PORT_SEND_VALUE);
-            }
-            // The msg-free effects each carry a single Str at payload
-            // offset 0 and map straight onto their effect kind.
-            CMD_NAVIGATE => {
-                push_effect(EFFECT_NAVIGATE);
-                push_effect_str(c); // url
-            }
-            CMD_PUSH_URL => {
-                push_effect(EFFECT_PUSH_URL);
-                push_effect_str(c); // url
-            }
-            CMD_REPLACE_URL => {
-                push_effect(EFFECT_REPLACE_URL);
-                push_effect_str(c); // url
-            }
-            CMD_SHOW_MODAL => {
-                push_effect(EFFECT_SHOW_MODAL);
-                push_effect_str(c); // CSS selector
-            }
-            CMD_CLOSE_MODAL => {
-                push_effect(EFFECT_CLOSE_MODAL);
-                push_effect_str(c); // CSS selector
-            }
-            CMD_FOCUS => {
-                push_effect(EFFECT_FOCUS);
-                push_effect_str(c); // CSS selector
-            }
-            CMD_TIME_CANCEL => {
-                push_effect(EFFECT_TIME_CANCEL);
-                push_effect_str(c); // debounce key
+            CMD_SEND => {
+                push_effect(EFFECT_SEND);
+                push_effect_str(c + SEND_ID);
+                let args = &*((c + SEND_ARGS) as *const abi::RocListWith<u8, false>);
+                push_effect_copy(args.elements as usize, args.length);
             }
             // ConsoleLog delivers through the console queue rather than the
             // effects queue: the runtime drains both on the same entry call.
             CMD_CONSOLE_LOG => {
                 let (ptr, len) = str_at(c);
                 log_push_copy(ptr as *const u8, len as usize, LOG_LEVEL_LOG);
-            }
-            CMD_TIME_AFTER => {
-                let cb = read_u32(c + TIMER_CALLBACK) as usize;
-                incref(cb); // held by JS until the timer fires
-                push_effect(EFFECT_AFTER);
-                push_effect(cb as u32);
-                push_effect(read_u32(c + TIMER_MS));
-            }
-            CMD_TIME_DEBOUNCE => {
-                let cb = read_u32(c + DEBOUNCE_CB) as usize;
-                incref(cb); // held by JS until the timer fires or is re-armed
-                push_effect(EFFECT_DEBOUNCE);
-                push_effect(cb as u32);
-                push_effect(read_u32(c + DEBOUNCE_MS));
-                push_effect_str(c); // debounce key
-            }
-            CMD_CRYPTO_DIGEST => {
-                let cb = read_u32(c + CRYPTO_CB) as usize;
-                incref(cb); // held by JS until the digest dispatches
-                push_effect(EFFECT_CRYPTO_DIGEST);
-                push_effect(cb as u32);
-                push_effect_str(c); // algorithm
-                let bytes = &*((c + CRYPTO_BYTES) as *const abi::RocListWith<u8, false>);
-                push_effect_copy(bytes.elements as usize, bytes.length);
-            }
-            CMD_CRYPTO_DIGEST_FILE => {
-                let cb = read_u32(c + CRYPTO_FILE_CB) as usize;
-                incref(cb); // held by JS until the digest dispatches
-                push_effect(EFFECT_CRYPTO_DIGEST_FILE);
-                push_effect(cb as u32);
-                push_effect_str(c + CRYPTO_FILE_ALG);
-                push_effect(read_u32(c + CRYPTO_FILE_ID));
-                push_effect_u64(c + CRYPTO_FILE_START);
-                push_effect_u64(c + CRYPTO_FILE_LEN);
             }
             _ => {}
         }
@@ -2946,30 +2738,22 @@ unsafe fn drop_cmds<T>(cmds: &abi::RocList<T>) {
 // source; a missing one stops it, so cancellation is by omission and nothing
 // outlives the subscription list that declared it.
 //
-// Identity is the variant plus its parameters: for `Every` the interval, for
-// `Keyboard` the (event, keys, prevent_default) triple, which the table
-// stores as a host-owned byte blob (`[len u32][prevent_default u8][event]
-// [0]([key][0])*`) because the strings live in the transient sub list.
+// Identity is the feature's id plus its arguments, which the table stores as
+// a host-owned `[len u32][id_len u32][id][args]` blob because the strings
+// live in the transient sub list.
 //
-// Entries are u32 quads [kind, ident, cb-list, live-mark]; ident is the ms
-// value for a timer and the blob pointer for keyboard. cb-list points at a
-// host-owned `[cap u32][len u32][cb u32 * len]` blob holding EVERY callback
-// declared for the identity this round: duplicate subscriptions share the
-// one running source, and each firing delivers all their messages in
-// declaration order instead of the last silently winning. The slot index is
-// the id JS keys its cleanup handles on. kind 0 marks a free slot. A slot
-// freed by a stop is reusable immediately: JS runs the cleanup while draining
-// the same effects batch that could start a successor, and both clearInterval
-// and removeEventListener also cancel already-queued firings.
-const SUB_WORDS: usize = 4;
-const SUB_FREE: u32 = 0;
-const SUB_EVERY: u32 = 1;
-const SUB_KEYBOARD: u32 = 2;
-const SUB_PORT: u32 = 3;
-const SUB_URL: u32 = 4;
-// UrlChanged carries no parameters, so every url-change sub shares one
-// identity: a fixed non-zero sentinel, value-compared like a timer's ms.
-const URL_IDENT: u32 = 1;
+// Entries are u32 triples [ident, cb-list, live-mark]; ident 0 marks a free
+// slot. cb-list points at a host-owned `[cap u32][len u32][cb u32 * len]`
+// blob holding EVERY callback declared for the identity this round:
+// duplicate subscriptions share the one running source, and each event
+// delivers all their messages in declaration order instead of the last
+// silently winning. The slot index is the id JS keys its cleanup on. A slot
+// freed by a stop is reusable immediately: JS stops the source while
+// draining the same effects batch that could start a successor, and drops
+// whatever a stopped source emits afterwards.
+const SUB_WORDS: usize = 3;
+const SLOT_CBS: usize = 1; // the word after the identity
+const SLOT_LIVE: usize = 2;
 static mut SUBS_PTR: usize = 0;
 static mut SUBS_CAP: usize = 0; // in entries
 
@@ -2978,10 +2762,15 @@ unsafe fn sub_slot(i: usize) -> *mut u32 {
     (SUBS_PTR + i * SUB_WORDS * 4) as *mut u32
 }
 
+#[inline]
+unsafe fn sub_live(i: usize) -> bool {
+    i < SUBS_CAP && *sub_slot(i) != 0
+}
+
 /// A free table slot, growing the table when none is left.
 unsafe fn take_sub_slot() -> usize {
     for s in 0..SUBS_CAP {
-        if *sub_slot(s) == SUB_FREE {
+        if *sub_slot(s) == 0 {
             return s;
         }
     }
@@ -2999,7 +2788,7 @@ unsafe fn take_sub_slot() -> usize {
     SUBS_PTR = new_ptr;
     SUBS_CAP = new_cap;
     for s in old_cap..new_cap {
-        *sub_slot(s) = SUB_FREE;
+        *sub_slot(s) = 0;
     }
     old_cap
 }
@@ -3010,75 +2799,37 @@ unsafe fn drop_subs(subs: &abi::RocList<Sub>) {
     abi::roc_drop_subs(*(subs as *const abi::RocList<Sub> as *const abi::RocList<abi::SubType123>));
 }
 
-/// Build a keyboard sub's identity blob from its record at `e` (see the
-/// table comment for the layout). Host-owned; freed when the sub stops or
-/// when the blob turns out to match an existing slot.
-unsafe fn build_kb_ident(e: usize) -> usize {
-    let (ev_ptr, ev_len) = str_at(e + KB_EVENT);
-    let keys = &*((e + KB_KEYS) as *const abi::RocList<RocStr>);
-    let mut len = 1 + ev_len as usize + 1;
-    for k in 0..keys.length {
-        let (_, kl) = str_at(keys.elements as usize + k * size_of::<RocStr>());
-        len += kl as usize + 1;
-    }
-    let blob = roc_alloc(4 + len, 4) as usize;
-    if blob == 0 {
-        core::arch::wasm32::unreachable();
-    }
-    *(blob as *mut u32) = len as u32;
-    let mut w = blob + 4;
-    *(w as *mut u8) = *((e + KB_PD) as *const u8);
-    w += 1;
-    core::ptr::copy_nonoverlapping(ev_ptr as *const u8, w as *mut u8, ev_len as usize);
-    w += ev_len as usize;
-    *(w as *mut u8) = 0;
-    w += 1;
-    for k in 0..keys.length {
-        let (kp, kl) = str_at(keys.elements as usize + k * size_of::<RocStr>());
-        core::ptr::copy_nonoverlapping(kp as *const u8, w as *mut u8, kl as usize);
-        w += kl as usize;
-        *(w as *mut u8) = 0;
-        w += 1;
-    }
-    blob
-}
-
-unsafe fn kb_ident_eq(a: usize, b: usize) -> bool {
-    let al = *(a as *const u32);
-    bytes_eq((a + 4) as u32, al, (b + 4) as u32, *(b as *const u32))
-}
-
-/// Build a `[len u32][name bytes]` identity blob from the `Str` at `off` (a
-/// port subscription's name). Same blob shape as `build_kb_ident`, so
-/// `kb_ident_eq` compares them. Host-owned; freed when the sub stops or when
-/// it turns out to match an existing slot.
-unsafe fn build_name_ident(off: usize) -> usize {
-    let (ptr, len) = str_at(off);
+/// A subscription's identity blob (see the table comment), host-owned:
+/// freed when the sub stops or when it turns out to match an existing slot.
+unsafe fn build_ident(e: usize) -> usize {
+    let (iptr, ilen) = str_at(e + LISTEN_ID);
+    let args = &*((e + LISTEN_ARGS) as *const abi::RocListWith<u8, false>);
+    let alen = args.length as u32;
+    let len = 4 + ilen + alen;
     let blob = roc_alloc(4 + len as usize, 4) as usize;
     if blob == 0 {
         core::arch::wasm32::unreachable();
     }
     *(blob as *mut u32) = len;
-    core::ptr::copy_nonoverlapping(ptr as *const u8, (blob + 4) as *mut u8, len as usize);
+    let mut at = blob + 4;
+    core::ptr::write_unaligned(at as *mut u32, ilen);
+    at += 4;
+    core::ptr::copy_nonoverlapping(iptr as *const u8, at as *mut u8, ilen as usize);
+    at += ilen as usize;
+    core::ptr::copy_nonoverlapping(args.elements as *const u8, at as *mut u8, alen as usize);
     blob
 }
 
-/// Find the active slot matching (kind, ident); ident comparison is by value
-/// for timers and by blob content for keyboard.
-unsafe fn find_sub_slot(kind: u32, ident: usize) -> usize {
+unsafe fn ident_eq(a: usize, b: usize) -> bool {
+    let al = *(a as *const u32);
+    bytes_eq((a + 4) as u32, al, (b + 4) as u32, *(b as *const u32))
+}
+
+/// The live slot whose identity equals `ident`, or `usize::MAX`.
+unsafe fn find_sub_slot(ident: usize) -> usize {
     for s in 0..SUBS_CAP {
-        let p = sub_slot(s);
-        if *p != kind {
-            continue;
-        }
-        let stored = *p.add(1) as usize;
-        let hit = match kind {
-            // Keyboard and port identities are `[len][bytes]` blobs, compared
-            // by content; timer (ms) and url (sentinel) are compared by value.
-            SUB_KEYBOARD | SUB_PORT => kb_ident_eq(stored, ident),
-            _ => stored == ident,
-        };
-        if hit {
+        let stored = *sub_slot(s) as usize;
+        if stored != 0 && ident_eq(stored, ident) {
             return s;
         }
     }
@@ -3107,26 +2858,11 @@ unsafe fn cb_at(blob: usize, i: usize) -> usize {
     *((blob + 8 + i * 4) as *const u32) as usize
 }
 
-/// Release a stored sub callback through the dropper matching its type
-/// (uniform in practice, since boxed erased callables carry their own
-/// on_drop, but kept per-kind so the schema ids line up).
-unsafe fn drop_sub_callback(kind: u32, cb: usize) {
-    if kind == SUB_KEYBOARD {
-        abi::roc_drop_key_callback(cb as abi::RocErasedCallable);
-    } else if kind == SUB_PORT || kind == SUB_URL {
-        // Both carry a `Str -> Box(msg)` decoder.
-        abi::roc_drop_value_callback(cb as abi::RocErasedCallable);
-    } else {
-        abi::roc_drop_timer_callback(cb as abi::RocErasedCallable);
-    }
-}
-
 /// Release every callback in slot `s`'s list and empty it (the blob stays).
 unsafe fn cb_list_clear(s: usize) {
-    let p = sub_slot(s);
-    let blob = *p.add(2) as usize;
+    let blob = *sub_slot(s).add(SLOT_CBS) as usize;
     for i in 0..cb_list_len(blob) {
-        drop_sub_callback(*p, cb_at(blob, i));
+        abi::roc_drop_bytes_callback(cb_at(blob, i) as abi::RocErasedCallable);
     }
     *((blob + 4) as *mut u32) = 0;
 }
@@ -3140,12 +2876,12 @@ unsafe fn cb_list_clear(s: usize) {
 /// `sync_subs`, so nothing can hit zero in between.
 unsafe fn sub_add_callback(s: usize, cb: usize) {
     let p = sub_slot(s);
-    if *p.add(3) == 0 {
+    if *p.add(SLOT_LIVE) == 0 {
         cb_list_clear(s);
-        *p.add(3) = 1;
+        *p.add(SLOT_LIVE) = 1;
     }
     incref(cb);
-    let mut blob = *p.add(2) as usize;
+    let mut blob = *p.add(SLOT_CBS) as usize;
     let cap = *(blob as *const u32) as usize;
     let len = cb_list_len(blob);
     if len == cap {
@@ -3154,7 +2890,7 @@ unsafe fn sub_add_callback(s: usize, cb: usize) {
             core::arch::wasm32::unreachable();
         }
         *(blob as *mut u32) = (cap * 2) as u32;
-        *p.add(2) = blob as u32;
+        *p.add(SLOT_CBS) = blob as u32;
     }
     *((blob + 8 + len * 4) as *mut u32) = cb as u32;
     *((blob + 4) as *mut u32) = (len + 1) as u32;
@@ -3167,109 +2903,40 @@ unsafe fn sync_subs() {
     incref(MODEL); // roc_subs consumes one model ref
     let subs = abi::roc_subs(MODEL as abi::RocBox);
     for s in 0..SUBS_CAP {
-        *sub_slot(s).add(3) = 0;
+        *sub_slot(s).add(SLOT_LIVE) = 0;
     }
     let data = subs.elements as usize;
     for i in 0..subs.length {
         let e = data + i * SUB_STRIDE;
-        match *((e + SUB_DISC_OFFSET) as *const u8) {
-            SUB_TAG_EVERY => {
-                let ms = read_u32(e + EVERY_MS);
-                let cb = read_u32(e + EVERY_CB) as usize;
-                let found = find_sub_slot(SUB_EVERY, ms as usize);
-                if found != usize::MAX {
-                    sub_add_callback(found, cb);
-                } else {
-                    let s = take_sub_slot();
-                    let p = sub_slot(s);
-                    *p = SUB_EVERY;
-                    *p.add(1) = ms;
-                    *p.add(2) = cb_list_new() as u32;
-                    *p.add(3) = 0;
-                    sub_add_callback(s, cb);
-                    push_effect(EFFECT_SUB_START);
-                    push_effect(s as u32);
-                    push_effect(ms);
-                }
-            }
-            SUB_TAG_KEYBOARD => {
-                let cb = read_u32(e + KB_CB) as usize;
-                let ident = build_kb_ident(e);
-                let found = find_sub_slot(SUB_KEYBOARD, ident);
-                if found != usize::MAX {
-                    roc_dealloc(ident as *mut u8, 4); // slot already owns an equal blob
-                    sub_add_callback(found, cb);
-                } else {
-                    let s = take_sub_slot();
-                    let p = sub_slot(s);
-                    *p = SUB_KEYBOARD;
-                    *p.add(1) = ident as u32;
-                    *p.add(2) = cb_list_new() as u32;
-                    *p.add(3) = 0;
-                    sub_add_callback(s, cb);
-                    push_effect(EFFECT_KEYBOARD_START);
-                    push_effect(s as u32);
-                    push_effect(*((e + KB_PD) as *const u8) as u32);
-                    push_effect_str(e + KB_EVENT);
-                    let keys = &*((e + KB_KEYS) as *const abi::RocList<RocStr>);
-                    push_effect(keys.length as u32);
-                    for k in 0..keys.length {
-                        push_effect_str(keys.elements as usize + k * size_of::<RocStr>());
-                    }
-                }
-            }
-            SUB_TAG_PORT_LISTEN => {
-                let cb = read_u32(e + PORT_LISTEN_CB) as usize;
-                let ident = build_name_ident(e + PORT_LISTEN_NAME);
-                let found = find_sub_slot(SUB_PORT, ident);
-                if found != usize::MAX {
-                    roc_dealloc(ident as *mut u8, 4); // slot already owns an equal blob
-                    sub_add_callback(found, cb);
-                } else {
-                    let s = take_sub_slot();
-                    let p = sub_slot(s);
-                    *p = SUB_PORT;
-                    *p.add(1) = ident as u32;
-                    *p.add(2) = cb_list_new() as u32;
-                    *p.add(3) = 0;
-                    sub_add_callback(s, cb);
-                    push_effect(EFFECT_PORT_START);
-                    push_effect(s as u32);
-                    push_effect_str(e + PORT_LISTEN_NAME);
-                }
-            }
-            SUB_TAG_URL_CHANGED => {
-                let cb = read_u32(e + URL_CHANGED_CB) as usize;
-                let found = find_sub_slot(SUB_URL, URL_IDENT as usize);
-                if found != usize::MAX {
-                    sub_add_callback(found, cb);
-                } else {
-                    let s = take_sub_slot();
-                    let p = sub_slot(s);
-                    *p = SUB_URL;
-                    *p.add(1) = URL_IDENT;
-                    *p.add(2) = cb_list_new() as u32;
-                    *p.add(3) = 0;
-                    sub_add_callback(s, cb);
-                    push_effect(EFFECT_URL_START);
-                    push_effect(s as u32);
-                }
-            }
-            _ => {}
+        let cb = read_u32(e + LISTEN_CB) as usize;
+        let ident = build_ident(e);
+        let found = find_sub_slot(ident);
+        if found != usize::MAX {
+            roc_dealloc(ident as *mut u8, 4); // slot already owns an equal blob
+            sub_add_callback(found, cb);
+        } else {
+            let s = take_sub_slot();
+            let p = sub_slot(s);
+            *p = ident as u32;
+            *p.add(SLOT_CBS) = cb_list_new() as u32;
+            *p.add(SLOT_LIVE) = 0;
+            sub_add_callback(s, cb);
+            push_effect(EFFECT_LISTEN_START);
+            push_effect(s as u32);
+            push_effect_str(e + LISTEN_ID);
+            let args = &*((e + LISTEN_ARGS) as *const abi::RocListWith<u8, false>);
+            push_effect_copy(args.elements as usize, args.length);
         }
     }
     for s in 0..SUBS_CAP {
         let p = sub_slot(s);
-        if *p != SUB_FREE && *p.add(3) == 0 {
+        if *p != 0 && *p.add(SLOT_LIVE) == 0 {
             push_effect(EFFECT_SUB_STOP);
             push_effect(s as u32);
-            if *p == SUB_KEYBOARD || *p == SUB_PORT {
-                // Keyboard and port slots own a `[len][bytes]` identity blob.
-                roc_dealloc((*p.add(1)) as usize as *mut u8, 4);
-            }
             cb_list_clear(s);
-            roc_dealloc((*p.add(2)) as usize as *mut u8, 4);
-            *p = SUB_FREE;
+            roc_dealloc((*p) as usize as *mut u8, 4);
+            roc_dealloc((*p.add(SLOT_CBS)) as usize as *mut u8, 4);
+            *p = 0;
         }
     }
     drop_subs(&subs);
@@ -3307,105 +2974,6 @@ unsafe fn finish_msgs(msgs: *mut u32, n: usize) -> u32 {
     }
 }
 
-/// Dispatch a timer subscription firing: look up the sub's CURRENT callbacks
-/// (the table swaps in fresh ones on every model change, so a long-lived JS
-/// interval never runs a stale closure), call each with the time, and apply
-/// the messages. A late fire against a freed or repurposed slot is a no-op.
-#[no_mangle]
-pub extern "C" fn dispatch_sub(id: usize, now_ms: f64) -> u32 {
-    unsafe {
-        if id >= SUBS_CAP || *sub_slot(id) != SUB_EVERY {
-            return 0;
-        }
-        // Calling a callable consumes its ARGS, not the callable's own ref
-        // (dispatch_timer relies on the same fact), so the table's refs
-        // cover any number of firings.
-        let blob = *sub_slot(id).add(2) as usize;
-        let n = cb_list_len(blob);
-        let msgs = msg_scratch(n);
-        for i in 0..n {
-            let args: i64 = now_ms as i64;
-            *msgs.add(i) = call_callable(cb_at(blob, i), &raw const args as *const u8) as u32;
-        }
-        finish_msgs(msgs, n)
-    }
-}
-
-/// Dispatch a keyboard subscription firing: build the `KeyEvent` record from
-/// what JS wrote via `js_alloc` (key and code strings, packed modifier and
-/// repeat flags), call each of the slot's current callbacks with it, and
-/// apply the messages. A late fire against a freed or repurposed slot is a
-/// no-op.
-#[no_mangle]
-pub extern "C" fn dispatch_sub_key(
-    id: usize,
-    key_ptr: usize,
-    key_len: usize,
-    code_ptr: usize,
-    code_len: usize,
-    flags: u32,
-) -> u32 {
-    unsafe {
-        let key = str_from_parts(key_ptr, key_len);
-        let code = str_from_parts(code_ptr, code_len);
-        if id >= SUBS_CAP || *sub_slot(id) != SUB_KEYBOARD {
-            abi::roc_drop_str(key); // late fire: still own the JS blocks
-            abi::roc_drop_str(code);
-            return 0;
-        }
-        let blob = *sub_slot(id).add(2) as usize;
-        let n = cb_list_len(blob);
-        let msgs = msg_scratch(n);
-        for i in 0..n {
-            // Each call consumes the record's strings; add a reference per
-            // extra callback so every call owns its own.
-            if i + 1 < n {
-                str_incref(&key);
-                str_incref(&code);
-            }
-            let args = key_event_args(key, code, flags);
-            *msgs.add(i) = call_callable(cb_at(blob, i), &raw const args as *const u8) as u32;
-        }
-        if n == 0 {
-            abi::roc_drop_str(key);
-            abi::roc_drop_str(code);
-        }
-        finish_msgs(msgs, n)
-    }
-}
-
-/// Dispatch a value-carrying subscription firing: an incoming port value
-/// (`app.sendPort`) or a URL change (`popstate`). JS wrote the string via
-/// `js_alloc`; build a `Str`, call each of the slot's current
-/// `Str -> Box(Msg)` decoders with it (fanning out to duplicate subs), and
-/// apply the messages. A late fire against a freed or repurposed slot is a
-/// no-op. Mirrors `dispatch_sub_key` but with a single `Str` argument.
-#[no_mangle]
-pub extern "C" fn dispatch_sub_value(id: usize, val_ptr: usize, val_len: usize) -> u32 {
-    unsafe {
-        let value = str_from_parts(val_ptr, val_len);
-        if id >= SUBS_CAP || (*sub_slot(id) != SUB_PORT && *sub_slot(id) != SUB_URL) {
-            abi::roc_drop_str(value); // late fire: still own the JS block
-            return 0;
-        }
-        let blob = *sub_slot(id).add(2) as usize;
-        let n = cb_list_len(blob);
-        let msgs = msg_scratch(n);
-        for i in 0..n {
-            // Each call consumes the string; add a reference per extra
-            // callback so every call owns its own.
-            if i + 1 < n {
-                str_incref(&value);
-            }
-            *msgs.add(i) = call_callable(cb_at(blob, i), &raw const value as *const u8) as u32;
-        }
-        if n == 0 {
-            abi::roc_drop_str(value);
-        }
-        finish_msgs(msgs, n)
-    }
-}
-
 #[no_mangle]
 pub extern "C" fn effects_ptr() -> usize {
     unsafe { EFFECTS_PTR }
@@ -3436,65 +3004,14 @@ pub extern "C" fn effects_clear() {
         while i < n {
             let kind = *w.add(i);
             i += 1;
-            if kind == EFFECT_HTTP {
-                i += 1; // callback
-                i = free_effect_copy(w, i); // method
-                i = free_effect_copy(w, i); // url
-                i = free_effect_copy(w, i); // body
-                i += 2; // timeout (2 words)
-                let n_headers = *w.add(i) as usize;
-                i += 1;
-                for _ in 0..n_headers {
-                    i = free_effect_copy(w, i); // key
-                    i = free_effect_copy(w, i); // value
-                }
-            } else if kind == EFFECT_AFTER || kind == EFFECT_SUB_START {
-                i += 2; // callback/id, ms
-            } else if kind == EFFECT_SUB_STOP {
-                i += 1; // id
-            } else if kind == EFFECT_KEYBOARD_START {
-                i += 2; // id, prevent_default
-                i = free_effect_copy(w, i); // event name
-                let n_keys = *w.add(i) as usize;
-                i += 1;
-                for _ in 0..n_keys {
-                    i = free_effect_copy(w, i); // key
-                }
-            } else if kind == EFFECT_PORT_SEND {
-                i = free_effect_copy(w, i); // name
-                i = free_effect_copy(w, i); // value
-            } else if kind == EFFECT_PORT_START {
-                i += 1; // id
-                i = free_effect_copy(w, i); // name
-            } else if kind == EFFECT_URL_START {
-                i += 1; // id
-            } else if kind == EFFECT_DEBOUNCE {
-                i += 2; // callback, ms
-                i = free_effect_copy(w, i); // key
-            } else if kind == EFFECT_HTTP_FILE {
-                i += 1; // callback
-                i = free_effect_copy(w, i); // method
-                i = free_effect_copy(w, i); // url
-                i += 7; // file id, start (2 words), len (2 words), timeout (2 words)
-                let n_headers = *w.add(i) as usize;
-                i += 1;
-                for _ in 0..n_headers {
-                    i = free_effect_copy(w, i); // key
-                    i = free_effect_copy(w, i); // value
-                }
-            } else if kind == EFFECT_CRYPTO_DIGEST {
-                i += 1; // callback
-                i = free_effect_copy(w, i); // algorithm
-                i = free_effect_copy(w, i); // data
-            } else if kind == EFFECT_CRYPTO_DIGEST_FILE {
-                i += 1; // callback
-                i = free_effect_copy(w, i); // algorithm
-                i += 5; // file id, start (2 words), len (2 words)
+            if kind == EFFECT_SUB_STOP {
+                i += 1; // slot
             } else {
-                // EFFECT_NAVIGATE / EFFECT_PUSH_URL / EFFECT_REPLACE_URL /
-                // EFFECT_SHOW_MODAL / EFFECT_CLOSE_MODAL / EFFECT_FOCUS /
-                // EFFECT_TIME_CANCEL
-                i = free_effect_copy(w, i); // url / selector / key
+                if kind != EFFECT_SEND {
+                    i += 1; // callback or slot
+                }
+                i = free_effect_copy(w, i); // id
+                i = free_effect_copy(w, i); // args
             }
         }
         EFFECTS_LEN = 0;
@@ -3607,15 +3124,6 @@ pub extern "C" fn dispatch_value(callable: usize, val_ptr: usize, val_len: usize
     }
 }
 
-/// One extra reference to a `str_from_parts` string: small strings live
-/// inline (the struct copy IS the reference), heap strings bump the block's
-/// refcount. The small-string marker is the top bit of the length word.
-unsafe fn str_incref(s: &RocStr) {
-    if s.length & (isize::MIN as usize) == 0 {
-        incref(s.bytes as usize);
-    }
-}
-
 /// The `KeyEvent` record for a key dispatch; `flags` packs the booleans
 /// (1 ctrl, 2 shift, 4 alt, 8 meta, 16 repeat, 32 is_composing, mirrored
 /// in the runtime's keyFlags).
@@ -3721,17 +3229,18 @@ pub extern "C" fn dispatch_file(
     }
 }
 
-/// Dispatch a byte-carrying one-shot response (a crypto digest's hash): JS
-/// wrote the bytes via `js_alloc`; call the boxed `List(U8) -> Box(Msg)`
-/// callback, then run `update`. Empty bytes signal failure (see Crypto).
-/// One-shot: releases the reference JS held.
+/// Deliver a browser feature's reply (Effect.call): JS wrote the bytes via
+/// `js_alloc` (a status byte, then the answer or the reason, see
+/// Effect.reply); call the boxed `List(U8) -> Box(Msg)` callback, then run
+/// `update`. One-shot: releases the reference JS held.
 #[no_mangle]
 pub extern "C" fn dispatch_bytes(callable: usize, ptr: usize, len: usize) -> u32 {
     unsafe {
         let args = abi::RocListWith::<u8, false> {
             elements: ptr as *mut u8,
             length: len,
-            // Same capacity encoding as dispatch_http's body list.
+            // Lists share the string capacity encoding: capacity is stored
+            // shifted left one bit (low bit = seamless-slice tag, 0 here).
             capacity_or_alloc_ptr: len << 1,
         };
         // The callable consumes its args (the list moves into the msg).
@@ -3742,114 +3251,45 @@ pub extern "C" fn dispatch_bytes(callable: usize, ptr: usize, len: usize) -> u32
     }
 }
 
-/// Release a timer callback JS holds without dispatching it: a debounce that
-/// was re-armed (the fresh effect carries a fresh callback) or canceled
-/// (`Time.cancel`) before firing.
+/// Deliver a browser feature's event (Sub.listen) to every callback its
+/// subscription holds: JS wrote the bytes via `js_alloc`, each callback gets
+/// a reference to the one list.
 #[no_mangle]
-pub extern "C" fn drop_timer_cb(callable: usize) {
-    unsafe { abi::roc_drop_timer_callback(callable as abi::RocErasedCallable) }
-}
-
-/// The u32 at `off` regardless of alignment: the packed header buffer
-/// interleaves length words with raw string bytes.
-#[inline]
-unsafe fn read_u32_unaligned(off: usize) -> u32 {
-    core::ptr::read_unaligned(off as *const u32)
-}
-
-/// Build the response-header `List({ name : Str, value : Str })` from the
-/// packed buffer JS wrote via `js_alloc`: a u32 count, then per header a u32
-/// byte length + UTF-8 bytes for the name and the same for the value. The
-/// strings are copied into refcounted allocations Roc owns (freed with the
-/// response record), the packed buffer itself is scratch and freed here.
-/// `ptr` 0 means no headers.
-unsafe fn headers_from_packed(ptr: usize) -> abi::RocList<HeaderPair> {
-    let empty = abi::RocList {
-        elements: core::ptr::null_mut(),
-        length: 0,
-        capacity_or_alloc_ptr: 0,
-    };
-    if ptr == 0 {
-        return empty;
-    }
-    let count = read_u32_unaligned(ptr) as usize;
-    if count == 0 {
-        roc_dealloc((ptr - 4) as *mut u8, 4);
-        return empty;
-    }
-    let block = roc_alloc(4 + count * HEADER_STRIDE, 4) as usize;
-    if block == 0 {
-        core::arch::wasm32::unreachable();
-    }
-    *(block as *mut isize) = 1; // refcount: owned; Roc frees the list
-    let elements = (block + 4) as *mut HeaderPair;
-    let mut at = ptr + 4;
-    for i in 0..count {
-        let name_len = read_u32_unaligned(at) as usize;
-        let name = str_copied(at + 4, name_len);
-        at += 4 + name_len;
-        let value_len = read_u32_unaligned(at) as usize;
-        let value = str_copied(at + 4, value_len);
-        at += 4 + value_len;
-        core::ptr::write(elements.add(i), HeaderPair { name, value });
-    }
-    roc_dealloc((ptr - 4) as *mut u8, 4); // the packed buffer is scratch
-    abi::RocList {
-        elements,
-        length: count,
-        capacity_or_alloc_ptr: count << 1,
-    }
-}
-
-/// Dispatch an HTTP response: JS wrote the body bytes and the packed header
-/// buffer via `js_alloc`; build the response record, call the boxed callback,
-/// then run `update`. Statuses 0 (never completed) and 1 (timed out) are the
-/// transport sentinels the Http module decodes, real statuses start at 100.
-#[no_mangle]
-pub extern "C" fn dispatch_http(
-    callable: usize,
-    status: u32,
-    body_ptr: usize,
-    body_len: usize,
-    headers_ptr: usize,
-) -> u32 {
+pub extern "C" fn dispatch_sub_bytes(id: usize, ptr: usize, len: usize) -> u32 {
     unsafe {
-        let args = HttpArgs {
-            body: abi::RocListWith {
-                elements: body_ptr as *mut u8,
-                length: body_len,
-                // Lists share the string capacity encoding: capacity is stored
-                // shifted left one bit (low bit = seamless-slice tag, 0 here),
-                // so the decoded capacity is `body_len`.
-                capacity_or_alloc_ptr: body_len << 1,
-            },
-            headers: headers_from_packed(headers_ptr),
-            status: status as u16,
+        let bytes = abi::RocListWith::<u8, false> {
+            elements: ptr as *mut u8,
+            length: len,
+            capacity_or_alloc_ptr: len << 1,
         };
-        // The callable consumes its args (the body list moves into the msg).
-        let msg_box = call_callable(callable, &raw const args as *const u8);
-        let changed = run_update(msg_box);
-        // HTTP responses are one-shot: release the reference JS held.
-        abi::roc_drop_http_callback(callable as abi::RocErasedCallable);
-        changed
+        if !sub_live(id) {
+            abi::roc_drop_bytes(bytes); // late fire: still own the JS block
+            return 0;
+        }
+        let blob = *sub_slot(id).add(SLOT_CBS) as usize;
+        let n = cb_list_len(blob);
+        let msgs = msg_scratch(n);
+        for i in 0..n {
+            // Each call consumes the list, so add a reference per extra
+            // callback.
+            if i + 1 < n && len > 0 {
+                incref(ptr);
+            }
+            *msgs.add(i) = call_callable(cb_at(blob, i), &raw const bytes as *const u8) as u32;
+        }
+        if n == 0 {
+            abi::roc_drop_bytes(bytes);
+        }
+        finish_msgs(msgs, n)
     }
 }
 
-/// Dispatch a timer firing: call the boxed `I64 -> Box(Msg)` callback with the
-/// current time (ms since epoch, passed from JS as an f64), then run
-/// `update`. `one_shot` is 1 for Time.after (JS releases its reference after
-/// this single firing) and 0 for Time.every (the interval keeps firing).
+/// Release a browser feature call's callback JS holds without answering it,
+/// for an operation that ends with no answer (a debounce re-armed or
+/// cancelled before it fired, say).
 #[no_mangle]
-pub extern "C" fn dispatch_timer(callable: usize, now_ms: f64, one_shot: u32) -> u32 {
-    unsafe {
-        let args: i64 = now_ms as i64;
-        let msg_box = call_callable(callable, &raw const args as *const u8);
-        let changed = run_update(msg_box);
-        if one_shot != 0 {
-            abi::roc_drop_timer_callback(callable as abi::RocErasedCallable);
-        }
-        changed
-    }
+pub extern "C" fn drop_call_cb(callable: usize) {
+    unsafe { abi::roc_drop_bytes_callback(callable as abi::RocErasedCallable) }
 }
 
 // --- Console log queue ---

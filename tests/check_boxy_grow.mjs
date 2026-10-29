@@ -8,9 +8,10 @@
 // layout of one case cannot mask another.
 // Run from the repo root: node tests/check_boxy_grow.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, fakeDom, find } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('boxy_grow');
 
 // Captured intervals, so the tick fires on demand.
 const intervals = [];

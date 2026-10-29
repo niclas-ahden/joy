@@ -4,9 +4,10 @@
 // transport-level (network failure or timeout).
 // Run from the repo root: node tests/check_http.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, fakeDom, find, htmlBare } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('http');
 
 const bytes = readFileSync(wasmPath('http'));
 const tick = () => new Promise((r) => setTimeout(r, 0));

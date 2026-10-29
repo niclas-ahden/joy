@@ -360,42 +360,20 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
     return i;
   }
 
-  // Ports the app subscribes to (via Port.listen): name -> the host's sub id.
-  const ports = new Map();
-
   // JS handlers for outgoing ports (via app.onPort): name -> function.
   const outPorts = new Map();
 
-  // Cleanup functions for active subscriptions (clear an interval, remove a
-  // global key listener), keyed by the host's sub id. The host owns the
-  // lifecycle: start/stop effects arrive whenever the app's declared
-  // subscription set changes.
+  // Stop functions for active subscriptions, keyed by the host's sub id.
+  // The host owns the lifecycle: start/stop effects arrive whenever the
+  // app's declared subscription set changes.
   const subCleanups = new Map();
 
-  // User-picked File objects (from file inputs with an on_file handler),
-  // keyed by the id minted when the pick was dispatched. The bytes stay on
-  // the JS side; Http.post_file / Crypto.digest_file reference them by id.
+  // User-picked File objects (from file inputs with an on_file handler, or
+  // handed to the app by a feature), keyed by the id minted when it was
+  // dispatched. The bytes stay on the JS side, and features reference them
+  // by id (see featureHost).
   const files = new Map();
   let nextFileId = 1;
-
-  // WebCrypto.digest_file/_slice effects waiting for a turn, and how many
-  // are reading or hashing now. A digest holds its whole slice in memory
-  // until the hash is done, so at most navigator.hardwareConcurrency run at
-  // once: an app that asks for every 16 MiB chunk of a 10 GB file at once
-  // then holds a few chunks, not the file.
-  const digestQueue = [];
-  let digestsRunning = 0;
-
-  // Pending Time.debounce timers by key: re-arming clears the old timer and
-  // releases the callback it held (the fresh command carries a fresh one).
-  const debounces = new Map(); // key -> { handle, cb }
-  function dropDebounce(key) {
-    const prev = debounces.get(key);
-    if (!prev) return;
-    clearTimeout(prev.handle);
-    exports.drop_timer_cb(prev.cb);
-    debounces.delete(key);
-  }
 
   // Per-node handler bookkeeping. Attribute state needs no record here: the
   // host diffs the attribute lists itself and PATCH_ATTRS arrives as precise
@@ -1414,10 +1392,12 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
     }
   }
 
-  // Commands (async effects) queue host-side the same way. Parse them fully,
-  // decoding strings and copying body bytes out of wasm memory, BEFORE
-  // running anything, because executing them (js_alloc, dispatch_*) may grow
-  // wasm memory and detach the views.
+  // Effects queue host-side the same way. Parse them fully, decoding
+  // strings and copying argument bytes out of wasm memory, BEFORE running
+  // anything, because executing them (js_alloc, dispatch_*) may grow wasm
+  // memory and detach the views. The kinds (see the effect queue in
+  // host.rs): 1 a feature call, 2 a feature send, 3 a subscription's start,
+  // 4 its stop.
   function parseEffects() {
     const n = exports.effects_len();
     if (n === 0) return [];
@@ -1426,72 +1406,14 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
     let i = 0;
     while (i < n) {
       const kind = w[i++];
-      if (kind === 1) { // HTTP
-        const cb = w[i++];
-        const method = str(w[i++], w[i++]);
-        const url = str(w[i++], w[i++]);
-        const bodyPtr = w[i++], bodyLen = w[i++];
-        const body = bodyLen > 0 ? new Uint8Array(memory.buffer, bodyPtr, bodyLen).slice() : null;
-        const timeoutMs = w[i++] + w[i++] * 4294967296; // u64 as lo, hi
-        const headers = {};
-        let nHeaders = w[i++];
-        while (nHeaders-- > 0) headers[str(w[i++], w[i++])] = str(w[i++], w[i++]);
-        effects.push({ kind: 'http', cb, method, url, body, timeoutMs, headers });
-      } else if (kind === 2) { // AFTER (one-shot)
-        effects.push({ kind: 'after', cb: w[i++], ms: w[i++] });
-      } else if (kind === 8) { // SUB START
-        effects.push({ kind: 'subStart', id: w[i++], ms: w[i++] });
-      } else if (kind === 9) { // SUB STOP
-        effects.push({ kind: 'subStop', id: w[i++] });
-      } else if (kind === 10) { // KEYBOARD START
-        const id = w[i++];
-        const preventDefault = w[i++] !== 0;
-        const event = str(w[i++], w[i++]);
-        const keys = [];
-        let nKeys = w[i++];
-        while (nKeys-- > 0) keys.push(str(w[i++], w[i++]));
-        effects.push({ kind: 'keyboardStart', id, preventDefault, event, keys });
-      } else if (kind === 11) { // PORT SEND
-        effects.push({ kind: 'portSend', name: str(w[i++], w[i++]), value: str(w[i++], w[i++]) });
-      } else if (kind === 12) { // PORT LISTEN START (a subscription)
-        effects.push({ kind: 'portStart', id: w[i++], name: str(w[i++], w[i++]) });
-      } else if (kind === 13) { // URL CHANGE START (a subscription)
-        effects.push({ kind: 'urlStart', id: w[i++] });
-      } else if (kind === 14 || kind === 15) { // SHOW / CLOSE MODAL
-        effects.push({ kind: kind === 14 ? 'showModal' : 'closeModal', selector: str(w[i++], w[i++]) });
-      } else if (kind === 21) { // FOCUS
-        effects.push({ kind: 'focus', selector: str(w[i++], w[i++]) });
-      } else if (kind === 16) { // DEBOUNCE (keyed one-shot timer)
-        effects.push({ kind: 'debounce', cb: w[i++], ms: w[i++], key: str(w[i++], w[i++]) });
-      } else if (kind === 17) { // TIME CANCEL (discard a pending debounce)
-        effects.push({ kind: 'timeCancel', key: str(w[i++], w[i++]) });
-      } else if (kind === 18) { // HTTP FILE (file-body request)
-        const cb = w[i++];
-        const method = str(w[i++], w[i++]);
-        const url = str(w[i++], w[i++]);
-        const fileId = w[i++];
-        const start = w[i++] + w[i++] * 4294967296; // u64 as lo, hi
-        const len = w[i++] + w[i++] * 4294967296;
-        const timeoutMs = w[i++] + w[i++] * 4294967296;
-        const headers = {};
-        let nHeaders = w[i++];
-        while (nHeaders-- > 0) headers[str(w[i++], w[i++])] = str(w[i++], w[i++]);
-        effects.push({ kind: 'httpFile', cb, method, url, fileId, start, len, timeoutMs, headers });
-      } else if (kind === 19) { // CRYPTO DIGEST (hash bytes)
-        const cb = w[i++];
-        const algorithm = str(w[i++], w[i++]);
-        const dataPtr = w[i++], dataLen = w[i++];
-        const data = dataLen > 0 ? new Uint8Array(memory.buffer, dataPtr, dataLen).slice() : new Uint8Array();
-        effects.push({ kind: 'cryptoDigest', cb, algorithm, data });
-      } else if (kind === 20) { // CRYPTO DIGEST FILE (hash a file / slice)
-        const cb = w[i++];
-        const algorithm = str(w[i++], w[i++]);
-        const fileId = w[i++];
-        const start = w[i++] + w[i++] * 4294967296;
-        const len = w[i++] + w[i++] * 4294967296;
-        effects.push({ kind: 'cryptoDigestFile', cb, algorithm, fileId, start, len });
-      } else if (kind === 5 || kind === 6 || kind === 7) { // NAVIGATION
-        effects.push({ kind: ['navigate', 'pushUrl', 'replaceUrl'][kind - 5], url: str(w[i++], w[i++]) });
+      if (kind === 4) {
+        effects.push({ kind, id: w[i++] });
+      } else if (kind >= 1 && kind <= 3) {
+        const first = kind === 2 ? 0 : w[i++]; // the callback, or the subscription's slot
+        const op = str(w[i++], w[i++]);
+        const argsPtr = w[i++], argsLen = w[i++];
+        const args = argsLen > 0 ? new Uint8Array(memory.buffer, argsPtr, argsLen).slice() : new Uint8Array();
+        effects.push({ kind, cb: first, id: first, op, args });
       } else {
         throw new Error(`unknown effect kind ${kind} at word ${i - 1}`);
       }
@@ -1566,189 +1488,99 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
     }
   }
 
-  // Response headers as [name, value] pairs (names arrive lowercased from
-  // the Headers object). Fetch stubs without a Headers object yield none.
-  const respHeaders = (resp) => (resp.headers?.entries ? [...resp.headers.entries()] : []);
-
-  // Run an http/httpFile effect's fetch. A timeout aborts the request and
-  // reports sentinel status 1, any other network/body failure reports 0.
-  // Real responses pass their status and headers through, whatever the
-  // status (4xx/5xx included).
-  function fetchHttp(e, body) {
-    const opts = { method: e.method, headers: e.headers };
-    if (body !== undefined && body !== null) opts.body = body;
-    let timer = null;
-    let timedOut = false;
-    if (e.timeoutMs > 0) {
-      const controller = new AbortController();
-      opts.signal = controller.signal;
-      timer = setTimeout(() => { timedOut = true; controller.abort(); }, e.timeoutMs);
-    }
-    // The failure arm must cover only the network/body phase: chaining a
-    // .catch after the dispatch would call dispatchHttp a second time with
-    // the same one-shot callback if the dispatch itself throws.
-    fetch(e.url, opts)
-      .then((resp) => resp.arrayBuffer().then((buf) => [resp.status, new Uint8Array(buf), respHeaders(resp)]))
-      .then(
-        ([status, body2, headers]) => { clearTimeout(timer); dispatchHttp(e.cb, status, body2, headers); },
-        () => { clearTimeout(timer); dispatchHttp(e.cb, timedOut ? 1 : 0, new Uint8Array(), []); },
-      );
-  }
-
-  // A selector-addressed effect that matched nothing is a no-op by design
-  // (the app may focus a field only some pages have), so this is
-  // information for the developer, not an error: it is how a typo in the
-  // selector, or an effect that ran before its element existed, shows up.
-  function warnUnmatched(effect, selector) {
-    console.warn(`Joy ${effect}: nothing on the page matches "${selector}" (or it is not a valid CSS selector), so it did nothing.`);
-  }
-
   function runEffect(e) {
-    if (e.kind === 'http') {
-      fetchHttp(e, e.body);
-    } else if (e.kind === 'after') {
-      setTimeout(() => dispatchTimer(e.cb, Date.now(), 1), e.ms); // one-shot: host releases the callback
-    } else if (e.kind === 'subStart') {
-      const handle = setInterval(() => dispatchSub(e.id, Date.now()), e.ms);
-      subCleanups.set(e.id, () => clearInterval(handle));
-    } else if (e.kind === 'keyboardStart') {
-      // The key filter and preventDefault are subscription data, so they run
-      // here without entering the app; they also form the sub's identity.
-      const remove = dom.onGlobal(e.event, (domEvent) => {
-        const info = dom.eventKeyInfo(domEvent);
-        if (e.keys.length > 0 && !e.keys.includes(info.key)) return;
-        if (e.preventDefault) domEvent.preventDefault?.();
-        dispatchSubKey(e.id, info);
-      });
-      subCleanups.set(e.id, remove);
-    } else if (e.kind === 'subStop') {
+    if (e.kind === 1) {
+      callFeature(e);
+    } else if (e.kind === 2) {
+      sendFeature(e);
+    } else if (e.kind === 3) {
+      listenFeature(e);
+    } else {
       subCleanups.get(e.id)?.();
       subCleanups.delete(e.id);
-    } else if (e.kind === 'portStart') {
-      ports.set(e.name, e.id);
-      // A start for the same name can precede the old sub's stop in one
-      // batch, so only forget the name if it still points at this sub.
-      subCleanups.set(e.id, () => { if (ports.get(e.name) === e.id) ports.delete(e.name); });
-    } else if (e.kind === 'urlStart') {
-      subCleanups.set(e.id, dom.onUrlChange(() => dispatchSubValue(e.id, dom.currentUrl())));
-    } else if (e.kind === 'portSend') {
-      outPorts.get(e.name)?.(e.value); // unregistered names are a no-op
-    } else if (e.kind === 'showModal') {
-      if (!dom.showModal(e.selector)) warnUnmatched('DOM.show_modal', e.selector);
-    } else if (e.kind === 'closeModal') {
-      if (!dom.closeModal(e.selector)) warnUnmatched('DOM.close_modal', e.selector);
-    } else if (e.kind === 'focus') {
-      if (!dom.focus(e.selector)) warnUnmatched('DOM.focus', e.selector);
-    } else if (e.kind === 'debounce') {
-      dropDebounce(e.key); // re-arm: discard the pending timer and its callback
-      const handle = setTimeout(() => {
-        debounces.delete(e.key);
-        dispatchTimer(e.cb, Date.now(), 1); // one-shot: host releases the callback
-      }, e.ms);
-      debounces.set(e.key, { handle, cb: e.cb });
-    } else if (e.kind === 'timeCancel') {
-      dropDebounce(e.key);
-    } else if (e.kind === 'httpFile') {
-      const file = files.get(e.fileId);
-      if (!file) {
-        dispatchHttp(e.cb, 0, new Uint8Array(), []); // unknown id = never completed
-      } else {
-        fetchHttp(e, sliceFile(file, e.start, e.len));
-      }
-    } else if (e.kind === 'cryptoDigest') {
-      crypto.subtle.digest(e.algorithm, e.data).then(
-        (buf) => dispatchBytes(e.cb, new Uint8Array(buf)),
-        () => dispatchBytes(e.cb, new Uint8Array()), // empty hash = failure
+    }
+  }
+
+  // A feature's operation (Effect.call): run it and reply with a status
+  // byte, 0 for done and 1 for failed, then the answer (see Wire) or the
+  // reason (see failureReason). An operation that answers NO_REPLY ends
+  // without an answer, and its callback is released.
+  function callFeature(e) {
+    new Promise((resolve) => resolve(runOperation(e.op, e.args)))
+      .then(
+        (answer) => {
+          if (!alive) return;
+          if (answer === NO_REPLY) exports.drop_call_cb(e.cb);
+          else dispatchBytes(e.cb, framed(0, answer));
+        },
+        (err) => { if (alive) dispatchBytes(e.cb, framed(1, textEncoder.encode(failureReason(err)))); },
       );
-    } else if (e.kind === 'cryptoDigestFile') {
-      const file = files.get(e.fileId);
-      if (!file) {
-        dispatchBytes(e.cb, new Uint8Array());
-      } else {
-        digestQueue.push({ file, e });
-        startDigests();
-      }
-    } else if (e.kind === 'navigate') {
-      dom.navigate(e.url);
-    } else if (e.kind === 'pushUrl') {
-      dom.pushUrl(e.url);
-    } else if (e.kind === 'replaceUrl') {
-      dom.replaceUrl(e.url);
+  }
+
+  // A feature's operation that answers nothing (Effect.send). A failure
+  // has nowhere to go but the console.
+  function sendFeature(e) {
+    new Promise((resolve) => resolve(runOperation(e.op, e.args)))
+      .catch((err) => console.error(`Joy: ${e.op}: ${failureReason(err)}`));
+  }
+
+  function runOperation(id, args) {
+    const run = operations.get(id);
+    if (run === undefined) throw missing(id);
+    return run(new WireReader(args), featureHost);
+  }
+
+  // A feature's events (Sub.listen), stopped when the host stops the
+  // subscription.
+  function listenFeature(e) {
+    const start = eventSources.get(e.op);
+    if (start === undefined) {
+      console.error(`Joy: ${missing(e.op).message}`);
+      return;
     }
+    let stopped = false;
+    let stop = null;
+    subCleanups.set(e.id, () => {
+      stopped = true;
+      stop?.();
+    });
+    stop = start(new WireReader(e.args), featureHost, (event) => {
+      if (!stopped && alive) dispatchSubBytes(e.id, bytesOf(event));
+    }) ?? null;
   }
 
-  // A file's byte range as a Blob: len 0 means through the end of the file.
-  function sliceFile(file, start, len) {
-    if (len > 0) return file.slice(start, start + len);
-    return start > 0 ? file.slice(start) : file;
+  // Deliver a feature event's bytes to its subscription.
+  function dispatchSubBytes(id, bytes) {
+    const [ptr, len] = writeBytes(bytes);
+    enter(() => exports.dispatch_sub_bytes(id, ptr, len));
   }
 
-  // Start queued file digests while fewer than navigator.hardwareConcurrency
-  // run (read at each start, 4 where the browser does not say). A finished
-  // one makes room for the next, also when its dispatch threw.
-  function startDigests() {
-    const limit = Math.max(1, globalThis.navigator?.hardwareConcurrency || 4);
-    while (digestsRunning < limit && digestQueue.length > 0) {
-      const { file, e } = digestQueue.shift();
-      digestsRunning++;
-      sliceFile(file, e.start, e.len)
-        .arrayBuffer()
-        .then((buf) => crypto.subtle.digest(e.algorithm, buf))
-        .then(
-          (buf) => dispatchBytes(e.cb, new Uint8Array(buf)),
-          () => dispatchBytes(e.cb, new Uint8Array()),
-        )
-        .finally(() => {
-          digestsRunning--;
-          startDigests();
-        });
-    }
-  }
-
-  // Pack response headers for the host: a u32 count, then per header a u32
-  // byte length + UTF-8 bytes for the name and the same for the value. The
-  // host copies the strings out and frees the buffer. Returns 0 for none.
-  function writeHeaders(headers) {
-    if (headers.length === 0) return 0;
-    const parts = headers.map(([name, value]) => [encoder.encode(name), encoder.encode(value)]);
-    let size = 4;
-    for (const [n, v] of parts) size += 8 + n.length + v.length;
-    const ptr = exports.js_alloc(size);
-    const view = new DataView(memory.buffer, ptr, size);
-    const bytes = new Uint8Array(memory.buffer, ptr, size);
-    let at = 0;
-    view.setUint32(at, parts.length, true);
-    at += 4;
-    for (const [n, v] of parts) {
-      view.setUint32(at, n.length, true);
-      bytes.set(n, at + 4);
-      at += 4 + n.length;
-      view.setUint32(at, v.length, true);
-      bytes.set(v, at + 4);
-      at += 4 + v.length;
-    }
-    return ptr;
-  }
-
-  function dispatchHttp(cb, status, bodyBytes, headers) {
-    const [ptr, len] = writeBytes(bodyBytes);
-    const headersPtr = writeHeaders(headers);
-    enter(() => exports.dispatch_http(cb, status, ptr, len, headersPtr));
-  }
-
-  function dispatchTimer(cb, nowMs, oneShot) {
-    enter(() => exports.dispatch_timer(cb, nowMs, oneShot));
-  }
-
-  function dispatchSub(id, nowMs) {
-    enter(() => exports.dispatch_sub(id, nowMs));
-  }
-
-  // Deliver a string to a port or URL-change subscription.
-  function dispatchSubValue(id, value) {
-    const [ptr, len] = writeString(value);
-    enter(() => exports.dispatch_sub_value(id, ptr, len));
-  }
+  // What an operation may use of the runtime: the browser-held files, to
+  // read one the app names by id or to hand the app a new one (a recording,
+  // say) as a file input would, the element a selector names, and the DOM
+  // adapter.
+  const featureHost = {
+    file: (id) => files.get(id) ?? null,
+    element: (selector) => dom.element?.(selector) ?? null,
+    addFile: (file) => {
+      const id = nextFileId++;
+      files.set(id, file);
+      return { id, name: file.name ?? '', mime: file.type ?? '', size: file.size ?? 0 };
+    },
+    dom,
+    // The embedder's handler for an outgoing port (app.onPort).
+    outPort: (name) => outPorts.get(name),
+    // Hear what the embedder sends a port (app.sendPort) until the returned
+    // function is called. A later listener for the same name takes over.
+    listenPort: (name, fn) => {
+      featurePorts.set(name, fn);
+      return () => { if (featurePorts.get(name) === fn) featurePorts.delete(name); };
+    },
+    // Run fn when the app is unmounted, while it is still alive.
+    onUnmount: (fn) => { unmountHooks.push(fn); },
+  };
+  const featurePorts = new Map(); // name -> listener (joy/port/listen)
+  const unmountHooks = [];
 
   // Modifier/repeat booleans packed for the host (mirrored in its
   // key_event_args): 1 ctrl, 2 shift, 4 alt, 8 meta, 16 repeat,
@@ -1756,12 +1588,6 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
   const keyFlags = (i) =>
     (i.ctrl ? 1 : 0) | (i.shift ? 2 : 0) | (i.alt ? 4 : 0) | (i.meta ? 8 : 0) | (i.repeat ? 16 : 0) |
     (i.isComposing ? 32 : 0);
-
-  function dispatchSubKey(id, info) {
-    const [kp, kl] = writeString(info.key);
-    const [cp, cl] = writeString(info.code);
-    enter(() => exports.dispatch_sub_key(id, kp, kl, cp, cl, keyFlags(info)));
-  }
 
   function dispatchKey(handlerId, info) {
     const [kp, kl] = writeString(info.key);
@@ -1778,7 +1604,8 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
   }
 
   // Register the picked File under a fresh id and deliver its metadata; the
-  // File itself stays here for Http.post_file / Crypto.digest_file.
+  // File itself stays here for the features that read it (Http.send_file,
+  // WebCrypto.digest_file, ...).
   function dispatchFile(handlerId, file) {
     const id = nextFileId++;
     files.set(id, file);
@@ -1787,7 +1614,7 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
     enter(() => exports.dispatch_file(handlerId, id, np, nl, mp, ml, file.size ?? 0));
   }
 
-  // Deliver hash bytes to a crypto digest's one-shot callback.
+  // Deliver a feature's reply to its call's one-shot callback.
   function dispatchBytes(cb, bytes) {
     const [ptr, len] = writeBytes(bytes);
     enter(() => exports.dispatch_bytes(cb, ptr, len));
@@ -1805,8 +1632,7 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
   // Deliver a value from JavaScript to a port the app listens on (see the
   // platform's Port module). Unknown names are a no-op.
   function sendPort(name, value) {
-    const id = ports.get(name);
-    if (id !== undefined) dispatchSubValue(id, String(value));
+    featurePorts.get(name)?.(String(value));
   }
 
   // Boot the app: the flags string is the only thing the pure `init`
@@ -1855,19 +1681,19 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
     outPorts.set(name, fn);
   }
 
-  // Stop everything that outlives a paint: subscription cleanups (intervals,
-  // global key listeners), port registrations in both directions, and any
-  // in-flight async completion (fetches, timers), which `alive` turns into
-  // no-ops. The DOM is left as-is (the embedder owns the root).
+  // Stop everything that outlives a paint: subscriptions (intervals, global
+  // key listeners), port registrations in both directions, and any in-flight
+  // async completion (fetches, timers), which `alive` turns into no-ops. The
+  // DOM is left as-is (the embedder owns the root).
   function unmount() {
-    // Pending debounce timers are cleared (and their callbacks released)
-    // while the instance is still alive, then `alive` turns any other
+    // Features clean up while the instance is still alive (a pending
+    // debounce releases its callback), then `alive` turns any other
     // in-flight completion into a no-op.
-    for (const key of [...debounces.keys()]) dropDebounce(key);
+    for (const hook of unmountHooks.splice(0)) hook();
     alive = false;
     for (const cleanup of subCleanups.values()) cleanup();
     subCleanups.clear();
-    ports.clear();
+    featurePorts.clear();
     outPorts.clear();
     files.clear();
   }
@@ -1876,6 +1702,155 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
 }
 
 const MOUNT_OPTIONS = ['wasm', 'root', 'flags', 'dom', 'setup', 'hydrate'];
+
+// ---------------------------------------------------------------------------
+// Features
+//
+// Browser APIs beyond rendering are operations an app reaches by id,
+// `joy/media/record` say, through Effect.call (answers once), Effect.send
+// (answers nothing) and Sub.listen (events while subscribed). Their code
+// lives in www/features/, and a released app's runtime.js is this core plus
+// the operations whose ids its wasm contains (see tools/runtime), so an app
+// ships the code of exactly the platform functions it calls. During
+// development it holds every feature instead.
+//
+//   defineOperation(id, (args, host) => answer)    for Effect.call and
+//       Effect.send. The answer (a Promise is fine) is a WireWriter, bytes,
+//       nothing, or NO_REPLY to end a call without answering it. A throw
+//       fails the call with the error's name and message.
+//   defineEvents(id, (args, host, emit) => stop)    for Sub.listen. `emit`
+//       sends the app an event (a WireWriter or bytes), and `stop` ends
+//       the events.
+//
+// `args` is a WireReader over the arguments the platform module wrote (see
+// platform/Wire.roc for the format) and `host` is what the runtime lends an
+// operation (see featureHost).
+
+const operations = new Map(); // id -> run
+const eventSources = new Map(); // id -> start
+
+export function defineOperation(id, run) {
+  operations.set(id, run);
+}
+
+export function defineEvents(id, start) {
+  eventSources.set(id, start);
+}
+
+// An operation this runtime.js was built without. It is in the app's wasm,
+// so it would have been found: the runtime.js is older than the app.
+function missing(id) {
+  const err = new Error(`${id} is not in this runtime.js. Build the app's runtime.js again from its wasm.`);
+  err.name = 'NotSupportedError';
+  return err;
+}
+
+// Why an operation failed, as "<error name>: <message>". The name is how a
+// platform module tells failures apart (a browser's NotAllowedError, say).
+function failureReason(err) {
+  if (err && typeof err.name === 'string') return `${err.name}: ${err.message}`;
+  return `Error: ${err}`;
+}
+
+// The answer an operation gives to end a call without answering it.
+export const NO_REPLY = Symbol('no reply');
+
+// A reply as the platform reads it: the status byte, then the answer.
+function framed(status, answer) {
+  const body = bytesOf(answer);
+  const out = new Uint8Array(body.length + 1);
+  out[0] = status;
+  out.set(body, 1);
+  return out;
+}
+
+function bytesOf(value) {
+  if (value === undefined || value === null) return new Uint8Array();
+  if (value instanceof WireWriter) return value.done();
+  if (value instanceof Uint8Array) return value;
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  throw new TypeError('a feature answers with a WireWriter, bytes or nothing');
+}
+
+// Arguments as an operation reads them: the fields the platform module
+// wrote, in its order (see platform/Wire.roc). Bytes come out as views,
+// never copies.
+export class WireReader {
+  constructor(bytes) {
+    this.buf = bytes;
+    this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    this.at = 0;
+  }
+  u8() { return this.view.getUint8(this.at++); }
+  bool() { return this.u8() !== 0; }
+  u16() { const n = this.view.getUint16(this.at, true); this.at += 2; return n; }
+  u32() { const n = this.view.getUint32(this.at, true); this.at += 4; return n; }
+  // A JavaScript number, exact up to 2^53.
+  u64() { const n = this.view.getBigUint64(this.at, true); this.at += 8; return Number(n); }
+  i64() { const n = this.view.getBigInt64(this.at, true); this.at += 8; return Number(n); }
+  bytes() {
+    const len = this.u32();
+    const out = this.buf.subarray(this.at, this.at + len);
+    this.at += len;
+    return out;
+  }
+  str() { return textDecoder.decode(this.bytes()); }
+  // What is left unread, for an operation that takes raw bytes.
+  remaining() {
+    const out = this.buf.subarray(this.at);
+    this.at = this.buf.length;
+    return out;
+  }
+}
+
+// An answer or an event as an operation writes it, for the platform module
+// to read in the same order.
+export class WireWriter {
+  constructor() {
+    this.parts = [];
+    this.length = 0;
+  }
+  push(part) {
+    this.parts.push(part);
+    this.length += part.length;
+    return this;
+  }
+  fixed(size, set) {
+    const part = new Uint8Array(size);
+    set(new DataView(part.buffer));
+    return this.push(part);
+  }
+  u8(n) { return this.fixed(1, (v) => v.setUint8(0, n)); }
+  bool(b) { return this.u8(b ? 1 : 0); }
+  u16(n) { return this.fixed(2, (v) => v.setUint16(0, n, true)); }
+  u32(n) { return this.fixed(4, (v) => v.setUint32(0, n, true)); }
+  u64(n) { return this.fixed(8, (v) => v.setBigUint64(0, BigInt(Math.max(0, Math.trunc(n))), true)); }
+  i64(n) { return this.fixed(8, (v) => v.setBigInt64(0, BigInt(Math.trunc(n)), true)); }
+  bytes(b) {
+    const bytes = b instanceof Uint8Array ? b : new Uint8Array(b);
+    return this.u32(bytes.length).push(bytes);
+  }
+  str(s) { return this.bytes(textEncoder.encode(s)); }
+  u16s(list) {
+    this.u32(list.length);
+    const part = new Uint8Array(list.length * 2);
+    const view = new DataView(part.buffer);
+    list.forEach((n, i) => view.setUint16(i * 2, n, true));
+    return this.push(part);
+  }
+  done() {
+    const out = new Uint8Array(this.length);
+    let at = 0;
+    for (const part of this.parts) {
+      out.set(part, at);
+      at += part.length;
+    }
+    return out;
+  }
+}
+
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
 
 // Start an app and return a handle on it.
 //
@@ -2109,6 +2084,9 @@ export const browserDom = {
   // The first picked file, or null (clearing a file input fires change with
   // an empty file list).
   eventFile: (e) => e?.target?.files?.[0] ?? null,
+  // The element a selector names, or null, for feature modules (see
+  // featureHost).
+  element: (selector) => query(selector),
   showModal: (selector) => {
     const el = query(selector);
     if (el && typeof el.showModal === 'function' && !el.open) el.showModal();

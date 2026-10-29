@@ -56,8 +56,12 @@ function routeFor(app, rest) {
     // Only a page that links it requests it, so most apps never hit this.
     case '/style.css':
       return { file: `examples/${app}/www/style.css`, type: 'text/css' };
+    // watch.roc gets the runtime.js with every feature, which never falls
+    // behind the wasm it rebuilds. e2e.roc gets the app's own, the core plus
+    // the feature code its wasm calls, so the tests run what an app ships.
+    // build.roc writes both (see tools/runtime).
     case '/runtime.js':
-      return { file: 'www/runtime.js', type: 'text/javascript' };
+      return { file: pinned ? `build/${opt}/runtime.js` : `build/${opt}/${app}.runtime.js`, type: 'text/javascript' };
     // Not referenced by the page. The frame-time meter, loaded by hand from
     // the devtools console.
     case '/perf.js':

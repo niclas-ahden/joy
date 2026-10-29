@@ -5,9 +5,10 @@
 // forwards to the outer div's listener unless the event was stopped.
 // Run from the repo root: node tests/check_stop_propagation.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, fakeDom, find, htmlBare } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('stop_propagation');
 
 const bytes = readFileSync(wasmPath('stop_propagation'));
 

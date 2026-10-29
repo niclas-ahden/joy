@@ -2,9 +2,10 @@
 // app's boxed Str -> Msg decoder, and the Console.log command reaches the console.
 // Run from the repo root: node tests/check_events_input.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, byRole, fakeDom, find, findTag, htmlBare } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('events_input');
 
 // Spy on console.log to assert the Console.log command round trip.
 const logged = [];

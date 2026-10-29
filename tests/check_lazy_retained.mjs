@@ -8,9 +8,10 @@
 // table, a re-force grows the miss count.
 // Run from the repo root: node tests/check_lazy_retained.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, byId, fakeDom } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('lazy_retained');
 
 const bytes = readFileSync(wasmPath('lazy_retained'));
 

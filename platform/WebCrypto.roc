@@ -20,6 +20,7 @@
 ## for Sha384, 64 for Sha512). An EMPTY list means the digest failed (unknown
 ## file id, or the file changed on disk after being picked).
 import Effect
+import Wire
 
 WebCrypto := [].{
 
@@ -42,18 +43,16 @@ WebCrypto := [].{
 	## (For Sha256, the built-in `Crypto.SHA256.hash` is the better tool.)
 	digest : Algorithm, List(U8), (List(U8) -> msg) -> Effect(msg)
 	digest = |algorithm, bytes, on_hash|
-		Effect.crypto_digest(algorithm_name(algorithm), bytes, on_hash)
+		Effect.call("joy/crypto/digest", Wire.writer({}).str(algorithm_name(algorithm)).bytes(bytes).done(), |reply| on_hash(hash(reply)))
 
 	## Hash a user-picked file by its `Attribute.FileInfo` id.
 	digest_file : Algorithm, U32, (List(U8) -> msg) -> Effect(msg)
-	digest_file = |algorithm, file, on_hash|
-		Effect.crypto_digest_file(algorithm_name(algorithm), file, 0, 0, on_hash)
+	digest_file = |algorithm, file, on_hash| digest_range(algorithm, file, 0, 0, on_hash)
 
 	## Hash a byte range of a user-picked file (`len` 0 means through the
 	## end). One call per chunk gives chunked hashing with progress.
 	digest_file_slice : Algorithm, { file : U32, start : U64, len : U64 }, (List(U8) -> msg) -> Effect(msg)
-	digest_file_slice = |algorithm, slice, on_hash|
-		Effect.crypto_digest_file(algorithm_name(algorithm), slice.file, slice.start, slice.len, on_hash)
+	digest_file_slice = |algorithm, slice, on_hash| digest_range(algorithm, slice.file, slice.start, slice.len, on_hash)
 
 	## The conventional lowercase-hex rendering of a hash.
 	to_hex : List(U8) -> Str
@@ -67,6 +66,29 @@ WebCrypto := [].{
 			},
 		)
 		Str.join_with(pairs, "")
+	}
+}
+
+## A byte range of a browser-held file, `len` 0 for through the end.
+digest_range : WebCrypto.Algorithm, U32, U64, U64, (List(U8) -> msg) -> Effect(msg)
+digest_range = |algorithm, file, start, len, on_hash|
+	Effect.call(
+		"joy/crypto/digest_file",
+		Wire.writer({}).str(WebCrypto.algorithm_name(algorithm)).u32(file).u64(start).u64(len).done(),
+		|reply| on_hash(hash(reply)),
+	)
+
+## The hash a reply carries, empty when the digest failed.
+hash : List(U8) -> List(U8)
+hash = |reply| Effect.reply(reply) ?? []
+
+expect hash([0, 1, 2]) == [1, 2]
+expect hash([1, 110, 111]) == []
+
+expect {
+	match WebCrypto.digest_file_slice(Sha256, { file: 3, start: 16, len: 8 }, |h| h.len()) {
+		Call(id, args, _) => id == "joy/crypto/digest_file" and args == Wire.writer({}).str("SHA-256").u32(3).u64(16).u64(8).done()
+		_ => Bool.False
 	}
 }
 

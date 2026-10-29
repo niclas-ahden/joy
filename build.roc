@@ -35,6 +35,7 @@ import weaver.Cli
 import weaver.Param
 import Args
 import Util exposing [example_name, fail!, run!]
+import runtime.JoyRuntime
 
 main! = |args| {
 	config = Args.parse!(parser, args, "--opt=speed examples/counter.roc")?
@@ -70,7 +71,34 @@ main! = |args| {
 
 	_ = sources.map_try!(|src| build_example!(src, opt))?
 
-	Ok({})
+	# Each app's runtime.js: the core plus the feature code of the platform
+	# functions its wasm calls, the same file an app's release build makes
+	# (see tools/runtime). The harnesses and e2e.roc run on it, so the tests
+	# cover what an app would ship.
+	core = Path.utf8("www/runtime.js").read_utf8!()?
+	features = Path.utf8("www/features").list!()?
+		.keep_if(|entry| Path.display(entry).ends_with(".js"))
+		.map_try!(|entry| entry.read_utf8!())?
+	_ = sources.map_try!(|src| write_runtime!(src, opt, core, features))?
+
+	# And the runtime.js with every feature, which watch.roc serves. It never
+	# has to keep up with the wasm, only with www/.
+	match JoyRuntime.full({ core, features }) {
+		Ok(js) => Path.utf8("build/${opt}/runtime.js").write_utf8!(js)
+		Err(problem) => fail!("the full runtime.js: ${Str.inspect(problem)}")
+	}
+}
+
+## build/<opt>/<name>.runtime.js for an app built at that level.
+runtime_path : Path.Path, Str -> Str
+runtime_path = |src, opt| "build/${opt}/${example_name(Path.display(src))}.runtime.js"
+
+write_runtime! = |src, opt, core, features| {
+	wasm = Path.utf8(wasm_path(src, opt)).read_bytes!()?
+	match JoyRuntime.generate({ core, features, wasm }) {
+		Ok(js) => Path.utf8(runtime_path(src, opt)).write_utf8!(js)
+		Err(problem) => fail!("runtime.js for ${Path.display(src)}: ${Str.inspect(problem)}")
+	}
 }
 
 # Apps live in two directories, both built the same way into

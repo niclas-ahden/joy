@@ -3,9 +3,10 @@
 // per handler, and hover without a held button is not a drag.
 // Run from the repo root: node tests/check_pointer.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, byId, fakeDom, htmlBare } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('pointer');
 
 const bytes = readFileSync(wasmPath('pointer'));
 

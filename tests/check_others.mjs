@@ -11,9 +11,10 @@
 // tree's shape.
 // Run from the repo root: JOY_OPT=speed node tests/check_others.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, Text, byClass, byClassAll, fakeDom, html, others, parsedCopy, textOf } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('others');
 
 const wasm = readFileSync(wasmPath('others'));
 

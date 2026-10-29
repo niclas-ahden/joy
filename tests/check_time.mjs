@@ -4,9 +4,10 @@
 // excited again must start a fresh one. Remembered moments reuse the time the
 // last tick delivered. Run from the repo root: node tests/check_time.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, fakeDom, find, htmlBare } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('time');
 
 // Deterministic clock + captured intervals.
 const T0 = 1_751_450_000_000;

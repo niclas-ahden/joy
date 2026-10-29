@@ -27,6 +27,14 @@ export const optLevel = () => {
 // Where build.roc put the app for the level under test.
 export const wasmPath = (name) => `build/${optLevel()}/${name}.wasm`;
 
+// The runtime.js build.roc generated for an app: the core plus the feature
+// code its wasm calls (see tools/runtime).
+export const runtimePath = (name) => `build/${optLevel()}/${name}.runtime.js`;
+
+// An app's generated runtime.js as a module, to mount the app on: the core
+// plus the browser features its wasm calls, what the app would ship.
+export const appRuntime = (name) => import(`../${runtimePath(name)}`);
+
 export const expect = (label, got, want) => {
   test(label, () => {
     assert.strictEqual(got, want);

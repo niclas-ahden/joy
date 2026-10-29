@@ -5,9 +5,10 @@
 // then delivers to the app through the controls' own handlers.
 // Run from the repo root: JOY_OPT=speed node tests/check_hydrate_forms.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, Text, byClass, fakeDom, html, textOf } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('hydrate_forms');
 
 const bytes = readFileSync(wasmPath('hydrate_forms'));
 

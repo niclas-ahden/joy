@@ -5,9 +5,10 @@
 // tests/e2e/controls_test.roc the rest of the fixture.
 // Run from the repo root: node tests/check_controls.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, byId, fakeDom, textOf } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('controls');
 
 const root = new El('#root');
 await mount({ wasm: readFileSync(wasmPath('controls')), root, flags: '', dom: fakeDom });

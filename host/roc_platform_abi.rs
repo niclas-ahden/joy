@@ -752,42 +752,6 @@ const _: () = assert!(core::mem::size_of::<AnonStruct5>() == 16, "AnonStruct5 si
 #[cfg(target_pointer_width = "32")]
 const _: () = assert!(core::mem::align_of::<AnonStruct5>() == 4, "AnonStruct5 alignment mismatch");
 
-/// Element type for __AnonStruct10
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct AnonStruct10 {
-    pub on_tick: RocErasedCallable,
-    pub ms: u32,
-}
-
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::size_of::<AnonStruct10>() == 16, "AnonStruct10 size mismatch");
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::align_of::<AnonStruct10>() == 8, "AnonStruct10 alignment mismatch");
-#[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::size_of::<AnonStruct10>() == 8, "AnonStruct10 size mismatch");
-#[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::align_of::<AnonStruct10>() == 4, "AnonStruct10 alignment mismatch");
-
-/// Element type for __AnonStruct17
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct AnonStruct17 {
-    pub event: RocStr,
-    pub keys: RocList<RocStr>,
-    pub on_key: RocErasedCallable,
-    pub prevent_default: bool,
-}
-
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::size_of::<AnonStruct17>() == 64, "AnonStruct17 size mismatch");
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::align_of::<AnonStruct17>() == 8, "AnonStruct17 alignment mismatch");
-#[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::size_of::<AnonStruct17>() == 32, "AnonStruct17 size mismatch");
-#[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::align_of::<AnonStruct17>() == 4, "AnonStruct17 alignment mismatch");
-
 /// Element type for __AnonStruct22
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -811,39 +775,6 @@ const _: () = assert!(core::mem::size_of::<AnonStruct22>() == 32, "AnonStruct22 
 #[cfg(target_pointer_width = "32")]
 const _: () = assert!(core::mem::align_of::<AnonStruct22>() == 4, "AnonStruct22 alignment mismatch");
 
-/// Element type for __AnonStruct25
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct AnonStruct25 {
-    pub name: RocStr,
-    pub on_value: RocErasedCallable,
-}
-
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::size_of::<AnonStruct25>() == 32, "AnonStruct25 size mismatch");
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::align_of::<AnonStruct25>() == 8, "AnonStruct25 alignment mismatch");
-#[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::size_of::<AnonStruct25>() == 16, "AnonStruct25 size mismatch");
-#[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::align_of::<AnonStruct25>() == 4, "AnonStruct25 alignment mismatch");
-
-/// Element type for __AnonStruct29
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct AnonStruct29 {
-    pub on_change: RocErasedCallable,
-}
-
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::size_of::<AnonStruct29>() == 8, "AnonStruct29 size mismatch");
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::align_of::<AnonStruct29>() == 8, "AnonStruct29 alignment mismatch");
-#[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::size_of::<AnonStruct29>() == 4, "AnonStruct29 size mismatch");
-#[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::align_of::<AnonStruct29>() == 4, "AnonStruct29 alignment mismatch");
-
 /// Element type for __AnonStruct34
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -861,45 +792,6 @@ const _: () = assert!(core::mem::size_of::<AnonStruct34>() == 16, "AnonStruct34 
 #[cfg(target_pointer_width = "32")]
 const _: () = assert!(core::mem::align_of::<AnonStruct34>() == 4, "AnonStruct34 alignment mismatch");
 
-/// Element type for __AnonStruct38
-/// The header record `{ name : Str, value : Str }` (fields in ascending
-/// name order, which is also their source order).
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct AnonStruct38 {
-    pub name: RocStr,
-    pub value: RocStr,
-}
-
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::size_of::<AnonStruct38>() == 48, "AnonStruct38 size mismatch");
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::align_of::<AnonStruct38>() == 8, "AnonStruct38 alignment mismatch");
-#[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::size_of::<AnonStruct38>() == 24, "AnonStruct38 size mismatch");
-#[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::align_of::<AnonStruct38>() == 4, "AnonStruct38 alignment mismatch");
-
-/// Element type for __AnonStruct43
-/// The HTTP callback's argument record: the two lists are pointer-class and
-/// tie-break by ascending name (body before headers), the U16 status trails.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct AnonStruct43 {
-    pub body: RocListWith<u8, false>,
-    pub headers: RocList<AnonStruct38>,
-    pub status: u16,
-}
-
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::size_of::<AnonStruct43>() == 56, "AnonStruct43 size mismatch");
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::align_of::<AnonStruct43>() == 8, "AnonStruct43 alignment mismatch");
-#[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::size_of::<AnonStruct43>() == 28, "AnonStruct43 size mismatch");
-#[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::align_of::<AnonStruct43>() == 4, "AnonStruct43 alignment mismatch");
-
 /// Element type for __AnonStruct74
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -916,75 +808,6 @@ const _: () = assert!(core::mem::align_of::<AnonStruct74>() == 8, "AnonStruct74 
 const _: () = assert!(core::mem::size_of::<AnonStruct74>() == 16, "AnonStruct74 size mismatch");
 #[cfg(target_pointer_width = "32")]
 const _: () = assert!(core::mem::align_of::<AnonStruct74>() == 4, "AnonStruct74 alignment mismatch");
-
-/// Element type for __AnonStruct124
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct AnonStruct124 {
-    pub on_tick: RocErasedCallable,
-    pub ms: u32,
-}
-
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::size_of::<AnonStruct124>() == 16, "AnonStruct124 size mismatch");
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::align_of::<AnonStruct124>() == 8, "AnonStruct124 alignment mismatch");
-#[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::size_of::<AnonStruct124>() == 8, "AnonStruct124 size mismatch");
-#[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::align_of::<AnonStruct124>() == 4, "AnonStruct124 alignment mismatch");
-
-/// Element type for __AnonStruct128
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct AnonStruct128 {
-    pub event: RocStr,
-    pub keys: RocList<RocStr>,
-    pub on_key: RocErasedCallable,
-    pub prevent_default: bool,
-}
-
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::size_of::<AnonStruct128>() == 64, "AnonStruct128 size mismatch");
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::align_of::<AnonStruct128>() == 8, "AnonStruct128 alignment mismatch");
-#[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::size_of::<AnonStruct128>() == 32, "AnonStruct128 size mismatch");
-#[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::align_of::<AnonStruct128>() == 4, "AnonStruct128 alignment mismatch");
-
-/// Element type for __AnonStruct132
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct AnonStruct132 {
-    pub name: RocStr,
-    pub on_value: RocErasedCallable,
-}
-
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::size_of::<AnonStruct132>() == 32, "AnonStruct132 size mismatch");
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::align_of::<AnonStruct132>() == 8, "AnonStruct132 alignment mismatch");
-#[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::size_of::<AnonStruct132>() == 16, "AnonStruct132 size mismatch");
-#[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::align_of::<AnonStruct132>() == 4, "AnonStruct132 alignment mismatch");
-
-/// Element type for __AnonStruct136
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct AnonStruct136 {
-    pub on_change: RocErasedCallable,
-}
-
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::size_of::<AnonStruct136>() == 8, "AnonStruct136 size mismatch");
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::align_of::<AnonStruct136>() == 8, "AnonStruct136 alignment mismatch");
-#[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::size_of::<AnonStruct136>() == 4, "AnonStruct136 size mismatch");
-#[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::align_of::<AnonStruct136>() == 4, "AnonStruct136 alignment mismatch");
 
 /// Element type for __AnonStruct151
 #[repr(C)]
@@ -1051,47 +874,34 @@ const _: () = assert!(core::mem::size_of::<FileArgs>() == 64, "FileArgs size mis
 const _: () = assert!(core::mem::size_of::<FileArgs>() == 40, "FileArgs size mismatch");
 const _: () = assert!(core::mem::align_of::<FileArgs>() == 8, "FileArgs alignment mismatch");
 
-/// Tag discriminant for Sub.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SubType9Tag {
-    Every = 0,
-    Keyboard = 1,
-    PortListen = 2,
-    UrlChanged = 3,
-}
-
-/// Tag union: Sub
+/// Element type for __AnonStruct200, the Listen record.
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct SubType9 {
-    pub payload: SubType9Payload,
-    pub tag: SubType9Tag,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub union SubType9Payload {
-    pub every: core::mem::ManuallyDrop<AnonStruct10>,
-    pub keyboard: core::mem::ManuallyDrop<AnonStruct17>,
-    pub port_listen: core::mem::ManuallyDrop<AnonStruct25>,
-    pub url_changed: core::mem::ManuallyDrop<AnonStruct29>,
+pub struct AnonStruct200 {
+    pub args: RocListWith<u8, false>,
+    pub id: RocStr,
+    pub on_event: RocErasedCallable,
 }
 
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::size_of::<SubType9>() == 72, "SubType9 size mismatch");
+const _: () = assert!(core::mem::size_of::<AnonStruct200>() == 56, "AnonStruct200 size mismatch");
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::align_of::<SubType9>() == 8, "SubType9 alignment mismatch");
+const _: () = assert!(core::mem::align_of::<AnonStruct200>() == 8, "AnonStruct200 alignment mismatch");
 #[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::size_of::<SubType9>() == 36, "SubType9 size mismatch");
+const _: () = assert!(core::mem::size_of::<AnonStruct200>() == 28, "AnonStruct200 size mismatch");
 #[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::align_of::<SubType9>() == 4, "SubType9 alignment mismatch");
+const _: () = assert!(core::mem::align_of::<AnonStruct200>() == 4, "AnonStruct200 alignment mismatch");
 
-/// Payload struct for CloseModal variant.
+/// Sub: a nominal record (`:=`), laid out as its `{ args, id, on_event }` fields.
+pub type SubType9 = AnonStruct200;
+
+/// Payload struct for Call variant.
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct CmdType36CloseModalPayload {
+pub struct CmdType36CallPayload {
     pub _0: RocStr,
+    pub _1: RocListWith<u8, false>,
+    pub _2: RocErasedCallable,
 }
 
 /// Payload struct for ConsoleLog variant.
@@ -1101,141 +911,21 @@ pub struct CmdType36ConsoleLogPayload {
     pub _0: RocStr,
 }
 
-/// Payload struct for CryptoDigest variant.
+/// Payload struct for Send variant.
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct CmdType36CryptoDigestPayload {
+pub struct CmdType36SendPayload {
     pub _0: RocStr,
     pub _1: RocListWith<u8, false>,
-    pub _2: RocErasedCallable,
-}
-
-/// Payload struct for CryptoDigestFile variant.
-/// Fields in layout order (sort key desc, name asc): U64s, pointer-class, U32.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType36CryptoDigestFilePayload {
-    pub _2: u64,
-    pub _3: u64,
-    pub _0: RocStr,
-    pub _4: RocErasedCallable,
-    pub _1: u32,
-}
-
-/// Payload struct for Focus variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType36FocusPayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for HttpSend variant.
-/// Fields in layout order (sort key desc, name asc): the U64 timeout leads.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType36HttpSendPayload {
-    pub _4: u64,
-    pub _0: RocStr,
-    pub _1: RocStr,
-    pub _2: RocList<AnonStruct38>,
-    pub _3: RocListWith<u8, false>,
-    pub _5: RocErasedCallable,
-}
-
-/// Payload struct for HttpSendFile variant.
-/// Fields in layout order (sort key desc, name asc): U64s, pointer-class, U32.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType36HttpSendFilePayload {
-    pub _4: u64,
-    pub _5: u64,
-    pub _6: u64,
-    pub _0: RocStr,
-    pub _1: RocStr,
-    pub _2: RocList<AnonStruct38>,
-    pub _7: RocErasedCallable,
-    pub _3: u32,
-}
-
-/// Payload struct for Navigate variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType36NavigatePayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for PortSend variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType36PortSendPayload {
-    pub _0: RocStr,
-    pub _1: RocStr,
-}
-
-/// Payload struct for PushUrl variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType36PushUrlPayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for ReplaceUrl variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType36ReplaceUrlPayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for ShowModal variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType36ShowModalPayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for TimeAfter variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType36TimeAfterPayload {
-    pub _0: RocErasedCallable,
-    pub _1: u32,
-}
-
-/// Payload struct for TimeCancel variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType36TimeCancelPayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for TimeDebounce variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType36TimeDebouncePayload {
-    pub _0: RocStr,
-    pub _2: RocErasedCallable,
-    pub _1: u32,
 }
 
 /// Tag discriminant for Cmd.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CmdType36Tag {
-    CloseModal = 0,
+    Call = 0,
     ConsoleLog = 1,
-    CryptoDigest = 2,
-    CryptoDigestFile = 3,
-    Focus = 4,
-    HttpSend = 5,
-    HttpSendFile = 6,
-    Navigate = 7,
-    PortSend = 8,
-    PushUrl = 9,
-    ReplaceUrl = 10,
-    ShowModal = 11,
-    TimeAfter = 12,
-    TimeCancel = 13,
-    TimeDebounce = 14,
+    Send = 2,
 }
 
 /// Tag union: Cmd
@@ -1249,31 +939,19 @@ pub struct CmdType36 {
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub union CmdType36Payload {
-    pub close_modal: core::mem::ManuallyDrop<CmdType36CloseModalPayload>,
+    pub call: core::mem::ManuallyDrop<CmdType36CallPayload>,
     pub console_log: core::mem::ManuallyDrop<CmdType36ConsoleLogPayload>,
-    pub crypto_digest: core::mem::ManuallyDrop<CmdType36CryptoDigestPayload>,
-    pub crypto_digest_file: core::mem::ManuallyDrop<CmdType36CryptoDigestFilePayload>,
-    pub focus: core::mem::ManuallyDrop<CmdType36FocusPayload>,
-    pub http_send: core::mem::ManuallyDrop<CmdType36HttpSendPayload>,
-    pub http_send_file: core::mem::ManuallyDrop<CmdType36HttpSendFilePayload>,
-    pub navigate: core::mem::ManuallyDrop<CmdType36NavigatePayload>,
-    pub port_send: core::mem::ManuallyDrop<CmdType36PortSendPayload>,
-    pub push_url: core::mem::ManuallyDrop<CmdType36PushUrlPayload>,
-    pub replace_url: core::mem::ManuallyDrop<CmdType36ReplaceUrlPayload>,
-    pub show_modal: core::mem::ManuallyDrop<CmdType36ShowModalPayload>,
-    pub time_after: core::mem::ManuallyDrop<CmdType36TimeAfterPayload>,
-    pub time_cancel: core::mem::ManuallyDrop<CmdType36TimeCancelPayload>,
-    pub time_debounce: core::mem::ManuallyDrop<CmdType36TimeDebouncePayload>,
+    pub send: core::mem::ManuallyDrop<CmdType36SendPayload>,
 }
 
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::size_of::<CmdType36>() == 120, "CmdType36 size mismatch");
+const _: () = assert!(core::mem::size_of::<CmdType36>() == 64, "CmdType36 size mismatch");
 #[cfg(target_pointer_width = "64")]
 const _: () = assert!(core::mem::align_of::<CmdType36>() == 8, "CmdType36 alignment mismatch");
 #[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::size_of::<CmdType36>() == 80, "CmdType36 size mismatch");
+const _: () = assert!(core::mem::size_of::<CmdType36>() == 32, "CmdType36 size mismatch");
 #[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::align_of::<CmdType36>() == 8, "CmdType36 alignment mismatch");
+const _: () = assert!(core::mem::align_of::<CmdType36>() == 4, "CmdType36 alignment mismatch");
 
 /// Payload struct for the Keyed variant, shared by every Html schema
 /// duplicate: Keyed(Str key, Box(Html) child). The layout sorts by size,
@@ -1541,11 +1219,13 @@ const _: () = assert!(core::mem::size_of::<ActionType64>() == 20, "ActionType64 
 #[cfg(target_pointer_width = "32")]
 const _: () = assert!(core::mem::align_of::<ActionType64>() == 4, "ActionType64 alignment mismatch");
 
-/// Payload struct for CloseModal variant.
+/// Payload struct for Call variant.
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct CmdType66CloseModalPayload {
+pub struct CmdType66CallPayload {
     pub _0: RocStr,
+    pub _1: RocListWith<u8, false>,
+    pub _2: RocErasedCallable,
 }
 
 /// Payload struct for ConsoleLog variant.
@@ -1555,141 +1235,21 @@ pub struct CmdType66ConsoleLogPayload {
     pub _0: RocStr,
 }
 
-/// Payload struct for CryptoDigest variant.
+/// Payload struct for Send variant.
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct CmdType66CryptoDigestPayload {
+pub struct CmdType66SendPayload {
     pub _0: RocStr,
     pub _1: RocListWith<u8, false>,
-    pub _2: RocErasedCallable,
-}
-
-/// Payload struct for CryptoDigestFile variant.
-/// Fields in layout order (sort key desc, name asc): U64s, pointer-class, U32.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType66CryptoDigestFilePayload {
-    pub _2: u64,
-    pub _3: u64,
-    pub _0: RocStr,
-    pub _4: RocErasedCallable,
-    pub _1: u32,
-}
-
-/// Payload struct for Focus variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType66FocusPayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for HttpSend variant.
-/// Fields in layout order (sort key desc, name asc): the U64 timeout leads.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType66HttpSendPayload {
-    pub _4: u64,
-    pub _0: RocStr,
-    pub _1: RocStr,
-    pub _2: RocList<AnonStruct38>,
-    pub _3: RocListWith<u8, false>,
-    pub _5: RocErasedCallable,
-}
-
-/// Payload struct for HttpSendFile variant.
-/// Fields in layout order (sort key desc, name asc): U64s, pointer-class, U32.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType66HttpSendFilePayload {
-    pub _4: u64,
-    pub _5: u64,
-    pub _6: u64,
-    pub _0: RocStr,
-    pub _1: RocStr,
-    pub _2: RocList<AnonStruct38>,
-    pub _7: RocErasedCallable,
-    pub _3: u32,
-}
-
-/// Payload struct for Navigate variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType66NavigatePayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for PortSend variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType66PortSendPayload {
-    pub _0: RocStr,
-    pub _1: RocStr,
-}
-
-/// Payload struct for PushUrl variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType66PushUrlPayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for ReplaceUrl variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType66ReplaceUrlPayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for ShowModal variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType66ShowModalPayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for TimeAfter variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType66TimeAfterPayload {
-    pub _0: RocErasedCallable,
-    pub _1: u32,
-}
-
-/// Payload struct for TimeCancel variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType66TimeCancelPayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for TimeDebounce variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType66TimeDebouncePayload {
-    pub _0: RocStr,
-    pub _2: RocErasedCallable,
-    pub _1: u32,
 }
 
 /// Tag discriminant for Cmd.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CmdType66Tag {
-    CloseModal = 0,
+    Call = 0,
     ConsoleLog = 1,
-    CryptoDigest = 2,
-    CryptoDigestFile = 3,
-    Focus = 4,
-    HttpSend = 5,
-    HttpSendFile = 6,
-    Navigate = 7,
-    PortSend = 8,
-    PushUrl = 9,
-    ReplaceUrl = 10,
-    ShowModal = 11,
-    TimeAfter = 12,
-    TimeCancel = 13,
-    TimeDebounce = 14,
+    Send = 2,
 }
 
 /// Tag union: Cmd
@@ -1703,31 +1263,19 @@ pub struct CmdType66 {
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub union CmdType66Payload {
-    pub close_modal: core::mem::ManuallyDrop<CmdType66CloseModalPayload>,
+    pub call: core::mem::ManuallyDrop<CmdType66CallPayload>,
     pub console_log: core::mem::ManuallyDrop<CmdType66ConsoleLogPayload>,
-    pub crypto_digest: core::mem::ManuallyDrop<CmdType66CryptoDigestPayload>,
-    pub crypto_digest_file: core::mem::ManuallyDrop<CmdType66CryptoDigestFilePayload>,
-    pub focus: core::mem::ManuallyDrop<CmdType66FocusPayload>,
-    pub http_send: core::mem::ManuallyDrop<CmdType66HttpSendPayload>,
-    pub http_send_file: core::mem::ManuallyDrop<CmdType66HttpSendFilePayload>,
-    pub navigate: core::mem::ManuallyDrop<CmdType66NavigatePayload>,
-    pub port_send: core::mem::ManuallyDrop<CmdType66PortSendPayload>,
-    pub push_url: core::mem::ManuallyDrop<CmdType66PushUrlPayload>,
-    pub replace_url: core::mem::ManuallyDrop<CmdType66ReplaceUrlPayload>,
-    pub show_modal: core::mem::ManuallyDrop<CmdType66ShowModalPayload>,
-    pub time_after: core::mem::ManuallyDrop<CmdType66TimeAfterPayload>,
-    pub time_cancel: core::mem::ManuallyDrop<CmdType66TimeCancelPayload>,
-    pub time_debounce: core::mem::ManuallyDrop<CmdType66TimeDebouncePayload>,
+    pub send: core::mem::ManuallyDrop<CmdType66SendPayload>,
 }
 
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::size_of::<CmdType66>() == 120, "CmdType66 size mismatch");
+const _: () = assert!(core::mem::size_of::<CmdType66>() == 64, "CmdType66 size mismatch");
 #[cfg(target_pointer_width = "64")]
 const _: () = assert!(core::mem::align_of::<CmdType66>() == 8, "CmdType66 alignment mismatch");
 #[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::size_of::<CmdType66>() == 80, "CmdType66 size mismatch");
+const _: () = assert!(core::mem::size_of::<CmdType66>() == 32, "CmdType66 size mismatch");
 #[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::align_of::<CmdType66>() == 8, "CmdType66 alignment mismatch");
+const _: () = assert!(core::mem::align_of::<CmdType66>() == 4, "CmdType66 alignment mismatch");
 
 /// Payload struct for None variant.
 #[repr(C)]
@@ -1776,11 +1324,13 @@ const _: () = assert!(core::mem::size_of::<ActionType81>() == 20, "ActionType81 
 #[cfg(target_pointer_width = "32")]
 const _: () = assert!(core::mem::align_of::<ActionType81>() == 4, "ActionType81 alignment mismatch");
 
-/// Payload struct for CloseModal variant.
+/// Payload struct for Call variant.
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct CmdType84CloseModalPayload {
+pub struct CmdType84CallPayload {
     pub _0: RocStr,
+    pub _1: RocListWith<u8, false>,
+    pub _2: RocErasedCallable,
 }
 
 /// Payload struct for ConsoleLog variant.
@@ -1790,141 +1340,21 @@ pub struct CmdType84ConsoleLogPayload {
     pub _0: RocStr,
 }
 
-/// Payload struct for CryptoDigest variant.
+/// Payload struct for Send variant.
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct CmdType84CryptoDigestPayload {
+pub struct CmdType84SendPayload {
     pub _0: RocStr,
     pub _1: RocListWith<u8, false>,
-    pub _2: RocErasedCallable,
-}
-
-/// Payload struct for CryptoDigestFile variant.
-/// Fields in layout order (sort key desc, name asc): U64s, pointer-class, U32.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType84CryptoDigestFilePayload {
-    pub _2: u64,
-    pub _3: u64,
-    pub _0: RocStr,
-    pub _4: RocErasedCallable,
-    pub _1: u32,
-}
-
-/// Payload struct for Focus variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType84FocusPayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for HttpSend variant.
-/// Fields in layout order (sort key desc, name asc): the U64 timeout leads.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType84HttpSendPayload {
-    pub _4: u64,
-    pub _0: RocStr,
-    pub _1: RocStr,
-    pub _2: RocList<AnonStruct38>,
-    pub _3: RocListWith<u8, false>,
-    pub _5: RocErasedCallable,
-}
-
-/// Payload struct for HttpSendFile variant.
-/// Fields in layout order (sort key desc, name asc): U64s, pointer-class, U32.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType84HttpSendFilePayload {
-    pub _4: u64,
-    pub _5: u64,
-    pub _6: u64,
-    pub _0: RocStr,
-    pub _1: RocStr,
-    pub _2: RocList<AnonStruct38>,
-    pub _7: RocErasedCallable,
-    pub _3: u32,
-}
-
-/// Payload struct for Navigate variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType84NavigatePayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for PortSend variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType84PortSendPayload {
-    pub _0: RocStr,
-    pub _1: RocStr,
-}
-
-/// Payload struct for PushUrl variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType84PushUrlPayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for ReplaceUrl variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType84ReplaceUrlPayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for ShowModal variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType84ShowModalPayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for TimeAfter variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType84TimeAfterPayload {
-    pub _0: RocErasedCallable,
-    pub _1: u32,
-}
-
-/// Payload struct for TimeCancel variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType84TimeCancelPayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for TimeDebounce variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType84TimeDebouncePayload {
-    pub _0: RocStr,
-    pub _2: RocErasedCallable,
-    pub _1: u32,
 }
 
 /// Tag discriminant for Cmd.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CmdType84Tag {
-    CloseModal = 0,
+    Call = 0,
     ConsoleLog = 1,
-    CryptoDigest = 2,
-    CryptoDigestFile = 3,
-    Focus = 4,
-    HttpSend = 5,
-    HttpSendFile = 6,
-    Navigate = 7,
-    PortSend = 8,
-    PushUrl = 9,
-    ReplaceUrl = 10,
-    ShowModal = 11,
-    TimeAfter = 12,
-    TimeCancel = 13,
-    TimeDebounce = 14,
+    Send = 2,
 }
 
 /// Tag union: Cmd
@@ -1938,31 +1368,19 @@ pub struct CmdType84 {
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub union CmdType84Payload {
-    pub close_modal: core::mem::ManuallyDrop<CmdType84CloseModalPayload>,
+    pub call: core::mem::ManuallyDrop<CmdType84CallPayload>,
     pub console_log: core::mem::ManuallyDrop<CmdType84ConsoleLogPayload>,
-    pub crypto_digest: core::mem::ManuallyDrop<CmdType84CryptoDigestPayload>,
-    pub crypto_digest_file: core::mem::ManuallyDrop<CmdType84CryptoDigestFilePayload>,
-    pub focus: core::mem::ManuallyDrop<CmdType84FocusPayload>,
-    pub http_send: core::mem::ManuallyDrop<CmdType84HttpSendPayload>,
-    pub http_send_file: core::mem::ManuallyDrop<CmdType84HttpSendFilePayload>,
-    pub navigate: core::mem::ManuallyDrop<CmdType84NavigatePayload>,
-    pub port_send: core::mem::ManuallyDrop<CmdType84PortSendPayload>,
-    pub push_url: core::mem::ManuallyDrop<CmdType84PushUrlPayload>,
-    pub replace_url: core::mem::ManuallyDrop<CmdType84ReplaceUrlPayload>,
-    pub show_modal: core::mem::ManuallyDrop<CmdType84ShowModalPayload>,
-    pub time_after: core::mem::ManuallyDrop<CmdType84TimeAfterPayload>,
-    pub time_cancel: core::mem::ManuallyDrop<CmdType84TimeCancelPayload>,
-    pub time_debounce: core::mem::ManuallyDrop<CmdType84TimeDebouncePayload>,
+    pub send: core::mem::ManuallyDrop<CmdType84SendPayload>,
 }
 
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::size_of::<CmdType84>() == 120, "CmdType84 size mismatch");
+const _: () = assert!(core::mem::size_of::<CmdType84>() == 64, "CmdType84 size mismatch");
 #[cfg(target_pointer_width = "64")]
 const _: () = assert!(core::mem::align_of::<CmdType84>() == 8, "CmdType84 alignment mismatch");
 #[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::size_of::<CmdType84>() == 80, "CmdType84 size mismatch");
+const _: () = assert!(core::mem::size_of::<CmdType84>() == 32, "CmdType84 size mismatch");
 #[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::align_of::<CmdType84>() == 8, "CmdType84 alignment mismatch");
+const _: () = assert!(core::mem::align_of::<CmdType84>() == 4, "CmdType84 alignment mismatch");
 
 /// Payload struct for Element variant.
 #[repr(C)]
@@ -2166,11 +1584,13 @@ const _: () = assert!(core::mem::size_of::<HtmlType111>() == 40, "HtmlType111 si
 #[cfg(target_pointer_width = "32")]
 const _: () = assert!(core::mem::align_of::<HtmlType111>() == 4, "HtmlType111 alignment mismatch");
 
-/// Payload struct for CloseModal variant.
+/// Payload struct for Call variant.
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct CmdType114CloseModalPayload {
+pub struct CmdType114CallPayload {
     pub _0: RocStr,
+    pub _1: RocListWith<u8, false>,
+    pub _2: RocErasedCallable,
 }
 
 /// Payload struct for ConsoleLog variant.
@@ -2180,141 +1600,21 @@ pub struct CmdType114ConsoleLogPayload {
     pub _0: RocStr,
 }
 
-/// Payload struct for CryptoDigest variant.
+/// Payload struct for Send variant.
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct CmdType114CryptoDigestPayload {
+pub struct CmdType114SendPayload {
     pub _0: RocStr,
     pub _1: RocListWith<u8, false>,
-    pub _2: RocErasedCallable,
-}
-
-/// Payload struct for CryptoDigestFile variant.
-/// Fields in layout order (sort key desc, name asc): U64s, pointer-class, U32.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType114CryptoDigestFilePayload {
-    pub _2: u64,
-    pub _3: u64,
-    pub _0: RocStr,
-    pub _4: RocErasedCallable,
-    pub _1: u32,
-}
-
-/// Payload struct for Focus variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType114FocusPayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for HttpSend variant.
-/// Fields in layout order (sort key desc, name asc): the U64 timeout leads.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType114HttpSendPayload {
-    pub _4: u64,
-    pub _0: RocStr,
-    pub _1: RocStr,
-    pub _2: RocList<AnonStruct38>,
-    pub _3: RocListWith<u8, false>,
-    pub _5: RocErasedCallable,
-}
-
-/// Payload struct for HttpSendFile variant.
-/// Fields in layout order (sort key desc, name asc): U64s, pointer-class, U32.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType114HttpSendFilePayload {
-    pub _4: u64,
-    pub _5: u64,
-    pub _6: u64,
-    pub _0: RocStr,
-    pub _1: RocStr,
-    pub _2: RocList<AnonStruct38>,
-    pub _7: RocErasedCallable,
-    pub _3: u32,
-}
-
-/// Payload struct for Navigate variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType114NavigatePayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for PortSend variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType114PortSendPayload {
-    pub _0: RocStr,
-    pub _1: RocStr,
-}
-
-/// Payload struct for PushUrl variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType114PushUrlPayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for ReplaceUrl variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType114ReplaceUrlPayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for ShowModal variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType114ShowModalPayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for TimeAfter variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType114TimeAfterPayload {
-    pub _0: RocErasedCallable,
-    pub _1: u32,
-}
-
-/// Payload struct for TimeCancel variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType114TimeCancelPayload {
-    pub _0: RocStr,
-}
-
-/// Payload struct for TimeDebounce variant.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CmdType114TimeDebouncePayload {
-    pub _0: RocStr,
-    pub _2: RocErasedCallable,
-    pub _1: u32,
 }
 
 /// Tag discriminant for Cmd.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CmdType114Tag {
-    CloseModal = 0,
+    Call = 0,
     ConsoleLog = 1,
-    CryptoDigest = 2,
-    CryptoDigestFile = 3,
-    Focus = 4,
-    HttpSend = 5,
-    HttpSendFile = 6,
-    Navigate = 7,
-    PortSend = 8,
-    PushUrl = 9,
-    ReplaceUrl = 10,
-    ShowModal = 11,
-    TimeAfter = 12,
-    TimeCancel = 13,
-    TimeDebounce = 14,
+    Send = 2,
 }
 
 /// Tag union: Cmd
@@ -2328,67 +1628,40 @@ pub struct CmdType114 {
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub union CmdType114Payload {
-    pub close_modal: core::mem::ManuallyDrop<CmdType114CloseModalPayload>,
+    pub call: core::mem::ManuallyDrop<CmdType114CallPayload>,
     pub console_log: core::mem::ManuallyDrop<CmdType114ConsoleLogPayload>,
-    pub crypto_digest: core::mem::ManuallyDrop<CmdType114CryptoDigestPayload>,
-    pub crypto_digest_file: core::mem::ManuallyDrop<CmdType114CryptoDigestFilePayload>,
-    pub focus: core::mem::ManuallyDrop<CmdType114FocusPayload>,
-    pub http_send: core::mem::ManuallyDrop<CmdType114HttpSendPayload>,
-    pub http_send_file: core::mem::ManuallyDrop<CmdType114HttpSendFilePayload>,
-    pub navigate: core::mem::ManuallyDrop<CmdType114NavigatePayload>,
-    pub port_send: core::mem::ManuallyDrop<CmdType114PortSendPayload>,
-    pub push_url: core::mem::ManuallyDrop<CmdType114PushUrlPayload>,
-    pub replace_url: core::mem::ManuallyDrop<CmdType114ReplaceUrlPayload>,
-    pub show_modal: core::mem::ManuallyDrop<CmdType114ShowModalPayload>,
-    pub time_after: core::mem::ManuallyDrop<CmdType114TimeAfterPayload>,
-    pub time_cancel: core::mem::ManuallyDrop<CmdType114TimeCancelPayload>,
-    pub time_debounce: core::mem::ManuallyDrop<CmdType114TimeDebouncePayload>,
+    pub send: core::mem::ManuallyDrop<CmdType114SendPayload>,
 }
 
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::size_of::<CmdType114>() == 120, "CmdType114 size mismatch");
+const _: () = assert!(core::mem::size_of::<CmdType114>() == 64, "CmdType114 size mismatch");
 #[cfg(target_pointer_width = "64")]
 const _: () = assert!(core::mem::align_of::<CmdType114>() == 8, "CmdType114 alignment mismatch");
 #[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::size_of::<CmdType114>() == 80, "CmdType114 size mismatch");
+const _: () = assert!(core::mem::size_of::<CmdType114>() == 32, "CmdType114 size mismatch");
 #[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::align_of::<CmdType114>() == 8, "CmdType114 alignment mismatch");
+const _: () = assert!(core::mem::align_of::<CmdType114>() == 4, "CmdType114 alignment mismatch");
 
-/// Tag discriminant for Sub.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SubType123Tag {
-    Every = 0,
-    Keyboard = 1,
-    PortListen = 2,
-    UrlChanged = 3,
-}
-
-/// Tag union: Sub
+/// Element type for __AnonStruct201, the Listen record.
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct SubType123 {
-    pub payload: SubType123Payload,
-    pub tag: SubType123Tag,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub union SubType123Payload {
-    pub every: core::mem::ManuallyDrop<AnonStruct124>,
-    pub keyboard: core::mem::ManuallyDrop<AnonStruct128>,
-    pub port_listen: core::mem::ManuallyDrop<AnonStruct132>,
-    pub url_changed: core::mem::ManuallyDrop<AnonStruct136>,
+pub struct AnonStruct201 {
+    pub args: RocListWith<u8, false>,
+    pub id: RocStr,
+    pub on_event: RocErasedCallable,
 }
 
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::size_of::<SubType123>() == 72, "SubType123 size mismatch");
+const _: () = assert!(core::mem::size_of::<AnonStruct201>() == 56, "AnonStruct201 size mismatch");
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(core::mem::align_of::<SubType123>() == 8, "SubType123 alignment mismatch");
+const _: () = assert!(core::mem::align_of::<AnonStruct201>() == 8, "AnonStruct201 alignment mismatch");
 #[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::size_of::<SubType123>() == 36, "SubType123 size mismatch");
+const _: () = assert!(core::mem::size_of::<AnonStruct201>() == 28, "AnonStruct201 size mismatch");
 #[cfg(target_pointer_width = "32")]
-const _: () = assert!(core::mem::align_of::<SubType123>() == 4, "SubType123 alignment mismatch");
+const _: () = assert!(core::mem::align_of::<AnonStruct201>() == 4, "AnonStruct201 alignment mismatch");
+
+/// Sub: a nominal record (`:=`), laid out as its `{ args, id, on_event }` fields.
+pub type SubType123 = AnonStruct201;
 
 // =============================================================================
 // Runtime Symbols
@@ -2442,26 +1715,14 @@ unsafe extern "C" {
     /// Entrypoint: drop_subs_for_host
     pub fn roc_drop_subs(arg0: RocList<SubType123>);
 
-    /// Entrypoint: drop_http_callback_for_host
-    pub fn roc_drop_http_callback(arg0: RocErasedCallable);
-
-    /// Entrypoint: drop_timer_callback_for_host
-    pub fn roc_drop_timer_callback(arg0: RocErasedCallable);
-
     /// Entrypoint: drop_key_callback_for_host
     pub fn roc_drop_key_callback(arg0: RocErasedCallable);
-
-    /// Entrypoint: drop_value_callback_for_host
-    pub fn roc_drop_value_callback(arg0: RocErasedCallable);
 
     pub fn roc_drop_pointer_callback(arg0: RocErasedCallable);
 
     pub fn roc_drop_file_callback(arg0: RocErasedCallable);
 
     pub fn roc_drop_bytes_callback(arg0: RocErasedCallable);
-
-    /// Entrypoint: drop_str_for_host
-    pub fn roc_drop_str(arg0: RocStr);
 
     /// Entrypoint: drop_bytes_for_host
     pub fn roc_drop_bytes(arg0: RocListWith<u8, false>);

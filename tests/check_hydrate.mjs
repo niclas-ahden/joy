@@ -5,9 +5,10 @@
 // page fully interactive with patches landing on the claimed nodes.
 // Run from the repo root: JOY_OPT=speed node tests/check_hydrate.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { Comment, El, Text, fakeDom, html } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('hydrate');
 
 const bytes = readFileSync(wasmPath('hydrate'));
 

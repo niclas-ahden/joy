@@ -29,28 +29,25 @@
 ## cannot claim each other's messages.
 import Effect
 import Sub
+import Wire
 
 Port := [].{
 	listen : Str, (Str -> msg) -> Sub(msg)
-	listen = |name, decoder| Sub.port_listen(name, decoder)
+	listen = |name, decoder|
+		Sub.listen("joy/port/listen", Wire.writer({}).str(name).done(), |event| decoder(Wire.reader(event).str().map_ok(|(value, _)| value) ?? ""))
 
 	send : Str, Str -> Effect(msg)
-	send = |name, value| Effect.port_send(name, value)
+	send = |name, value| Effect.send("joy/port/send", Wire.writer({}).str(name).str(value).done())
 }
 
 expect {
-	match Port.listen("prices", |s| "got:${s}") {
-		PortListen(r) => {
-			inner = Box.unbox(r.on_value)
-			r.name == "prices" and Box.unbox(inner("42")) == "got:42"
-		}
-		_ => Bool.False
-	}
+	sub = Port.listen("prices", |s| "got:${s}")
+	sub.identity() == { id: "joy/port/listen", args: Wire.writer({}).str("prices").done() } and sub.deliver(Wire.writer({}).str("42").done()) == "got:42"
 }
 
 expect {
 	match Port.send("level", "9") {
-		PortSend(name, value) => name == "level" and value == "9"
+		Send(id, args) => id == "joy/port/send" and args == Wire.writer({}).str("level").str("9").done()
 		_ => Bool.False
 	}
 }

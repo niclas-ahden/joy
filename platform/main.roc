@@ -24,14 +24,10 @@ platform ""
 		"roc_drop_view": drop_view_for_host,
 		"roc_drop_cmds": drop_effects_for_host,
 		"roc_drop_subs": drop_subs_for_host,
-		"roc_drop_http_callback": drop_http_callback_for_host,
-		"roc_drop_timer_callback": drop_timer_callback_for_host,
 		"roc_drop_key_callback": drop_key_callback_for_host,
-		"roc_drop_value_callback": drop_value_callback_for_host,
 		"roc_drop_pointer_callback": drop_pointer_callback_for_host,
 		"roc_drop_file_callback": drop_file_callback_for_host,
 		"roc_drop_bytes_callback": drop_bytes_callback_for_host,
-		"roc_drop_str": drop_str_for_host,
 		"roc_drop_bytes": drop_bytes_for_host,
 	}
 	targets: {
@@ -47,15 +43,11 @@ platform ""
 				"dispatch",
 				"dispatch_bytes",
 				"dispatch_file",
-				"dispatch_http",
 				"dispatch_key",
 				"dispatch_pointer",
-				"dispatch_sub",
-				"dispatch_sub_key",
-				"dispatch_sub_value",
-				"dispatch_timer",
+				"dispatch_sub_bytes",
+				"drop_call_cb",
 				"dispatch_value",
-				"drop_timer_cb",
 				"cmd_ptr",
 				"cmd_len",
 				"effects_ptr",
@@ -90,6 +82,7 @@ import Port
 # (Crypto.SHA256/BLAKE3), and a platform module by the same name shadows it
 # with DUPLICATE DEFINITION warnings, which `roc build` treats as exit 2.
 import WebCrypto
+import Wire
 
 # The host holds the model as an opaque `Box(Model)` between calls, and every
 # event handler and effect callback as an opaque box, so it never needs to
@@ -133,21 +126,10 @@ drop_effects_for_host = |_| {}
 drop_subs_for_host : List(Sub(Msg)) -> {}
 drop_subs_for_host = |_| {}
 
-drop_http_callback_for_host : Box(({ status : U16, headers : List({ name : Str, value : Str }), body : List(U8) } -> Box(Msg))) -> {}
-drop_http_callback_for_host = |_| {}
-
-drop_timer_callback_for_host : Box((I64 -> Box(Msg))) -> {}
-drop_timer_callback_for_host = |_| {}
-
-# Also the reason the KeyEvent record (see Sub.KeyEvent) has a layout in the
-# generated ABI bindings: the host builds one per key dispatch.
+# The reason the KeyEvent record (see Sub.KeyEvent) has a layout in the ABI
+# bindings: the host builds one per element key dispatch.
 drop_key_callback_for_host : Box(({ key : Str, code : Str, ctrl : Bool, shift : Bool, alt : Bool, meta : Bool, repeat : Bool, is_composing : Bool } -> Box(Msg))) -> {}
 drop_key_callback_for_host = |_| {}
-
-# For the boxed `Str -> Box(Msg)` decoders held by port and URL-change
-# subscriptions.
-drop_value_callback_for_host : Box((Str -> Box(Msg))) -> {}
-drop_value_callback_for_host = |_| {}
 
 # Also the reason the PointerEvent record (see Attribute.PointerEvent) has a
 # layout in the generated ABI bindings: the host builds one per pointer
@@ -160,12 +142,10 @@ drop_pointer_callback_for_host = |_| {}
 drop_file_callback_for_host : Box(({ id : U32, name : Str, mime : Str, size : U64 } -> Box(Msg))) -> {}
 drop_file_callback_for_host = |_| {}
 
-# For the boxed `List(U8) -> Box(Msg)` callbacks held by crypto digests.
+# For the boxed `List(U8) -> Box(Msg)` callbacks of feature calls
+# (Effect.call) and events (Sub.listen).
 drop_bytes_callback_for_host : Box((List(U8) -> Box(Msg))) -> {}
 drop_bytes_callback_for_host = |_| {}
-
-drop_str_for_host : Str -> {}
-drop_str_for_host = |_| {}
 
 drop_bytes_for_host : List(U8) -> {}
 drop_bytes_for_host = |_| {}

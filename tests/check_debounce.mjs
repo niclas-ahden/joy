@@ -1,13 +1,15 @@
 // Node harness for debounce: Time.debounce re-arms the keyed timer on every
 // keystroke (only the last of a burst fires, with the final model state),
 // Time.cancel discards a pending timer, and a pending timer at unmount is
-// released without re-entering the dead instance. Uses real timers: the
-// example debounces at 200ms, the test waits 350ms.
+// released without re-entering the dead instance, also when the instance
+// trapped first. Uses real timers: the example debounces at 200ms, the test
+// waits 350ms.
 // Run from the repo root: node tests/check_debounce.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, fakeDom, find, findTag, htmlBare } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { makeRuntime, mount } = await appRuntime('debounce');
 
 const bytes = readFileSync(wasmPath('debounce'));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

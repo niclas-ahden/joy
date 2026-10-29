@@ -5,9 +5,10 @@
 // boot effect and tick subscription are routed through the wrappers.
 // Run from the repo root: node tests/check_spa_pages.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, byId, byRole, byRoleAll, fakeDom, htmlBare } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('spa_pages');
 
 // Captured timers (the boot Effect uses setTimeout, the tick Sub setInterval).
 // Every firing reads Date.now(), stubbed so the clock text is predictable.
@@ -17,6 +18,8 @@ let cleared = 0;
 let now = 0;
 globalThis.Date.now = () => now;
 globalThis.setTimeout = (fn, ms) => { timeouts.push({ fn, ms }); return timeouts.length; };
+// A Time operation answers through a promise, a microtask after its timer.
+const settled = () => new Promise((r) => setImmediate(r));
 globalThis.setInterval = (fn, ms) => { intervals.push({ fn, ms }); return intervals.length; };
 globalThis.clearInterval = () => { cleared += 1; };
 
@@ -56,6 +59,7 @@ expect('step survives a reset', textOf('count'), '5');
 // the clock model, not the counter.
 now = 3_723_000;
 timeouts[0].fn();
+await settled();
 expect('boot tick did not touch the counter', textOf('count'), '5');
 goTo('Clock');
 expect('clock page shows', byId(root, 'clock') !== null && byId(root, 'counter') === null, true);

@@ -4,9 +4,10 @@
 // click costs exactly one text write.
 // Run from the repo root: node tests/check_counter.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, byRole, html } from './fakedom.mjs';
-import { countingDom, expect, meter, wasmPath } from './harness.mjs';
+import { appRuntime, countingDom, expect, meter, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('counter');
 
 const counted = countingDom();
 const root = new El('#root');

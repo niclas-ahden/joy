@@ -8,9 +8,10 @@
 // trees against a real parser.
 // Run from the repo root: JOY_OPT=speed node tests/check_svg.mjs
 import { readFileSync } from 'node:fs';
-import { mount, childNamespace, foreignAttr, foreignTagName, NS } from '../www/runtime.js';
 import { El, Text, byClass, fakeDom, html, parsedCopy as stage } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount, childNamespace, foreignAttr, foreignTagName, NS } = await appRuntime('svg');
 
 const bytes = readFileSync(wasmPath('svg'));
 

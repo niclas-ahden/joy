@@ -9,9 +9,10 @@
 // that rebuilding the chunk rediffs it normally.
 // Run from the repo root: node tests/check_shared.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, fakeDom, htmlBare, find } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('shared');
 
 const attrWrites = new Map();
 const countingDom = {

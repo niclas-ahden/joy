@@ -209,6 +209,8 @@ export const fakeDom = {
     if (el) focused.el = el;
     return el !== null;
   },
+  // The element a feature module looks up, by the same selectors.
+  element: (selector) => findElement(selector),
   onGlobal: (event, fn) => {
     const listener = { event, fn, active: true };
     globalListeners.push(listener);

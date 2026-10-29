@@ -7,9 +7,10 @@
 // example's own browser suite, examples/spa-todomvc/tests/.
 // Run from the repo root: node tests/check_todomvc.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, byClass, byClassAll, byLabel, byRole, byRoleAll, find, html, textOf } from './fakedom.mjs';
-import { countingDom, expect, meter, wasmPath } from './harness.mjs';
+import { appRuntime, countingDom, expect, meter, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('spa-todomvc');
 
 const counted = countingDom();
 const root = new El('#root');

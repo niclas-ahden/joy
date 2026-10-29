@@ -8,9 +8,10 @@
 // handler fires (and prevents the default) only for its listed keys.
 // Run from the repo root: node tests/check_keyboard.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, fakeDom, find, findTag, activeGlobalListeners } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('keyboard');
 
 const root = new El('#root');
 await mount({ wasm: readFileSync(wasmPath('keyboard')), root, flags: '', dom: fakeDom });

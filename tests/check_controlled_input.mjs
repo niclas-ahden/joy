@@ -8,9 +8,10 @@
 // and no pin, a rejected one is no patch and one property write.
 // Run from the repo root: node tests/check_controlled_input.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, byId } from './fakedom.mjs';
-import { countingDom, expect, meter, wasmPath } from './harness.mjs';
+import { appRuntime, countingDom, expect, meter, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('controlled_input');
 
 const counted = countingDom();
 const root = new El('#root');

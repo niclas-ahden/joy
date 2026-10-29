@@ -4,9 +4,10 @@
 // wrapper as an element in the diff.
 // Run from the repo root: node tests/check_lazy_keyed_root.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, byId, fakeDom } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('lazy_keyed_root');
 
 const root = new El('#root');
 await mount({ wasm: readFileSync(wasmPath('lazy_keyed_root')), root, flags: '', dom: fakeDom });

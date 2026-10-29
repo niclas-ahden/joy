@@ -3,9 +3,10 @@
 // (including an arm that keeps the model unchanged but still runs its effect).
 // Run from the repo root: node tests/check_modal.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, fakeDom, find, htmlBare, dialogs, modalCalls } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('modal');
 
 const bytes = readFileSync(wasmPath('modal'));
 

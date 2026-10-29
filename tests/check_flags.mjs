@@ -2,9 +2,10 @@
 // argument, where the built-in Json.parse decodes it into a typed record.
 // Run from the repo root: node tests/check_flags.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, fakeDom, htmlBare } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('flags');
 
 const bytes = readFileSync(wasmPath('flags'));
 

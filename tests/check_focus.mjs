@@ -4,9 +4,10 @@
 // and a stand-in for document.activeElement.
 // Run from the repo root: node tests/check_focus.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, fakeDom, find, findTag, focused, focusCalls, htmlBare } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('focus');
 
 const bytes = readFileSync(wasmPath('focus'));
 

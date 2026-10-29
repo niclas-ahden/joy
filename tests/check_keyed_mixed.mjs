@@ -5,9 +5,10 @@
 // the reorder.
 // Run from the repo root: node tests/check_keyed_mixed.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, byId, fakeDom } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('keyed_mixed');
 
 const root = new El('#root');
 await mount({ wasm: readFileSync(wasmPath('keyed_mixed')), root, flags: '', dom: fakeDom });

@@ -5,9 +5,10 @@
 // the DOM.
 // Run from the repo root: node tests/check_keyed_list.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, byRole, findTag, htmlBare } from './fakedom.mjs';
-import { countingDom, expect, meter, wasmPath } from './harness.mjs';
+import { appRuntime, countingDom, expect, meter, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('keyed_list');
 
 const counted = countingDom();
 const root = new El('#root');

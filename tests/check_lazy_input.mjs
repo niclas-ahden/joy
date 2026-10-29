@@ -4,9 +4,10 @@
 // rather than inside the render, so the model's value still wins there.
 // Run from the repo root: node tests/check_lazy_input.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, byId } from './fakedom.mjs';
-import { countingDom, expect, meter, wasmPath } from './harness.mjs';
+import { appRuntime, countingDom, expect, meter, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('lazy_input');
 
 const counted = countingDom();
 const root = new El('#root');

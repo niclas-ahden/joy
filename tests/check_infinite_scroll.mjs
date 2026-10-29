@@ -3,9 +3,10 @@
 // loading stops at max_items.
 // Run from the repo root: node tests/check_infinite_scroll.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, fakeDom, find, htmlBare, activeObservers } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('infinite_scroll');
 
 const root = new El('#root');
 await mount({ wasm: readFileSync(wasmPath('infinite_scroll')), root, flags: '', dom: fakeDom });

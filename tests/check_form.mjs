@@ -8,9 +8,10 @@
 // composition to end, in both event orders browsers use.
 // Run from the repo root: node tests/check_form.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, byId, byRoleAll } from './fakedom.mjs';
-import { countingDom, expect, meter, wasmPath } from './harness.mjs';
+import { appRuntime, countingDom, expect, meter, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('form');
 
 const N = 200;
 const counted = countingDom();

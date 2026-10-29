@@ -9,9 +9,10 @@
 // asserts that growing the grid rebuilds it and that skipping resumes.
 // Run from the repo root: node tests/check_lazy.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, fakeDom, htmlBare, find } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('lazy');
 
 // Deterministic clock + captured intervals (same scheme as check_time.mjs).
 const T0 = 1_754_000_000_000;

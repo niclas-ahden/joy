@@ -14,16 +14,17 @@
 ## tick, drop it from the list to stop it.
 import Effect
 import Sub
+import Wire
 
 Time := [].{
 
 	## Produce a msg once, `ms` milliseconds from now.
 	after : U32, (I64 -> msg) -> Effect(msg)
-	after = |ms, on_fire| Effect.time_after(ms, on_fire)
+	after = |ms, on_fire| Effect.call("joy/time/after", Wire.writer({}).u32(ms).done(), |reply| on_fire(now(reply)))
 
 	## Produce a msg every `ms` milliseconds, while subscribed.
 	every : U32, (I64 -> msg) -> Sub(msg)
-	every = |ms, on_tick| Sub.every(ms, on_tick)
+	every = |ms, on_tick| Sub.listen("joy/time/every", Wire.writer({}).u32(ms).done(), |event| on_tick(at(event)))
 
 	## Produce a msg once, `ms` milliseconds after the LAST `debounce` with
 	## this key: issuing the effect again re-arms the pending timer, so only
@@ -34,50 +35,45 @@ Time := [].{
 	## when writing reusable components, so two instances cannot swallow each
 	## other's timers.
 	debounce : Str, U32, (I64 -> msg) -> Effect(msg)
-	debounce = |key, ms, on_fire| Effect.time_debounce(key, ms, on_fire)
+	debounce = |key, ms, on_fire| Effect.call("joy/time/debounce", Wire.writer({}).str(key).u32(ms).done(), |reply| on_fire(now(reply)))
 
 	## Discard the pending `debounce` timer with this key, so it never
 	## fires. No-op when nothing is pending.
 	cancel : Str -> Effect(msg)
-	cancel = |key| Effect.time_cancel(key)
+	cancel = |key| Effect.send("joy/time/cancel", Wire.writer({}).str(key).done())
 }
 
-# Each helper is one Effect/Sub constructor call. Pin the variant, the
-# parameters, and that the callback survives the wrap.
+## The time a timer fired at, in ms since the Unix epoch.
+at : List(U8) -> I64
+at = |bytes| Wire.reader(bytes).i64().map_ok(|(ms, _)| ms) ?? 0
 
-expect {
-	match Time.after(250, |now| "fired:${now.to_str()}") {
-		TimeAfter(ms, cb) => {
+now : List(U8) -> I64
+now = |reply| at(Effect.reply(reply) ?? [])
+
+# Each helper is one operation. Pin the id, the arguments, and that the
+# callback survives the wrap.
+
+called : Effect(Str) -> Try({ id : Str, args : List(U8), got : Str }, [NotCalled])
+called = |effect|
+	match effect {
+		Call(id, args, cb) => {
 			inner = Box.unbox(cb)
-			ms == 250 and Box.unbox(inner(9)) == "fired:9"
+			Ok({ id, args, got: Box.unbox(inner([0].concat(Wire.writer({}).i64(9).done()))) })
 		}
-		_ => Bool.False
+		_ => Err(NotCalled)
 	}
-}
+
+expect called(Time.after(250, |ms| "fired:${ms.to_str()}")) == Ok({ id: "joy/time/after", args: Wire.writer({}).u32(250).done(), got: "fired:9" })
+expect called(Time.debounce("search", 300, |ms| "run:${ms.to_str()}")) == Ok({ id: "joy/time/debounce", args: Wire.writer({}).str("search").u32(300).done(), got: "run:9" })
 
 expect {
-	match Time.every(16, |now| "tick:${now.to_str()}") {
-		Every(r) => {
-			inner = Box.unbox(r.on_tick)
-			r.ms == 16 and Box.unbox(inner(5)) == "tick:5"
-		}
-		_ => Bool.False
-	}
-}
-
-expect {
-	match Time.debounce("search", 300, |now| "run:${now.to_str()}") {
-		TimeDebounce(key, ms, cb) => {
-			inner = Box.unbox(cb)
-			key == "search" and ms == 300 and Box.unbox(inner(7)) == "run:7"
-		}
-		_ => Bool.False
-	}
+	sub = Time.every(16, |ms| "tick:${ms.to_str()}")
+	sub.identity() == { id: "joy/time/every", args: Wire.writer({}).u32(16).done() } and sub.deliver(Wire.writer({}).i64(5).done()) == "tick:5"
 }
 
 expect {
 	match Time.cancel("search") {
-		TimeCancel(key) => key == "search"
+		Send(id, args) => id == "joy/time/cancel" and args == Wire.writer({}).str("search").done()
 		_ => Bool.False
 	}
 }

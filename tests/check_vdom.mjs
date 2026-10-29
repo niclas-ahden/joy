@@ -5,9 +5,10 @@
 // refused, tag changes replacing the node, and unkeyed child-list edits.
 // Run from the repo root: node tests/check_vdom.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, fakeDom, html, htmlBare, find } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('vdom');
 
 const root = new El('#root');
 const app = await mount({ wasm: readFileSync(wasmPath('vdom')), root, flags: '', dom: fakeDom });

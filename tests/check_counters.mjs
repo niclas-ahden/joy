@@ -2,9 +2,10 @@
 // payloads (UserClickedIncrement(Left) etc.), plus style attributes.
 // Run from the repo root: node tests/check_counters.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, byRole, byRoleAll, find, htmlBare, textOf } from './fakedom.mjs';
-import { countingDom, expect, meter, wasmPath } from './harness.mjs';
+import { appRuntime, countingDom, expect, meter, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('counters');
 
 const counted = countingDom();
 const root = new El('#root');

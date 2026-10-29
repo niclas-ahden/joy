@@ -4,13 +4,16 @@
 // instance, and only it.
 // Run from the repo root: node tests/check_composed.mjs
 import { readFileSync } from 'node:fs';
-import { mount } from '../www/runtime.js';
 import { El, byRoleAll, fakeDom, htmlBare } from './fakedom.mjs';
-import { expect, wasmPath } from './harness.mjs';
+import { appRuntime, expect, wasmPath } from './harness.mjs';
+
+const { mount } = await appRuntime('composed');
 
 // Captured timers (the boot Effect uses setTimeout, the tick Sub setInterval).
 const timeouts = [];
 const intervals = [];
+// A Time operation answers through a promise, a microtask after its timer.
+const settled = () => new Promise((r) => setImmediate(r));
 globalThis.setTimeout = (fn, ms) => { timeouts.push({ fn, ms }); return timeouts.length; };
 globalThis.setInterval = (fn, ms) => { intervals.push({ fn, ms }); return intervals.length; };
 globalThis.clearInterval = () => {};
@@ -27,6 +30,7 @@ expect('tick subscription started an interval', intervals.length === 1 && interv
 // Effect.map: the component's boot effect was wrapped with Right(m), so firing
 // it increments ONLY the right counter.
 timeouts[0].fn();
+await settled();
 expect('Effect.map routed the boot msg to the right counter', counters(), '0,1');
 
 // Sub.map: the tick subscription was wrapped with Left(m).
