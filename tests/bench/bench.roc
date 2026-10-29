@@ -5,7 +5,7 @@
 # (update every 10th of 1000 rows). The phases are where a regression hides:
 #
 #   update  the app's `update` (roc_update, plus effect handling)
-#   render  the app's `render` (roc_render builds the new tree)
+#   render  the app's `view` (roc_render builds the new tree)
 #   diff    the host diffs new against previous and emits patch ops
 #   paint   the runtime applies the ops to the real DOM
 #

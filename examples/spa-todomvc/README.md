@@ -34,7 +34,7 @@ A full run ends with a smoke pass over the dev loop itself: it starts `./watch.r
 
 The whole app is this directory:
 
-* `app.roc` is the app: model, messages, update, and render. This is the file to play with.
+* `app.roc` is the app: model, messages, update and view. This is the file to play with.
 * `www/` is its page and styles. `build.roc` puts the compiled `app.wasm` and Joy's `runtime.js` next to them (both gitignored). For deploying, `./build.roc --release` optimizes for size and keeps only the browser features the app calls in `runtime.js`.
 * `watch.roc` serves the app and rebuilds it on save.
 * `tests.roc` and `tests/` drive the app through a real Chromium, then smoke test `watch.roc`.

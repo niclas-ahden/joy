@@ -259,7 +259,7 @@ jobs:
               echo "## Using this release"
               echo ""
               echo '```roc'
-              echo "app [Model, Msg, init, update, render, subscriptions] {"
+              echo "app [Model, Msg, init, update, view, subscriptions] {"
               echo "    pf: platform \"$url\","
               echo "    html: \"$html\","
               echo "}"

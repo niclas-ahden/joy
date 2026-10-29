@@ -1697,7 +1697,7 @@ unsafe extern "C" {
     /// Entrypoint: update_for_host
     pub fn roc_update(arg0: RocBox, arg1: RocBox) -> AnonStruct74;
 
-    /// Entrypoint: render_for_host
+    /// Entrypoint: view_for_host
     pub fn roc_render(arg0: RocBox) -> HtmlType50;
 
     /// Entrypoint: subs_for_host

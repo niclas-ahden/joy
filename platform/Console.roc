@@ -7,7 +7,7 @@
 ## There are two console streams. `Console.log` is the intentional app
 ## logging effect: you own the message, and it lands in `console.log`. The
 ## `dbg expr` statement is the development printf: it is pure to the effect
-## system, so it works anywhere in `init`, `update` or `render`, its output
+## system, so it works anywhere in `init`, `update` or `view`, its output
 ## format belongs to the compiler (the inspected value), and it lands in
 ## `console.debug`, which files under the Verbose level in devtools.
 ## Statement form only, `x = dbg y` is not supported.

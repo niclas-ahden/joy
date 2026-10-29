@@ -1,4 +1,4 @@
-app [Model, Msg, init, update, render, subscriptions] {
+app [Model, Msg, init, update, view, subscriptions] {
 	pf: platform "../../platform/main.roc",
 	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.1/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 	random: "https://github.com/niclas-ahden/roc-prng/releases/download/0.4.1/C3JpBYoPwC9SN5aweoh1Dux2K3iy4vfMTdAsWooE1HF5.tar.zst",
@@ -126,8 +126,8 @@ colours = ["red", "yellow", "blue", "green", "pink", "brown", "purple", "brown",
 nouns : List(Str)
 nouns = ["table", "chair", "house", "bbq", "desk", "car", "pony", "cookie", "sandwich", "burger", "pizza", "mouse", "keyboard"]
 
-render : Model -> Html(Msg)
-render = |model|
+view : Model -> Html(Msg)
+view = |model|
 	div(
 		[id("main")],
 		[

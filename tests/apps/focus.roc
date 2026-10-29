@@ -1,4 +1,4 @@
-app [Model, Msg, init, update, render, subscriptions] {
+app [Model, Msg, init, update, view, subscriptions] {
 	pf: platform "../../platform/main.roc",
 	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.1/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 }
@@ -42,8 +42,8 @@ update = |model, msg|
 			({ ..model, invalid: model.invalid + 1 }, [DOM.focus("#12"), DOM.show_modal("#12"), DOM.close_modal("#12")])
 	}
 
-render : Model -> Html(Msg)
-render = |model| {
+view : Model -> Html(Msg)
+view = |model| {
 	editor = if model.editing {
 		[
 			input([id("name"), value(model.name), on_input(|s| UserTyped(s))]),

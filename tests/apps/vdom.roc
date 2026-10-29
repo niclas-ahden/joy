@@ -1,4 +1,4 @@
-app [Model, Msg, init, update, render, subscriptions] {
+app [Model, Msg, init, update, view, subscriptions] {
 	pf: platform "../../platform/main.roc",
 	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.1/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 }
@@ -29,8 +29,8 @@ update = |model, msg|
 		Clicked => ({ ..model, clicks: model.clicks + 1 }, [])
 	}
 
-render : Model -> Html(Msg)
-render = |model| {
+view : Model -> Html(Msg)
+view = |model| {
 	stage =
 		match model.step {
 			0 => stage0

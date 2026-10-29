@@ -1,4 +1,4 @@
-app [Model, Msg, init, update, render, subscriptions] {
+app [Model, Msg, init, update, view, subscriptions] {
 	pf: platform "../../platform/main.roc",
 	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.1/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 }
@@ -28,5 +28,5 @@ update = |model, msg|
 		Played(_) => (model, [])
 	}
 
-render : Model -> Html.Html(Msg)
-render = |_| button([on_click(UserClickedPlay)], [text("Play")])
+view : Model -> Html.Html(Msg)
+view = |_| button([on_click(UserClickedPlay)], [text("Play")])

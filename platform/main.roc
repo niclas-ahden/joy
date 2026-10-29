@@ -2,7 +2,7 @@ platform ""
 	requires {
 		[Model : model, Msg : msg] for init : Str -> (Model, List(Effect(Msg))),
 		update : Model, Msg -> (Model, List(Effect(Msg))),
-		render : Model -> Html(Msg),
+		view : Model -> Html(Msg),
 		subscriptions : Model -> List(Sub(Msg))
 	}
 	exposes [Effect, Sub, Http, Time, Keyboard, Console, DOM, Port, WebCrypto, Media]
@@ -11,14 +11,14 @@ platform ""
 		# apps and view packages (e.g. joy-carousel) see the same nominal
 		# types as the platform: one tree serves SSR and the client. Apps add
 		# this exact URL and `import html.Html`. It must be the same URL, or
-		# the app's Html is a different nominal type than the one `render`
+		# the app's Html is a different nominal type than the one `view`
 		# is required to return.
 		html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.1/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 	}
 	provides {
 		"roc_init": init_for_host,
 		"roc_update": update_for_host,
-		"roc_render": render_for_host,
+		"roc_render": view_for_host,
 		"roc_subs": subs_for_host,
 		"roc_drop_model": drop_model_for_host,
 		"roc_drop_view": drop_view_for_host,
@@ -101,8 +101,8 @@ update_for_host = |boxed_model, boxed_msg| {
 	(Box.box(model), effects)
 }
 
-render_for_host : Box(Model) -> Html(Msg)
-render_for_host = |boxed| render(Box.unbox(boxed))
+view_for_host : Box(Model) -> Html(Msg)
+view_for_host = |boxed| view(Box.unbox(boxed))
 
 subs_for_host : Box(Model) -> List(Sub(Msg))
 subs_for_host = |boxed| subscriptions(Box.unbox(boxed))

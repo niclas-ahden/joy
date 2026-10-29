@@ -7,7 +7,7 @@ A local tool, run by hand and compared against a saved baseline.
 Chromium. Each step's cost is split into the phases we own end to end:
 
 - **update**: the app's `update` runs (`roc_update`, plus effect handling)
-- **render**: the app's `render` builds the new tree (`roc_render`)
+- **render**: the app's `view` builds the new tree (`roc_render`)
 - **diff**: the host diffs new against previous and emits patch ops
 - **paint**: the runtime (`www/runtime.js`) applies the ops to the real DOM
 

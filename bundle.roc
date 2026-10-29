@@ -39,7 +39,7 @@ main! = |_args| {
 	Path.utf8("dist").create_all!()?
 
 	# An app must name the same joy-html the platform was built against, or
-	# its Html is a different nominal type than the one `render` returns, so
+	# its Html is a different nominal type than the one `view` returns, so
 	# read the URL out of the header instead of repeating it here.
 	html_url = html_url!({})?
 

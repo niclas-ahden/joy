@@ -1,4 +1,4 @@
-app [Model, Msg, init, update, render, subscriptions] {
+app [Model, Msg, init, update, view, subscriptions] {
 	pf: platform "../platform/main.roc",
 	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.1/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 }
@@ -92,8 +92,8 @@ subscriptions = |model|
 		[]
 	}
 
-render : Model -> Html(Msg)
-render = |model| {
+view : Model -> Html(Msg)
+view = |model| {
 	listen_label = if model.listening {
 		"Stop listening"
 	} else {

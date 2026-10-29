@@ -1,4 +1,4 @@
-app [Model, Msg, init, update, render, subscriptions] {
+app [Model, Msg, init, update, view, subscriptions] {
 	pf: platform "../../platform/main.roc",
 	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.1/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 }
@@ -11,7 +11,7 @@ import pf.Time
 
 # WHY Html.lazy exists
 #
-# Joy re-runs `render` on every message and diffs the whole tree. That is
+# Joy re-runs `view` on every message and diffs the whole tree. That is
 # usually plenty fast, but when one region is big (here: a card grid you can
 # grow to tens of thousands of nodes) and something small changes often
 # (here: a spinner ticking every 16 ms), every tick rebuilds and rediffs the
@@ -150,8 +150,8 @@ grid = |rows|
 		],
 	)
 
-render : Model -> Html(Msg)
-render = |model| {
+view : Model -> Html(Msg)
+view = |model| {
 	avg = model.avg_gap_tenths
 	gap_text = if avg == 0 {
 		"-"

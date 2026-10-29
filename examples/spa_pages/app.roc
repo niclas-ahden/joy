@@ -5,7 +5,7 @@
 # stays around while another one is on screen. For the other shape, where
 # each page is its own URL and the model holds only the page on screen, see
 # examples/pages/.
-app [Model, Msg, init, update, render, subscriptions] {
+app [Model, Msg, init, update, view, subscriptions] {
 	pf: platform "../../platform/main.roc",
 	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.1/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 }
@@ -88,10 +88,10 @@ subscriptions = |model|
 		map_subs(Notes.subscriptions(model.notes), |m| NotesMsg(m)),
 	].join()
 
-render : Model -> Html(Msg)
-render = |model| {
+view : Model -> Html(Msg)
+view = |model| {
 	# The page's view produces Html(Counter.Msg) and so on. Html.map turns
-	# it into Html(Msg), which is what lets the app's render return it.
+	# it into Html(Msg), which is what lets the app's view return it.
 	page =
 		match model.page {
 			Counter => Html.map(Counter.view(model.counter), |m| CounterMsg(m))

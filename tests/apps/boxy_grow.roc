@@ -1,4 +1,4 @@
-app [Model, Msg, init, update, render, subscriptions] {
+app [Model, Msg, init, update, view, subscriptions] {
 	pf: platform "../../platform/main.roc",
 	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.1/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 }
@@ -31,5 +31,5 @@ update = |model, Tick(_)| ({ ..model, rows: model.target }, [])
 subscriptions : Model -> List(Sub(Msg))
 subscriptions = |_| [Time.every(100, |now| Tick(now))]
 
-render : Model -> Html(Msg)
-render = |model| div([], List.repeat(0, model.rows).map_with_index(|_, i| div([], [text(i.to_str())])))
+view : Model -> Html(Msg)
+view = |model| div([], List.repeat(0, model.rows).map_with_index(|_, i| div([], [text(i.to_str())])))

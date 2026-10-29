@@ -1,4 +1,4 @@
-app [Model, Msg, init, update, render, subscriptions] {
+app [Model, Msg, init, update, view, subscriptions] {
 	pf: platform "../platform/main.roc",
 	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.1/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 }
@@ -70,8 +70,8 @@ update = |model, msg|
 			({ ..model, upload: "upload failed" }, [])
 		}
 
-render : Model -> Html(Msg)
-render = |model| {
+view : Model -> Html(Msg)
+view = |model| {
 	picked = match model.file {
 		Picked(info) => "${info.name} (${info.size.to_str()} bytes, ${info.mime})"
 		NoFile => "no file yet"
