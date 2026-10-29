@@ -1,6 +1,6 @@
 app [Model, Msg, init, update, render, subscriptions] {
 	pf: platform "../../platform/main.roc",
-	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.0/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
+	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.1/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
 }
 
 import html.Html exposing [div, button, text]
@@ -8,8 +8,8 @@ import html.Attribute exposing [on_click]
 import pf.Effect
 
 # Renders a chain of nested divs whose depth comes from the flags, so the
-# stack canary harness can drive nesting past the shadow stack budget (see
-# check_stack_canary.mjs). Mounts shallow, one click jumps to the flagged
+# stack overflow harness can drive nesting past the shadow stack budget (see
+# check_stack_overflow.mjs). Mounts shallow, one click jumps to the flagged
 # depth.
 Model : { depth : I64, target : I64 }
 

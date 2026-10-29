@@ -57,8 +57,6 @@ platform ""
 				"log_len",
 				"log_clear",
 				"js_alloc",
-				"stack_canary_ok",
-				"stack_floor",
 				"heap_used",
 				"dealloc_miss",
 				"lazy_forces",

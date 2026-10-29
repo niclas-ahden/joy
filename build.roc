@@ -213,36 +213,17 @@ build_example! = |path, opt| {
 	# roughly 10 000 levels of HTML nesting. Ergo, it _should_ not overflow, but
 	# if we learn we're wrong we can always increase it or make it user-definable.
 	#
-	# We can't use `--stack-first`, because Roc does not currently expose that to
-	# us, which means that if we overflow the stack we'll be corrupting the app's
-	# static data section.
+	# Roc links wasm32 with `--stack-first`, so the stack sits at the lowest
+	# addresses and grows down toward 0, with static data and the heap above
+	# it. An overflow wraps below 0 to an address near 4 GiB, which traps out of
+	# bounds as long as memory has not grown that far
+	# (tests/check_stack_overflow.mjs).
 	#
-	# To manage that danger we have two countermeasures:
-	#
-	# a) A canary memory band at the stack floor. The host scans it after every
-	#    dispatch and fails loudly if any word was overwritten. Nothing fires at
-	#    write time, so detection waits for the dispatch boundary, and a single
-	#    frame larger than the band can step over it unseen.
-	#
-	# b) A stack pointer check in `roc_alloc` which traps as soon as the pointer
-	#    is below the floor. Every allocation goes through the host allocator, also
-	#    the ones Roc code makes, and render recursion allocates on nearly every
-	#    level, so this fires mid-dispatch and catches frames of any size. Its
-	#    blind spot is recursion that never allocates, which is covered by a).
-	#
-	# Both checks need the hardcoded stack size kept in
-	# sync in two spots: the `--wasm-stack-size` flag here and `STACK_SIZE` in
-	# host/host.rs.
-	#
-	# The engine's native call stack is a separate limit that backstops both.
-	#
-	# These checks _should_ give us loud errors on every stack overflow. They
-	# would also make `wasm-opt`'s `--low-memory-unused` optimization safe,
-	# should we ever run wasm-opt (nothing does today). We should probably
-	# switch to `--stack-first` if that becomes available in the future.
+	# The engine's native call stack is a separate limit, and in optimized
+	# builds it usually binds first.
 	output = capture!(
-		Cmd.new_str("roc")
-			.args_str(["build", "--opt=${opt}", "--target=wasm32", "--wasm-memory=0", "--wasm-stack-size=1048576", "--no-cache", "--output=${out}", src]),
+		Cmd.new(OsStr.from_str("roc"))
+			.args(["build", "--opt=${opt}", "--target=wasm32", "--wasm-memory=0", "--wasm-stack-size=1048576", "--no-cache", "--output=${out}", src].map(OsStr.from_str)),
 	)?
 	lines = output.split_on("\n")
 	clean = match lines.keep_oks(summary_counts).last() {

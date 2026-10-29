@@ -283,23 +283,6 @@ unsafe fn release_span(span: usize) {
 #[no_mangle]
 pub extern "C" fn roc_alloc(length: usize, alignment: usize) -> *mut u8 {
     unsafe {
-        // Overflow check at the moment of allocation: a stack pointer below
-        // the band's top has crossed the floor whatever the frame size, which
-        // the band scan alone can miss (a large frame leaps the band without
-        // touching it). Render recursion allocates on nearly every level, so
-        // this fires mid-dispatch. Smashing a canary word first makes the
-        // runtime report its overflow error for this trap too (volatile, or
-        // the store before the trap is eliminated as dead), and trapping
-        // before `take_span` leaves the free lists coherent.
-        // The probe's address pins a stack slot, which is enough: comparing
-        // the address keeps the slot from being promoted to a register, and
-        // being one frame off does not matter here.
-        let probe: u32 = 0;
-        let sp = &probe as *const u32 as usize;
-        if sp < STACK_LIMIT {
-            core::ptr::write_volatile(CANARY_BASE as *mut u32, 0);
-            core::arch::wasm32::unreachable();
-        }
         let header = header_size(alignment);
         let total = align_up(header + length, 16);
         let span = take_span(total);
@@ -378,96 +361,6 @@ pub extern "C" fn roc_realloc(ptr: *mut u8, new_length: usize, alignment: usize)
 #[no_mangle]
 pub extern "C" fn heap_used() -> usize {
     unsafe { NEXT }
-}
-
-// --- Stack overflow canary ---
-// The shadow stack grows down into the data segments without trapping, so an
-// overflow corrupts statics silently. We have two guards to make the corruption
-// loud:
-//
-// a) a canary band sits at the stack floor and the runtime checks `stack_canary_ok`
-//    after every entry, catching recursion that never allocates.
-//
-// b) `roc_alloc` compares the live stack pointer against the band's top and traps
-//    mid-dispatch, catching frames of any size, including ones large enough to leap
-//    the canary band unseen.
-//
-// The floor is derived from the live stack pointer in `start` (roc's embedded wasm-ld
-// resolves `__data_end` and `__heap_base` to the global base, so linker symbols cannot
-// anchor it) minus the stack size the page passed in.
-//
-// The size of the linked stack region, which only the build knows: the linker sizes
-// it from --wasm-stack-size, and nothing the host can read back reports it (see the
-// derivation note above). So the number is fixed here, and build.roc links every
-// module with the same constant. A value that disagrees with the link is worse than
-// no canary: too large puts the band inside live stack (false overflows), too small
-// puts it below the floor (writes into the heap). Changing the stack size means
-// changing this constant and build.roc together, in one release.
-//
-// 1 MiB is ~10,000 levels of view nesting (~97 bytes per frame in
-// tests/check_stack_canary.mjs), two orders of magnitude past what browsers render
-// comfortably, and the module's initial memory has to cover it, so a bigger number
-// costs every page some memory.
-const STACK_SIZE: usize = 1024 * 1024;
-// Band offset above the derived floor, covering the derivation's slack.
-// Anything that writes here is about to cross the floor anyway.
-const CANARY_MARGIN: usize = 8 * 1024;
-// Wide enough that recursing frames cannot leap it.
-const CANARY_BYTES: usize = 4 * 1024;
-const CANARY_WORD: u32 = 0x4A6F_79C5;
-
-static mut CANARY_BASE: usize = 0;
-// Top of the band, the threshold for the alloc-time check in `roc_alloc`.
-// 0 keeps that check inert until `start` places the band.
-static mut STACK_LIMIT: usize = 0;
-
-/// Fill the canary band. `start` runs this before the first render, so the
-/// pattern is in place before anything can recurse.
-unsafe fn write_stack_canary() {
-    let stack_size = STACK_SIZE;
-    let probe: u32 = 0;
-    let top = core::hint::black_box(&probe) as *const u32 as usize;
-    if top < stack_size {
-        // No sound band exists: stay disabled rather than write into data.
-        // A stack larger than the address it starts at means the page and the
-        // link disagree, so there is nothing sound to guard either way.
-        return;
-    }
-    let base = align_up(top - stack_size + CANARY_MARGIN, 16);
-    CANARY_BASE = base;
-    STACK_LIMIT = base + CANARY_BYTES;
-    let mut p = base as *mut u32;
-    let end = (base + CANARY_BYTES) as *mut u32;
-    while p < end {
-        *p = CANARY_WORD;
-        p = p.add(1);
-    }
-}
-
-/// Lowest canary address, so a harness can corrupt the band on purpose.
-/// 0 until `start` has run.
-#[no_mangle]
-pub extern "C" fn stack_floor() -> usize {
-    unsafe { CANARY_BASE }
-}
-
-/// 1 while every canary word is intact, 0 once the stack crossed the band.
-#[no_mangle]
-pub extern "C" fn stack_canary_ok() -> u32 {
-    unsafe {
-        if CANARY_BASE == 0 {
-            return 1;
-        }
-        let mut p = CANARY_BASE as *const u32;
-        let end = (CANARY_BASE + CANARY_BYTES) as *const u32;
-        while p < end {
-            if *p != CANARY_WORD {
-                return 0;
-            }
-            p = p.add(1);
-        }
-        1
-    }
 }
 
 /// Increment the refcount of a heap value by 1, given its data pointer. The
@@ -2216,7 +2109,7 @@ unsafe fn diff_children(parent_idx: usize, old_off: usize, new_off: usize) {
     // before it is read, and zeroing per element pair is not free.
     // Sized with care: this frame is reserved at every level of the diff
     // recursion, so the buffer multiplies into the nesting depth the stack
-    // can hold (check_stack_canary.mjs re-diffs at its budget depth and
+    // can hold (check_stack_overflow.mjs re-diffs at its budget depth and
     // records the ceiling above it, both of which a 1 KB buffer already
     // blows). 64 words covers ~10 children either side.
     let words = 2 * old_n + 4 * new_n;
@@ -3053,13 +2946,9 @@ unsafe fn run_update(msg_box: usize) -> u32 {
 /// Initialise the app: hand the flags string JS wrote via `js_alloc` to the
 /// app's pure `init`, queue init's effects, then render. JS calls this once
 /// on mount. Pass (0, 0) for no flags.
-///
-/// The canary is written before anything can recurse, so there is no window
-/// where the band sits in the wrong place.
 #[no_mangle]
 pub extern "C" fn start(flags_ptr: usize, flags_len: usize) {
     unsafe {
-        write_stack_canary();
         // init_for_host : Str -> (Box(Model), List(Effect(Msg))): box _0, effects _1.
         let ret = abi::roc_init(str_from_parts(flags_ptr, flags_len));
         MODEL = ret._0 as usize;

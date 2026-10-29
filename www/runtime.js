@@ -1444,8 +1444,14 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
   // like busyMs, so a driver samples before/after and takes the difference.
   const perf = { enabled: false, busyMs: 0, entries: 0, updateMs: 0, renderMs: 0, diffMs: 0, paintMs: 0 };
 
-  const overflowError = () =>
-    new Error('Joy: the wasm shadow stack overflowed and memory is corrupt. The usual cause is unbounded recursion in update or render, or a view nested far deeper than any browser renders well.');
+  // A wasm trap or a native stack overflow reaches the developer as a bare
+  // engine error that never mentions Joy, so wrap it with the likely causes
+  // and keep the original as the cause. Errors from JS code, like a throwing
+  // port handler, pass through as they are.
+  const crashed = (err) =>
+    err instanceof WebAssembly.RuntimeError || err instanceof RangeError
+      ? new Error('Joy: the app crashed and has stopped. The usual causes are unbounded recursion in update or render, a view nested thousands of levels deep, a `crash` in Roc code, or running out of memory.', { cause: err })
+      : err;
 
   // Every call into the host goes through here: call, drain logs, paint if
   // the view changed, then start any queued effects (whose completions
@@ -1455,12 +1461,6 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
     const t0 = perf.enabled ? performance.now() : 0;
     try {
       const changed = call();
-      // Stack overflow smashes the host's canary without trapping (see
-      // host.rs). Checked before logs, effects and paint so corrupt memory
-      // never reaches the page.
-      if (!exports.stack_canary_ok()) {
-        throw overflowError();
-      }
       drainLog();
       const effects = parseEffects();
       if (changed) {
@@ -1471,10 +1471,7 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
       for (const e of effects) runEffect(e);
     } catch (err) {
       alive = false;
-      // The host's alloc-time overflow check smashes the canary before it
-      // traps (see host.rs), so a dead canary after a throw is the same
-      // overflow and gets the same error.
-      throw exports.stack_canary_ok() ? err : overflowError();
+      throw crashed(err);
     } finally {
       if (perf.enabled) {
         perf.busyMs += performance.now() - t0;

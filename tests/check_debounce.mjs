@@ -49,3 +49,42 @@ await sleep(350);
 expect('pending debounce after unmount is a no-op', htmlBare(root), frozen);
 expect('no deallocs missed', app.instance.exports.dealloc_miss(), 0);
 
+// A trap leaves the instance unable to take any call, because its stack
+// pointer stays wrapped and the next call that touches the stack traps
+// again. Modeled with exports that all throw once the fault is armed. A
+// debounce pending at the trap must not stop unmount from finishing.
+{
+  const { instance } = await WebAssembly.instantiate(bytes, {});
+  let trapped = false;
+  const exports = {};
+  for (const [name, value] of Object.entries(instance.exports)) {
+    exports[name] = typeof value !== 'function' ? value : (...args) => {
+      if (trapped) throw new WebAssembly.RuntimeError('memory access out of bounds');
+      return value(...args);
+    };
+  }
+  const root2 = new El('#root');
+  const rt = makeRuntime(exports, fakeDom, root2);
+  rt.start('');
+  const input2 = findTag(root2, 'input');
+  input2.value = 'doomed';
+  input2.listeners.input({ target: input2 });
+  trapped = true;
+  let crash = null;
+  try {
+    find(root2, 'Cancel').listeners.click();
+  } catch (err) {
+    crash = err.message;
+  }
+  expect('the click traps', crash?.startsWith('Joy: the app crashed'), true);
+  const frozen2 = htmlBare(root2);
+  let unmounted = 'ok';
+  try {
+    rt.unmount();
+  } catch (err) {
+    unmounted = String(err);
+  }
+  expect('unmount after a trap finishes', unmounted, 'ok');
+  await sleep(350);
+  expect('pending debounce after a trap is a no-op', htmlBare(root2), frozen2);
+}

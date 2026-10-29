@@ -1,24 +1,24 @@
-# Real-browser E2E for the stack overflow canary. The node harness
-# (tests/check_stack_canary.mjs) drives real overflows to a loud failure at
-# every opt level. This test covers what only Chromium can: the overflow
-# error reaching window, a dead instance ignoring clicks, and the depth
+# Real-browser E2E for deep views and crashes. The node harness
+# (tests/check_stack_overflow.mjs) drives real overflows to a trap at every
+# opt level. This test covers what only Chromium can: a crash reaching window
+# through real event dispatch, a dead instance ignoring clicks, and the depth
 # budgets holding with real elements.
 #
-# It never drives a real overflow. The renderer dies below Joy's guards at
-# depths that vary per machine, same Chromium build: Blink's layout
-# recursion tab-crashes on attached trees (~1,800 levels on one machine,
-# >10,000 on another), and deep wasm recursion can crash the tab outright
-# instead of throwing Node's RangeError (~3,000 levels against Node's
-# 9,700, same wasm). So the deep phase uses a detached root, never laid
-# out, and asserts a budget instead of hunting the ceiling. Speed builds
+# It never drives a real overflow. The renderer dies below the wasm stack's
+# own limit at depths that vary per machine, same Chromium build: Blink's
+# layout recursion tab-crashes on attached trees (~1,800 levels on one
+# machine, >10,000 on another), and deep wasm recursion can crash the tab
+# outright instead of throwing Node's RangeError (~3,000 levels against
+# Node's 9,700, same wasm). So the deep phase uses a detached root, never
+# laid out, and asserts a budget instead of hunting the ceiling. Speed builds
 # only: a dev level costs ~4x the shadow stack, the budget is not promised
 # there.
 #
 # The page mounts deep.roc with empty flags (depth 1). Each scenario
 # re-mounts through the page's own ./runtime.js at the depth it needs.
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
-	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.11.1/GJz6pEptEAmK2FqGnzJQUhF9cymdiV3vwETDdCDevAZ1.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
+	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.13.1/AWahhV9oKjtqpZNTG5mUK5i86Fy1Lwssrg6yeDG52Bvy.tar.zst",
 }
 
 import pf.Env
@@ -50,6 +50,33 @@ remount_detached = |depth|
 	\\  return 'mounted'
 	\\})()
 
+# Mount through makeRuntime with the dispatch export wrapped, so a click
+# throws the engine error a real overflow trap does, on demand. A real
+# overflow can crash the tab instead (see above), and the runtime handles a
+# trap the same whatever caused it. The flags put the button's target at 50
+# levels, so a dead instance that still dispatched would change the DOM.
+fault_mount =
+	\\(async () => {
+	\\  const { makeRuntime, browserDom } = await import('./runtime.js')
+	\\  const bytes = await (await fetch('./app.wasm')).arrayBuffer()
+	\\  const { instance } = await WebAssembly.instantiate(bytes, {})
+	\\  const real = instance.exports
+	\\  window.__fault = true
+	\\  const exports = {
+	\\    ...real,
+	\\    dispatch: (id) => {
+	\\      if (window.__fault) throw new WebAssembly.RuntimeError('memory access out of bounds')
+	\\      return real.dispatch(id)
+	\\    },
+	\\  }
+	\\  const root = document.getElementById('app')
+	\\  root.replaceChildren()
+	\\  makeRuntime(exports, browserDom, root).start('50')
+	\\  return 'mounted'
+	\\})()
+
+app_divs = "String(document.querySelectorAll('#app div').length)"
+
 # Playwright cannot click a detached node, so the deep phase dispatches
 # through the DOM. A throwing listener still reports to window, where the
 # trap listens.
@@ -58,7 +85,7 @@ click_detached = "(window.deepRoot.querySelector('button').click(), 'clicked')"
 detached_divs = "String(window.deepRoot.querySelectorAll('div').length)"
 
 # Uncaught errors from event listeners surface on window, nowhere else a test
-# can reach. Arm a trap before the click that is expected to blow up.
+# can reach. Arm a trap before a click to catch anything it throws.
 arm_error_trap =
 	\\(window.__joyErr = null,
 	\\ window.addEventListener('error', (e) => {
@@ -66,52 +93,33 @@ arm_error_trap =
 	\\ }, { once: true }),
 	\\ 'armed')
 
-canary_ok = "String(window.app.instance.exports.stack_canary_ok())"
-
-poke_band =
-	\\(() => {
-	\\  const ex = window.app.instance.exports
-	\\  new Uint32Array(ex.memory.buffer, ex.stack_floor(), 1)[0] = 0
-	\\  return 'poked'
-	\\})()
-
 main! = |_args| {
 	{ browser, page } = Browser.open!("deep", "#app button")?
 
-	# The attached budget: 1000 levels render in a real, laid-out tree and
-	# leave the canary alone. Kept under Blink's layout ceiling, ~1,800 at
-	# its lowest observed.
+	# The attached budget: 1000 levels render in a real, laid-out tree. Kept
+	# under Blink's layout ceiling, ~1,800 at its lowest observed.
 	_ = page.evaluate!(remount("1000"))?
 	page.find("#app button").click!()?
-	divs = page.evaluate!("String(document.querySelectorAll('#app div').length)")?
+	divs = page.evaluate!(app_divs)?
 	if I64.from_str(divs) ?? 0 < 1000 {
 		Err(DeepRenderTooShallow(divs))?
 	}
-	ok_before = page.evaluate!(canary_ok)?
-	if ok_before != "1" {
-		Err(CanaryTrippedInsideBudget(ok_before))?
-	}
 
-	# Corrupting the band by hand proves the detection path end to end: the
-	# next dispatch throws the runtime's overflow error, the browser reports
-	# it as an uncaught error, and the instance is dead afterwards.
+	# A trap during a real click reaches window as the runtime's crash
+	# error. Disarming the fault afterwards proves the instance stays dead:
+	# the next click would render 50 levels if it still dispatched.
+	_ = page.evaluate!(fault_mount)?
+	before = page.evaluate!(app_divs)?
 	_ = page.evaluate!(arm_error_trap)?
-	_ = page.evaluate!(poke_band)?
 	page.find("#app button").click!()?
-	poked_err = page.evaluate!("window.__joyErr || '(no error)'")?
-	if !poked_err.contains("shadow stack overflowed") {
-		Err(PokedBandNotReported(poked_err))?
+	crash_err = page.evaluate!("window.__joyErr || '(no error)'")?
+	if !crash_err.contains("Joy: the app crashed") {
+		Err(CrashNotReported(crash_err))?
 	}
-	ok_after = page.evaluate!(canary_ok)?
-	if ok_after != "0" {
-		Err(PokedBandNotDetected(ok_after))?
-	}
-
-	# A dead instance ignores further dispatches: the DOM stays where the
-	# last good render left it, however hard the button is clicked.
+	_ = page.evaluate!("(window.__fault = false, 'disarmed')")?
 	page.find("#app button").click!()?
-	after = page.evaluate!("String(document.querySelectorAll('#app div').length)")?
-	if after != divs {
+	after = page.evaluate!(app_divs)?
+	if after != before {
 		Err(DeadInstanceStillDispatches(after))?
 	}
 
@@ -128,10 +136,10 @@ main! = |_args| {
 	Ok({})
 }
 
-# The speed-only budget: 2500 levels render and re-diff cleanly, canary
-# intact, in a detached tree. The first click builds (the cheap REPLACE
-# path), the second re-walks the full depth through diff and diff_children,
-# the deepest-framed path the host has.
+# The speed-only budget: 2500 levels render and re-diff cleanly in a
+# detached tree. The first click builds (the cheap REPLACE path), the
+# second re-walks the full depth through diff and diff_children, the
+# deepest-framed path the host has.
 deep_budget! = |page| {
 	budget : I64
 	budget = 2500
@@ -151,10 +159,6 @@ deep_budget! = |page| {
 	rediff_err = page.evaluate!("window.__joyErr || '(ok)'")?
 	if rediff_err != "(ok)" {
 		Err(RediffBudgetNotMet(rediff_err))?
-	}
-	ok_rediff = page.evaluate!(canary_ok)?
-	if ok_rediff != "1" {
-		Err(CanaryTrippedInsideRediffBudget(ok_rediff))?
 	}
 
 	Ok({})
