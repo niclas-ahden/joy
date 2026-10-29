@@ -27,3 +27,10 @@ expect('the voice memo gets every media operation it calls', media.filter((id) =
 const counter = readFileSync(runtimePath('counter'), 'utf8');
 expect('an app without features gets none', counter.includes("defineOperation('joy/"), false);
 expect('and says so', counter.includes('(see tools/runtime): none'), true);
+
+// The page title, scrolling, document clicks and the clipboard ship with an
+// app that calls them, and the DOM operations it does not call stay out.
+const doc = readFileSync(runtimePath('document'), 'utf8');
+const docOps = ['joy/dom/set_title', 'joy/dom/scroll_to', 'joy/dom/document_clicks', 'joy/clipboard/write_text', 'joy/clipboard/write_text_of'];
+expect('the document app gets its title, scroll, click and clipboard operations', docOps.filter((id) => !has(doc, id)).join(', '), '');
+expect('and not focus, which it never calls', has(doc, 'joy/dom/focus'), false);

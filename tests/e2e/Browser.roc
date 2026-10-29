@@ -38,6 +38,27 @@ Browser :: [].{
 		)
 	}
 
+	## Like open!, with the clipboard permissions granted where the engine
+	## asks for them. Chromium refuses a clipboard write without
+	## `clipboard-write`. Firefox and WebKit allow one that follows a click,
+	## and reject the permission names. Also says whether it is Chromium,
+	## the one engine where a test can read the clipboard back.
+	open_with_clipboard! = |app_name, ready| {
+		engine = Env.var_str!("JOY_BROWSER") ?? "chromium"
+		(browser_type, permissions) = match engine {
+			"firefox" => (Firefox, [])
+			"webkit" => (WebKit, [])
+			_ => (Chromium(DefaultChannel), ["clipboard-read", "clipboard-write"])
+		}
+		{ browser, page } = Playwright.launch_page_with!(
+			{ new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis },
+			{ browser_type, timeout: TimeoutMilliseconds(10000), permissions },
+		)?
+		page.navigate!("${Browser.base_url!()}/${app_name}/")?
+		assert!(page.find(ready).is_visible())?
+		Ok({ browser, page, can_read_clipboard: permissions != [] })
+	}
+
 	## The server's base URL (see e2e.roc).
 	base_url! = || Env.var_str!("E2E_URL") ?? "http://127.0.0.1:8787"
 

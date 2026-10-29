@@ -1,7 +1,8 @@
-## Browser navigation, focus, and native dialogs. These are one-way effects with no
-## response: return them from `init` or `update` (e.g.
-## `(model, [DOM.push_url("?q=1")])`) and the host performs them after
-## the paint. Reacting to the user's Back/Forward buttons is a subscription.
+## Browser navigation, focus, native dialogs, the page title and scrolling.
+## These are one-way effects with no response: return them from `init` or
+## `update` (e.g. `(model, [DOM.push_url("?q=1")])`) and the host performs
+## them after the paint. Reacting to the user's Back/Forward buttons, and to
+## clicks anywhere on the page, are subscriptions.
 ##
 ## The effects addressed by a CSS selector (`focus`, `show_modal`,
 ## `close_modal`) do nothing when the selector matches no element. That is
@@ -47,6 +48,20 @@ DOM := [].{
 	focus : Str -> Effect(msg)
 	focus = |selector| Effect.send("joy/dom/focus", Wire.writer({}).str(selector).done())
 
+	## Set the page's title, the text in the browser's tab and history
+	## (`document.title`). Return it from the `init` and the `update`s that
+	## change what the page shows, the way an app that switches pages in
+	## place names each page.
+	set_title : Str -> Effect(msg)
+	set_title = |title| Effect.send("joy/dom/set_title", Wire.writer({}).str(title).done())
+
+	## Scroll the page to a position in CSS pixels from its top left corner
+	## (`window.scrollTo`), `{ x: 0, y: 0 }` for the top. Runs after the
+	## paint, so a page the same update switched to starts at the top
+	## instead of where the previous one was scrolled to.
+	scroll_to : { x : U64, y : U64 } -> Effect(msg)
+	scroll_to = |{ x, y }| Effect.send("joy/dom/scroll_to", Wire.writer({}).u64(x).u64(y).done())
+
 	## A full page load. The app re-initialises, so the model is lost.
 	navigate : Str -> Effect(msg)
 	navigate = |url| Effect.send("joy/dom/navigate", Wire.writer({}).str(url).done())
@@ -70,6 +85,16 @@ DOM := [].{
 	on_url_change : (Str -> msg) -> Sub(msg)
 	on_url_change = |on_change|
 		Sub.listen("joy/dom/url_changed", [], |event| on_change(Wire.reader(event).str().map_ok(|(url, _)| url) ?? ""))
+
+	## Fire a message when the user clicks an element carrying this
+	## attribute, or anything inside one, with the attribute's value. The
+	## listener is on the document, so it also hears the page's own HTML
+	## around the app's root, which the app does not render and so cannot
+	## give handlers: `DOM.on_document_click("data-copy", |id| UserClickedCopy(id))`.
+	## The nearest element with the attribute wins.
+	on_document_click : Str, (Str -> msg) -> Sub(msg)
+	on_document_click = |attribute, on_click|
+		Sub.listen("joy/dom/document_clicks", Wire.writer({}).str(attribute).done(), |event| on_click(Wire.reader(event).str().map_ok(|(value, _)| value) ?? ""))
 }
 
 # Each helper is one operation. Pin its id and argument so a helper can
@@ -88,8 +113,25 @@ expect sent(DOM.focus("#name")) == Ok(("joy/dom/focus", "#name"))
 expect sent(DOM.navigate("/login")) == Ok(("joy/dom/navigate", "/login"))
 expect sent(DOM.push_url("?page=2")) == Ok(("joy/dom/push_url", "?page=2"))
 expect sent(DOM.replace_url("?q=hats")) == Ok(("joy/dom/replace_url", "?q=hats"))
+expect sent(DOM.set_title("Inbox")) == Ok(("joy/dom/set_title", "Inbox"))
+
+# x before y, so a scroll down never lands sideways.
+expect {
+	match DOM.scroll_to({ x: 3, y: 40 }) {
+		Send(id, args) => id == "joy/dom/scroll_to" and args == Wire.writer({}).u64(3).u64(40).done()
+		_ => Bool.False
+	}
+}
 
 expect {
 	sub = DOM.on_url_change(|url| "nav:${url}")
 	sub.identity().id == "joy/dom/url_changed" and sub.deliver(Wire.writer({}).str("/diary?q=1").done()) == "nav:/diary?q=1"
+}
+
+# The attribute is the subscription's identity, so two attributes are two
+# listeners.
+expect {
+	sub = DOM.on_document_click("data-copy", |value| "copy:${value}")
+	identity = sub.identity()
+	identity.id == "joy/dom/document_clicks" and identity.args == Wire.writer({}).str("data-copy").done() and sub.deliver(Wire.writer({}).str("code-1f").done()) == "copy:code-1f"
 }

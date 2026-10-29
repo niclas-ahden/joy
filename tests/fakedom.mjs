@@ -225,6 +225,19 @@ export const fakeDom = {
     return () => { listener.active = false; };
   },
   currentUrl: () => fakeLocation.url,
+  setTitle: (title) => { fakeDocument.title = title; },
+  scrollTo: (x, y) => { scrolls.push({ x, y }); },
+  // A fake click event's target is an El.
+  clickedAttr: (e, name) => {
+    for (let el = e.target; el instanceof El; el = el.parent) {
+      if (el.attrs.has(name)) return el.attrs.get(name);
+    }
+    return null;
+  },
+  textOf: (selector) => {
+    const el = findElement(selector);
+    return el === null ? null : textContent(el);
+  },
   observeVisibility: (node, rootMargin, fire) => {
     const observer = { node, rootMargin, fire, active: true };
     observers.push(observer);
@@ -411,6 +424,10 @@ export function popstate(url) {
   for (const l of activeUrlListeners()) l.fn();
 }
 
+// The fake document.title and every scrollTo call, in order.
+export const fakeDocument = { title: '' };
+export const scrolls = [];
+
 // Every <dialog> element ever created, plus the modal calls made against
 // them, for assertions. Dialogs track `open` like the browser's property.
 export const dialogs = [];
@@ -428,6 +445,7 @@ function findDialog(selector) {
 export const elements = [];
 export const focusCalls = [];
 export const focused = { el: null };
+const textContent = (n) => (n instanceof El ? n.children.map(textContent).join('') : n instanceof Text ? n.text : '');
 function findElement(selector) {
   const attached = elements.filter((el) => el.parent !== null);
   if (selector.startsWith('#')) {

@@ -5,7 +5,7 @@ platform ""
 		view : Model -> Html(Msg),
 		subscriptions : Model -> List(Sub(Msg))
 	}
-	exposes [Effect, Sub, Http, Time, Keyboard, Console, DOM, Port, WebCrypto, Media]
+	exposes [Effect, Sub, Http, Time, Keyboard, Console, DOM, Clipboard, Port, WebCrypto, Media]
 	packages {
 		# The Html/Attribute tree types live in the joy-html package so
 		# apps and view packages (e.g. joy-carousel) see the same nominal
@@ -75,6 +75,7 @@ import Time
 import Keyboard
 import Console
 import DOM
+import Clipboard
 import Port
 # WebCrypto, not Crypto: the compiler has a builtin `Crypto` module
 # (Crypto.SHA256/BLAKE3), and a platform module by the same name shadows it

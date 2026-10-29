@@ -221,6 +221,11 @@ export function foreignAttr(ns, key) {
 //   eventFile(domEvent) -> File | null
 //   showModal(sel)
 //   closeModal(sel)
+//   setTitle(s)
+//   scrollTo(x, y), in CSS pixels
+//   clickedAttr(domEvent, k) -> the value of k on the event's target or its
+//     nearest ancestor that has it, or null
+//   textOf(sel) -> the text content of the element sel matches, or null
 //   elementTag(node) -> tag | null
 //   getAttr(node, k, exact) -> string | null
 //   (exact: k is a qualified name as attrNames reports it, not a view's)
@@ -2122,6 +2127,15 @@ export const browserDom = {
     return () => window.removeEventListener('popstate', fn);
   },
   currentUrl: () => location.pathname + location.search + location.hash,
+  setTitle: (title) => { document.title = title; },
+  scrollTo: (x, y) => window.scrollTo(x, y),
+  clickedAttr: (e, name) => {
+    for (let el = e.target; el && el.nodeType === 1; el = el.parentElement) {
+      if (el.hasAttribute(name)) return el.getAttribute(name);
+    }
+    return null;
+  },
+  textOf: (selector) => query(selector)?.textContent ?? null,
   observeVisibility: (node, rootMargin, fire) => {
     const observer = new IntersectionObserver(
       (entries) => entries.forEach((entry) => { if (entry.isIntersecting) fire(); }),

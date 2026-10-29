@@ -1,5 +1,6 @@
 // The page beyond the app's own view, for the platform's DOM module: focus,
-// <dialog> modals, navigation and the browser's back and forward buttons.
+// <dialog> modals, navigation, the browser's back and forward buttons, the
+// page title and scrolling.
 //
 // Sections as in media.js: an app's runtime.js holds the ones its wasm uses.
 
@@ -44,3 +45,24 @@ defineOperation('joy/dom/replace_url', (args, host) => host.dom.replaceUrl(args.
 // buttons change the URL.
 defineEvents('joy/dom/url_changed', (args, host, emit) =>
   host.dom.onUrlChange(() => emit(new WireWriter().str(host.dom.currentUrl()))));
+
+//// events joy/dom/document_clicks
+// The attribute's value on the clicked element, or on its nearest ancestor
+// that carries it. Clicks with no such element are not the app's.
+defineEvents('joy/dom/document_clicks', (args, host, emit) => {
+  const attribute = args.str();
+  return host.dom.onGlobal('click', (domEvent) => {
+    const value = host.dom.clickedAttr(domEvent, attribute);
+    if (value !== null) emit(new WireWriter().str(value));
+  });
+});
+
+//// op joy/dom/set_title
+defineOperation('joy/dom/set_title', (args, host) => host.dom.setTitle(args.str()));
+
+//// op joy/dom/scroll_to
+defineOperation('joy/dom/scroll_to', (args, host) => {
+  const x = args.u64();
+  const y = args.u64();
+  host.dom.scrollTo(x, y);
+});
