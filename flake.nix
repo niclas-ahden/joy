@@ -70,6 +70,10 @@
             shellHook = ''
               export PLAYWRIGHT_BROWSERS_PATH=${pkgs.playwright-driver.browsers}
               export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
+            '' + pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
+              # WebKit aborts without an EGL driver, which a machine with no
+              # GPU lacks. Mesa renders in software there.
+              export __EGL_VENDOR_LIBRARY_DIRS=${pkgs.mesa}/share/glvnd/egl_vendor.d
             '';
           };
         };

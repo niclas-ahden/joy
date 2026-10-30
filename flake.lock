@@ -134,11 +134,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1793007942,
-        "narHash": "sha256-BYKfT66Je0KUf5Km3/f5PFzhYzILBPIqqR/gz6Le8Dw=",
+        "lastModified": 1793301868,
+        "narHash": "sha256-R75xB3Au0rl2Yrzgd8UvArOMoh2P0H8vvr5wJnq3V/Y=",
         "owner": "niclas-ahden",
         "repo": "roc-nix",
-        "rev": "b8e0ae8afa4fff924221fab238df3605c5550cf4",
+        "rev": "6ded0331dc6cd7c845e783be284af42563727b77",
         "type": "github"
       },
       "original": {
