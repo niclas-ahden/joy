@@ -53,9 +53,12 @@ main! = |args| {
 	# this compile. Drop `--no-cache` when fixed.
 	run!("roc", ["--no-cache", "./build.roc", "--opt=${opt}"])?
 
-	# tests/e2e/hot_dev_test.roc runs ./joy dev, which has no Windows host yet.
+	# The browser tests of ./joy dev pass without running when there is no
+	# build/<opt>/joy-cli. It has no Windows host yet, and on macOS it does not
+	# always notice a saved file, so those tests wait forever there.
 	match System.target!().os() {
 		Windows(_) => {}
+		MacOS(_) => {}
 		_ => run!("roc", ["build", "--no-cache", "--opt=speed", "--output=build/${opt}/joy-cli", "cli/main.roc"])?
 	}
 
