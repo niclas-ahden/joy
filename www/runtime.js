@@ -248,6 +248,13 @@ export function foreignAttr(ns, key) {
 //     { nodes, attrs, texts, cut } (see mount and browserDom.watchOthers)
 //
 // `others` is the handle watchOthers returned when mount started it, or null.
+//
+// This file is what an app ships, as written. Hot reloading only adds to it, in
+// the runtime.js ./joy dev serves: www/hot-seams.js goes in at the two `hot:`
+// comments (see JoyRuntime.hot in tools/runtime). All it asks of this file is
+// that the functions it wraps are function declarations, that what it shares
+// between wasm instances is `let`, and that dispatches pass along where they
+// came from, which only it reads.
 export function makeRuntime(exports, dom, root, hydrate = false, others = null) {
   const { memory } = exports;
   const decoder = new TextDecoder();
@@ -366,7 +373,7 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
   }
 
   // JS handlers for outgoing ports (via app.onPort): name -> function.
-  const outPorts = new Map();
+  let outPorts = new Map();
 
   // Stop functions for active subscriptions, keyed by the host's sub id.
   // The host owns the lifecycle: start/stop effects arrive whenever the
@@ -377,8 +384,8 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
   // handed to the app by a feature), keyed by the id minted when it was
   // dispatched. The bytes stay on the JS side, and features reference them
   // by id (see featureHost).
-  const files = new Map();
-  let nextFileId = 1;
+  let files = new Map();
+  let fileIds = { next: 1 };
 
   // Per-node handler bookkeeping. Attribute state needs no record here: the
   // host diffs the attribute lists itself and PATCH_ATTRS arrives as precise
@@ -451,7 +458,8 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
 
   // Attach or re-arm a visibility observer. A fresh observer reports the
   // current intersection state, so recreating it when the rearm key changes
-  // re-checks visibility (see Attribute.on_visible in the platform).
+  // re-checks visibility (see Attribute.on_visible in the platform), unless
+  // `seen` says the app has had that report already (see `adopt`).
   function setVisibility(node, margin, key, id) {
     const v = nodeVis.get(node);
     if (v && v.margin === margin && v.key === key) {
@@ -461,11 +469,12 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
     if (v) { v.disconnect(); visCount--; }
     const disconnect = dom.observeVisibility(node, margin, () => {
       const cur = nodeVis.get(node);
-      if (cur) dispatch(cur.id);
+      if (cur) dispatch(cur.id, node);
     });
     nodeVis.set(node, { margin, key, id, disconnect });
     visCount++;
   }
+
 
   // The one listener function every binding shares: the node and event name
   // arrive as currentTarget and type, so binding allocates no closure.
@@ -487,24 +496,26 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
     // carries both flags except file, where they read as undefined.
     if (d.stopPropagation) domEvent.stopPropagation?.();
     const node = domEvent.currentTarget;
+    // Each dispatch also gets the DOM event, which the runtime itself has no
+    // use for, but Joy's dev module records where it happened (see `ops`).
     if (d.kind === 'msg') {
       if (d.preventDefault) domEvent.preventDefault?.(); // e.g. on_submit
-      dispatch(d.id);
+      dispatch(d.id, domEvent);
     } else if (d.kind === 'key') {
       const info = dom.eventKeyInfo(domEvent);
-      if (d.keys.length > 0 && !d.keys.includes(info.key)) return;
+      if (!hears(d.keys, info.key)) return;
       if (d.preventDefault) domEvent.preventDefault?.();
-      dispatchKey(d.id, info);
+      dispatchKey(d.id, info, domEvent);
     } else if (d.kind === 'pointer') {
       if (d.preventDefault) domEvent.preventDefault?.();
-      dispatchPointer(d.id, dom.eventPointerInfo(domEvent));
+      dispatchPointer(d.id, dom.eventPointerInfo(domEvent), domEvent);
     } else if (d.kind === 'file') {
       const file = dom.eventFile(domEvent);
-      if (file) dispatchFile(d.id, file); // clearing the input is not a pick
+      if (file) dispatchFile(d.id, file, domEvent); // clearing the input is not a pick
       return; // a file input's value is the pick itself, never pinned
     } else {
       if (d.preventDefault) domEvent.preventDefault?.();
-      dispatchValue(d.id, dom.eventProp(domEvent, d.prop));
+      dispatchValue(d.id, dom.eventProp(domEvent, d.prop), domEvent);
       // Text under IME composition is provisional, and writing the property
       // would end the composition, so a composing input leaves the pin to
       // compositionend (bound next to every on_input, see setHandler).
@@ -513,6 +524,9 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
     restoreControl(node);
     pinTarget(domEvent, node);
   };
+  // Whether a key filter lets `key` through: an empty one lets every key.
+  const hears = (keys, key) => keys.length === 0 || keys.includes(key);
+
   // A handler on a wrapper sees a control's event as it bubbles up, so the
   // control the user changed is the event's target, not the node the
   // handler sits on. It is pinned too, but only after the events that
@@ -1383,7 +1397,8 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
   // host cannot call out); drain them after every entry call. Each entry is
   // a (ptr, len, level) triple: level 0 is a Console.log message and goes
   // to console.log, level 1 is a compiler `dbg` message and goes to
-  // console.debug (the Verbose level in devtools).
+  // console.debug (the Verbose level in devtools). A recording hot build
+  // queues a third level, which Joy's dev module takes over this drain for.
   function drainLog() {
     const n = exports.log_len();
     if (n > 0) {
@@ -1447,7 +1462,7 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
   // The phase counters stay 0 unless the wasm is a `joy_bench` build (which
   // exports bench_phase_ms). paintMs only needs `enabled`. All are cumulative
   // like busyMs, so a driver samples before/after and takes the difference.
-  const perf = { enabled: false, busyMs: 0, entries: 0, updateMs: 0, renderMs: 0, diffMs: 0, paintMs: 0 };
+  let perf = { enabled: false, busyMs: 0, entries: 0, updateMs: 0, renderMs: 0, diffMs: 0, paintMs: 0 };
 
   // A wasm trap or a native stack overflow reaches the developer as a bare
   // engine error that never mentions Joy, so wrap it with the likely causes
@@ -1460,7 +1475,9 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
 
   // Every call into the host goes through here: call, drain logs, paint if
   // the view changed, then start any queued effects (whose completions
-  // re-enter through here as well).
+  // re-enter through here as well). The logs drain before the paint, so the
+  // DOM is still the one the call's event happened in (Joy's dev module
+  // relies on that, see `ops`).
   function enter(call) {
     if (!alive) return;
     const t0 = perf.enabled ? performance.now() : 0;
@@ -1508,15 +1525,24 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
   // reason (see failureReason). An operation that answers NO_REPLY ends
   // without an answer, and its callback is released.
   function callFeature(e) {
-    new Promise((resolve) => resolve(runOperation(e.op, e.args)))
-      .then(
-        (answer) => {
-          if (!alive) return;
-          if (answer === NO_REPLY) exports.drop_call_cb(e.cb);
-          else dispatchBytes(e.cb, framed(0, answer));
-        },
-        (err) => { if (alive) dispatchBytes(e.cb, framed(1, textEncoder.encode(failureReason(err)))); },
-      );
+    perform(e).then((reply) => {
+      if (reply === NO_REPLY) endCall(e.cb);
+      else dispatchBytes(e.cb, reply, e);
+    });
+  }
+
+  // Run a feature's operation, for its reply as the platform reads it, or
+  // NO_REPLY.
+  function perform(e) {
+    return new Promise((resolve) => resolve(runOperation(e.op, e.args))).then(
+      (answer) => (answer === NO_REPLY ? NO_REPLY : framed(0, answer)),
+      (err) => framed(1, textEncoder.encode(failureReason(err))),
+    );
+  }
+
+  // Release the callback of a call that ended without an answer.
+  function endCall(cb) {
+    if (alive) exports.drop_call_cb(cb);
   }
 
   // A feature's operation that answers nothing (Effect.send). A failure
@@ -1547,7 +1573,7 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
       stop?.();
     });
     stop = start(new WireReader(e.args), featureHost, (event) => {
-      if (!stopped && alive) dispatchSubBytes(e.id, bytesOf(event));
+      if (!stopped && alive) dispatchSubBytes(e.id, bytesOf(event), e);
     }) ?? null;
   }
 
@@ -1560,12 +1586,13 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
   // What an operation may use of the runtime: the browser-held files, to
   // read one the app names by id or to hand the app a new one (a recording,
   // say) as a file input would, the element a selector names, and the DOM
-  // adapter.
+  // adapter. Apps on one page run the same feature code, so what a feature
+  // keeps for an app goes in `own`, not at the top of its file.
   const featureHost = {
     file: (id) => files.get(id) ?? null,
     element: (selector) => dom.element?.(selector) ?? null,
     addFile: (file) => {
-      const id = nextFileId++;
+      const id = fileIds.next++;
       files.set(id, file);
       return { id, name: file.name ?? '', mime: file.type ?? '', size: file.size ?? 0 };
     },
@@ -1580,9 +1607,15 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
     },
     // Run fn when the app is unmounted, while it is still alive.
     onUnmount: (fn) => { unmountHooks.push(fn); },
+    // What the feature keeps under `name` for this app, made on first use.
+    own: (name, make) => {
+      if (!owned.has(name)) owned.set(name, make());
+      return owned.get(name);
+    },
   };
   const featurePorts = new Map(); // name -> listener (joy/port/listen)
-  const unmountHooks = [];
+  let unmountHooks = [];
+  let owned = new Map();
 
   // Modifier/repeat booleans packed for the host (mirrored in its
   // key_event_args): 1 ctrl, 2 shift, 4 alt, 8 meta, 16 repeat,
@@ -1608,9 +1641,13 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
   // Register the picked File under a fresh id and deliver its metadata; the
   // File itself stays here for the features that read it (Http.send_file,
   // WebCrypto.digest_file, ...).
-  function dispatchFile(handlerId, file) {
-    const id = nextFileId++;
+  function dispatchFile(handlerId, file, domEvent) {
+    const id = fileIds.next++;
     files.set(id, file);
+    deliverFile(handlerId, id, file, domEvent);
+  }
+
+  function deliverFile(handlerId, id, file) {
     const [np, nl] = writeString(file.name ?? '');
     const [mp, ml] = writeString(file.type ?? '');
     enter(() => exports.dispatch_file(handlerId, id, np, nl, mp, ml, file.size ?? 0));
@@ -1618,6 +1655,7 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
 
   // Deliver a feature's reply to its call's one-shot callback.
   function dispatchBytes(cb, bytes) {
+    if (!alive) return;
     const [ptr, len] = writeBytes(bytes);
     enter(() => exports.dispatch_bytes(cb, ptr, len));
   }
@@ -1630,6 +1668,7 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
     const [ptr, len] = writeString(value);
     enter(() => exports.dispatch_value(handlerId, ptr, len));
   }
+
 
   // Deliver a value from JavaScript to a port the app listens on (see the
   // platform's Port module). Unknown names are a no-op.
@@ -1672,7 +1711,7 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
       const change = m?.get('change');
       const d = input?.kind === 'value' ? input : change?.kind === 'value' ? change : null;
       if (d === null) continue;
-      dispatchValue(d.id, dom.eventProp({ target: node }, d.prop));
+      dispatchValue(d.id, dom.eventProp({ target: node }, d.prop), { currentTarget: node, type: input?.kind === 'value' ? 'input' : 'change' });
       restoreControl(node);
     }
   }
@@ -1692,15 +1731,28 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
     // debounce releases its callback), then `alive` turns any other
     // in-flight completion into a no-op.
     for (const hook of unmountHooks.splice(0)) hook();
+    stop();
+    outPorts.clear();
+    files.clear();
+    owned.clear();
+  }
+
+  // What both unmount and Joy's dev module, retiring the app for a rebuilt
+  // one (see www/hot.js), stop: subscriptions, incoming ports, and any
+  // in-flight completion. Retiring stops nothing else: outgoing port handlers
+  // and picked files stay for the successor, operations under way keep going
+  // for it to take over, and it calls nothing in the wasm, which may have
+  // trapped (a crash is a common reason to reload).
+  function stop() {
     alive = false;
     for (const cleanup of subCleanups.values()) cleanup();
     subCleanups.clear();
     featurePorts.clear();
-    outPorts.clear();
-    files.clear();
   }
 
-  return { start, dispatch, dispatchValue, sendPort, onPort, unmount, perf, hydration: () => hydrateOutcome };
+  const handle = { start, dispatch, dispatchValue, sendPort, onPort, unmount, perf, hydration: () => hydrateOutcome };
+  // hot:runtime
+  return handle;
 }
 
 const MOUNT_OPTIONS = ['wasm', 'root', 'flags', 'dom', 'setup', 'hydrate'];
@@ -1903,10 +1955,11 @@ export async function mount(options) {
   // apart from the server's markup.
   const others = hydrate ? dom.watchOthers?.(root) ?? null : null;
   try {
-    const instance = await instantiate(wasm);
-    const rt = makeRuntime(instance.exports, dom, root, hydrate, others);
+    let instance = await instantiate(wasm);
+    let rt = makeRuntime(instance.exports, dom, root, hydrate, others);
     const app = { instance, dispatch: rt.dispatch, dispatchValue: rt.dispatchValue, sendPort: rt.sendPort, onPort: rt.onPort, unmount: rt.unmount, perf: rt.perf, hydration: rt.hydration };
     setup?.(app);
+    // hot:mount
     rt.start(flags);
     return app;
   } finally {

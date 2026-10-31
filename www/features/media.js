@@ -4,7 +4,7 @@
 // <audio>/<video> playback. The app owns all state and draws everything,
 // these operations only report numbers and hand over files.
 //
-// Streams and recorders live here under ids the app holds in its model. A
+// Streams and recorders live on the host under ids the app holds in its model. A
 // stream lives exactly as long as the app's Media.stream subscription, and
 // closing it stops its tracks and discards its unfinished recordings.
 //
@@ -37,31 +37,33 @@ function audioContext() {
 }
 
 //// helper streams
-const streams = new Map(); // id -> { stream, recorders: Set(recorder id) }
-let nextStreamId = 1;
-const recorders = new Map(); // id -> { recorder, chunks, streamId }
-let nextRecorderId = 1;
+// The app's streams and recordings:
+//   streams: id -> { stream, recorders: Set(recorder id) }
+//   recorders: id -> { recorder, chunks, streamId }
+function captureOf(host) {
+  return host.own('capture', () => ({ streams: new Map(), nextStreamId: 1, recorders: new Map(), nextRecorderId: 1 }));
+}
 
 function stopTracks(stream) {
   for (const track of stream.getTracks()) track.stop();
 }
 
-function discardRecording(id) {
-  const entry = recorders.get(id);
+function discardRecording(capture, id) {
+  const entry = capture.recorders.get(id);
   if (!entry) return;
-  recorders.delete(id);
+  capture.recorders.delete(id);
   entry.recorder.ondataavailable = null;
   entry.recorder.onstop = null;
   if (entry.recorder.state !== 'inactive') entry.recorder.stop();
 }
 
 // Stop the tracks and discard the recordings that were not finished.
-function closeStream(id) {
-  const entry = streams.get(id);
+function closeStream(capture, id) {
+  const entry = capture.streams.get(id);
   if (!entry) return;
-  for (const recorderId of entry.recorders) discardRecording(recorderId);
+  for (const recorderId of entry.recorders) discardRecording(capture, recorderId);
   stopTracks(entry.stream);
-  streams.delete(id);
+  capture.streams.delete(id);
 }
 
 //// events joy/media/stream needs streams
@@ -70,6 +72,7 @@ function closeStream(id) {
 defineEvents('joy/media/stream', (args, host, emit) => {
   const audio = args.bool();
   const video = args.bool();
+  const capture = captureOf(host);
   let closed = false;
   let id = 0;
   const devices = globalThis.navigator?.mediaDevices;
@@ -82,15 +85,15 @@ defineEvents('joy/media/stream', (args, host, emit) => {
   devices.getUserMedia({ audio, video }).then(
     (stream) => {
       if (closed) return stopTracks(stream);
-      id = nextStreamId++;
-      streams.set(id, { stream, recorders: new Set() });
+      id = capture.nextStreamId++;
+      capture.streams.set(id, { stream, recorders: new Set() });
       emit(new WireWriter().u8(0).u32(id));
     },
     (err) => { if (!closed) emit(new WireWriter().u8(1).str(err?.name || 'Error')); },
   );
   return () => {
     closed = true;
-    if (id !== 0) closeStream(id);
+    if (id !== 0) closeStream(capture, id);
   };
 });
 
@@ -102,7 +105,7 @@ defineEvents('joy/media/stream', (args, host, emit) => {
 defineEvents('joy/media/levels', (args, host, emit) => {
   const stream_id = args.u32();
   const interval_ms = args.u32();
-  const entry = streams.get(stream_id);
+  const entry = captureOf(host).streams.get(stream_id);
   const AudioContext = globalThis.AudioContext ?? globalThis.webkitAudioContext;
   if (!entry || !AudioContext) return () => {};
   const ctx = new AudioContext();
@@ -138,11 +141,12 @@ defineEvents('joy/media/levels', (args, host, emit) => {
 // Start a MediaRecorder on an open stream. With no container asked for,
 // prefer Opus in webm and leave the rest to the browser (Safari records
 // mp4). A browser that would record below the floor is raised to it.
-defineOperation('joy/media/record', (args) => {
+defineOperation('joy/media/record', (args, host) => {
   const stream_id = args.u32();
   const mime_type = args.str();
   const min_audio_bits_per_second = args.u32();
-  const entry = streams.get(stream_id);
+  const capture = captureOf(host);
+  const entry = capture.streams.get(stream_id);
   if (!entry) throw named('InvalidStateError', 'the stream is closed');
   if (!globalThis.MediaRecorder) throw named('NotSupportedError', 'this browser cannot record');
   const options = {};
@@ -159,8 +163,8 @@ defineOperation('joy/media/record', (args) => {
   const chunks = [];
   recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
   recorder.start();
-  const id = nextRecorderId++;
-  recorders.set(id, { recorder, chunks, streamId: stream_id });
+  const id = capture.nextRecorderId++;
+  capture.recorders.set(id, { recorder, chunks, streamId: stream_id });
   entry.recorders.add(id);
   return new WireWriter().u32(id);
 });
@@ -171,10 +175,11 @@ defineOperation('joy/media/record', (args) => {
 defineOperation('joy/media/finish', (args, host) => {
   const recorder_id = args.u32();
   const name = args.str();
-  const entry = recorders.get(recorder_id);
+  const capture = captureOf(host);
+  const entry = capture.recorders.get(recorder_id);
   if (!entry) throw named('InvalidStateError', 'no such recording');
-  recorders.delete(recorder_id);
-  streams.get(entry.streamId)?.recorders.delete(recorder_id);
+  capture.recorders.delete(recorder_id);
+  capture.streams.get(entry.streamId)?.recorders.delete(recorder_id);
   return new Promise((resolve, reject) => {
     entry.recorder.onerror = (e) => reject(e.error ?? named('UnknownError', 'recording failed'));
     entry.recorder.onstop = () => {
@@ -230,12 +235,17 @@ defineOperation('joy/media/audio_summary', async (args, host) => {
 });
 
 //// op joy/media/object_url needs named
-// The same file always gets the same URL.
-const objectUrls = new Map(); // file id -> object URL
+// The same file always gets the same URL, until the app is unmounted and its
+// files are let go.
 defineOperation('joy/media/object_url', (args, host) => {
   const file_id = args.u32();
   const file = host.file(file_id);
   if (!file) throw named('NotFoundError', 'no such file');
+  const objectUrls = host.own('objectUrls', () => {
+    const urls = new Map(); // file id -> object URL
+    host.onUnmount(() => { for (const url of urls.values()) URL.revokeObjectURL(url); });
+    return urls;
+  });
   let url = objectUrls.get(file_id);
   if (url === undefined) {
     url = URL.createObjectURL(file);

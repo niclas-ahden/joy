@@ -32,6 +32,9 @@ main! = |_args| {
 	# this compile. Drop `--no-cache` when fixed.
 	run!("roc", ["--no-cache", "./build.roc", "--opt=speed", "hello"])?
 
+	# The host for hot reloading, which ./joy dev links in place of host.wasm.
+	run!("rustc", ["--edition", "2021", "--target", "wasm32-unknown-unknown", "--crate-type", "staticlib", "-C", "opt-level=2", "-C", "panic=abort", "--emit", "obj", "--cfg", "joy_hot", "host/host.rs", "-o", "platform/targets/wasm32/host-hot.wasm"])?
+
 	# Start from an empty dist/ so it holds exactly one archive. A leftover
 	# from an earlier run would make `dist/*.tar.zst` ambiguous, and the
 	# release workflow picks the archive to upload that way.
@@ -49,7 +52,8 @@ main! = |_args| {
 	run!("rm", ["-rf", "dist/.platform"])?
 	run!("cp", ["-r", "platform", "dist/.platform"])?
 
-	# The client runtime and the loader, joy.js, ship inside the bundle so an
+	# The client runtime, the loader, joy.js, and the hot reloading that only
+	# ./joy dev's runtime.js holds, hot.js and hot-seams.js, ship inside the bundle so an
 	# app always serves the ones its platform was built with. They land in
 	# roc's package cache next to the platform sources, where ./joy reads
 	# them from.
@@ -57,9 +61,9 @@ main! = |_args| {
 	# build to pick from with tools/runtime: an app's runtime.js is the
 	# runtime plus the feature code its wasm calls.
 	run!("mkdir", ["-p", "dist/.platform/www/features"])?
-	run!("bash", ["-c", "cp www/runtime.js www/joy.js dist/.platform/www/ && cp www/features/*.js dist/.platform/www/features/"])?
+	run!("bash", ["-c", "cp www/runtime.js www/joy.js www/hot.js www/hot-seams.js dist/.platform/www/ && cp www/features/*.js dist/.platform/www/features/"])?
 
-	platform_archive = bundle!("cd dist/.platform && roc bundle main.roc targets/wasm32/host.wasm www/runtime.js www/joy.js www/features/*.js --output-dir ..")?
+	platform_archive = bundle!("cd dist/.platform && roc bundle main.roc targets/wasm32/host.wasm targets/wasm32/host-hot.wasm www/runtime.js www/joy.js www/hot.js www/hot-seams.js www/features/*.js --output-dir ..")?
 
 	run!("rm", ["-rf", "dist/.platform"])?
 

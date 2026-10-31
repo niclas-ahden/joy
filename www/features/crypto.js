@@ -16,7 +16,8 @@ defineOperation('joy/crypto/digest', async (args) => {
 // A digest holds its whole slice in memory until the hash is done, so at
 // most navigator.hardwareConcurrency run at once: an app that asks for
 // every 16 MiB chunk of a 10 GB file at once then holds a few chunks, not
-// the file.
+// the file. This is the one state apps on a page share, as the limit is on
+// the machine and not on an app.
 const digestQueue = [];
 let digestsRunning = 0;
 

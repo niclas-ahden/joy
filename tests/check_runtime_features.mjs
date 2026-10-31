@@ -17,7 +17,7 @@ const playOnly = readFileSync(runtimePath('media_play_only'), 'utf8');
 expect('a play-only app gets play', has(playOnly, 'joy/media/play'), true);
 expect('and the helper play needs', playOnly.includes('function mediaElement('), true);
 expect('and none of the other media operations', media.filter((id) => id !== 'joy/media/play' && has(playOnly, id)).join(', '), '');
-expect('nor helpers play does not need', playOnly.includes('const streams = new Map()'), false);
+expect('nor helpers play does not need', playOnly.includes('function captureOf('), false);
 
 // The voice memo calls every media function.
 const memo = readFileSync(runtimePath('voice_memo'), 'utf8');

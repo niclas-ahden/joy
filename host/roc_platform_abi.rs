@@ -1727,4 +1727,13 @@ unsafe extern "C" {
     /// Entrypoint: drop_bytes_for_host
     pub fn roc_drop_bytes(arg0: RocListWith<u8, false>);
 
+    /// Entrypoint: drop_msg_for_host
+    pub fn roc_drop_msg(arg0: RocBox);
+
+    /// Entrypoint: inspect_msg_for_host
+    pub fn roc_inspect_msg(arg0: RocBox) -> RocStr;
+
+    /// Entrypoint: drop_str_for_host
+    pub fn roc_drop_str(arg0: RocStr);
+
 }

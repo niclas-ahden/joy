@@ -18,8 +18,10 @@
 #
 # Set the environment variable `RUSTC` to pick another rustc, `SMALL_BUFFERS`
 # to shrink the host's outbound buffers to a few words so every render
-# exercises their growth path, and `JOY_BENCH` to compile in the host's phase
-# instrumentation (see tests/bench/).
+# exercises their growth path, `JOY_BENCH` to compile in the host's phase
+# instrumentation (see tests/bench/), and `JOY_HOT` to build against the host
+# for hot reloading (see `joy_hot` in host/host.rs), writing
+# build/<opt>/<name>.hot.wasm.
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
@@ -44,7 +46,8 @@ main! = |args| {
 	Path.utf8("platform/targets/wasm32").create_all!()?
 	Path.utf8("build/${opt}").create_all!()?
 
-	build_host!()?
+	hot = !(Env.var_str!("JOY_HOT") ?? "").is_empty()
+	build_host!(hot, config.app_name.is_err())?
 
 	# One app when named, every app otherwise. watch.roc names one: rebuilding
 	# two dozen modules for an edit that touches a single app costs seconds on
@@ -60,7 +63,7 @@ main! = |args| {
 	# working on one example leaves an earlier full build intact.
 	_ = sources.map_try!(
 		|src| {
-			out = Path.utf8(wasm_path(src, opt))
+			out = Path.utf8(wasm_path(src, opt, hot))
 			if out.is_file!()? {
 				out.delete!()
 			} else {
@@ -69,7 +72,13 @@ main! = |args| {
 		},
 	)?
 
-	_ = sources.map_try!(|src| build_example!(src, opt))?
+	_ = sources.map_try!(|src| build_example!(src, opt, hot))?
+
+	# A hot build is only for the hot reload harnesses, which mount it on the
+	# runtime.js with every feature.
+	if hot {
+		return Ok({})
+	}
 
 	# Each app's runtime.js: the core plus the feature code of the platform
 	# functions its wasm calls, the same file an app's release build makes
@@ -83,7 +92,12 @@ main! = |args| {
 
 	# And the runtime.js with every feature, which watch.roc serves. It never
 	# has to keep up with the wasm, only with www/.
-	match JoyRuntime.full({ core, features }) {
+	seams = Path.utf8("www/hot-seams.js").read_utf8!()?
+	runtime = match JoyRuntime.full({ core, features }) {
+		Ok(js) => js
+		Err(problem) => return fail!("the full runtime.js: ${Str.inspect(problem)}")
+	}
+	match JoyRuntime.hot({ runtime, seams }) {
 		Ok(js) => Path.utf8("build/${opt}/runtime.js").write_utf8!(js)
 		Err(problem) => fail!("the full runtime.js: ${Str.inspect(problem)}")
 	}
@@ -94,7 +108,7 @@ runtime_path : Path.Path, Str -> Str
 runtime_path = |src, opt| "build/${opt}/${example_name(Path.display(src))}.runtime.js"
 
 write_runtime! = |src, opt, core, features| {
-	wasm = Path.utf8(wasm_path(src, opt)).read_bytes!()?
+	wasm = Path.utf8(wasm_path(src, opt, False)).read_bytes!()?
 	match JoyRuntime.generate({ core, features, wasm }) {
 		Ok(js) => Path.utf8(runtime_path(src, opt)).write_utf8!(js)
 		Err(problem) => fail!("runtime.js for ${Path.display(src)}: ${Str.inspect(problem)}")
@@ -154,8 +168,8 @@ sources_in! = |dir| {
 }
 
 # build/<opt>/<name>.wasm for examples/<name>.roc or tests/apps/<name>.roc.
-wasm_path : Path.Path, Str -> Str
-wasm_path = |src, opt| "build/${opt}/${example_name(Path.display(src))}.wasm"
+wasm_path : Path.Path, Str, Bool -> Str
+wasm_path = |src, opt, hot| "build/${opt}/${example_name(Path.display(src))}${if (hot) ".hot" else ""}.wasm"
 
 # The Rust host becomes one relocatable wasm object (staticlib crate-type plus
 # --emit obj). no_std and panic=abort keep it import-free. It defines the six
@@ -167,7 +181,7 @@ wasm_path = |src, opt| "build/${opt}/${example_name(Path.display(src))}.wasm"
 # and hand-maintained: `roc glue` rejects a platform whose `requires` types
 # hold type variables (Model and Msg here), so there is nothing to regenerate
 # it with.
-build_host! = || {
+build_host! = |hot, every_app| {
 	small_buffers = if (Env.var_str!("SMALL_BUFFERS") ?? "").is_empty() {
 		[]
 	} else {
@@ -185,7 +199,45 @@ build_host! = || {
 			.concat(small_buffers)
 			.concat(joy_bench)
 			.concat(["host/host.rs", "-o", "platform/targets/wasm32/host.wasm"]),
+	)?
+	# A full build leaves the host ./joy dev links too, so the tests that run it
+	# side by side do not each set out to build it.
+	if hot or every_app {
+		host_hot!(small_buffers.concat(joy_bench), "platform/targets/wasm32/host-hot.wasm")?
+	}
+	if hot {
+		prepare_hot_platform!()?
+		host_hot!(small_buffers.concat(joy_bench), "${hot_platform}/targets/wasm32/host.wasm")
+	} else {
+		Ok({})
+	}
+}
+
+host_hot! = |flags, out|
+	run!(
+		Env.var_str!("RUSTC") ?? "rustc",
+		["--edition", "2021", "--target", "wasm32-unknown-unknown", "--crate-type", "staticlib"]
+			.concat(["-C", "opt-level=2", "-C", "panic=abort", "--emit", "obj", "--cfg", "joy_hot"])
+			.concat(flags)
+			.concat(["host/host.rs", "-o", out]),
 	)
+
+# A hot build links a copy of the platform whose host.wasm has hot reload
+# compiled in, put in the platform's place with roc's `--replace-dep`, the way
+# ./joy dev does it. The plain host stays where it was.
+hot_platform = "build/hot-platform"
+
+prepare_hot_platform! = || {
+	Path.utf8("${hot_platform}/targets/wasm32").create_all!()?
+	_ = Path.utf8("platform").list!()?
+		.keep_if(|entry| Path.display(entry).ends_with(".roc"))
+		.map_try!(
+			|entry| {
+				text = entry.read_utf8!()?
+				Path.utf8(Path.display(entry).replace_first("platform/", "${hot_platform}/")).write_utf8!(text.replace_each("# hot: ", ""))
+			},
+		)?
+	Ok({})
 }
 
 # roc exits 2 when it emits warnings but 0 even when it reports errors, so the
@@ -197,9 +249,11 @@ build_host! = || {
 # The expected warning is recognised by its title, matched with the case folded
 # away: roc titled its diagnostics in capitals until 2026-08, and a compiler
 # from either side of that change must build this repo.
-build_example! = |path, opt| {
+build_example! = |path, opt, hot| {
 	src = Path.display(path)
-	out = wasm_path(path, opt)
+	out = wasm_path(path, opt, hot)
+	here = Path.display(Env.cwd!()?)
+	swap_platform = if (hot) ["--replace-dep", "${here}/platform/main.roc", "${here}/${hot_platform}/main.roc"] else []
 
 	## Memory size
 	# `--wasm-memory=0` makes both `wasm-ld` and Roc's built-in linker
@@ -223,7 +277,7 @@ build_example! = |path, opt| {
 	# builds it usually binds first.
 	output = capture!(
 		Cmd.new(OsStr.from_str("roc"))
-			.args(["build", "--opt=${opt}", "--target=wasm32", "--wasm-memory=0", "--wasm-stack-size=1048576", "--no-cache", "--output=${out}", src].map(OsStr.from_str)),
+			.args(["build", "--opt=${opt}", "--target=wasm32", "--wasm-memory=0", "--wasm-stack-size=1048576", "--no-cache"].concat(swap_platform).concat(["--output=${out}", src]).map(OsStr.from_str)),
 	)?
 	lines = output.split_on("\n")
 	clean = match lines.keep_oks(summary_counts).last() {

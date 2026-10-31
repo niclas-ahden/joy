@@ -33,10 +33,16 @@ import Project
 ## change finds the bundles and servers it reaches. A build goes to a staging
 ## folder first, and only a clean one replaces what pages load.
 ##
+## Bundles build against a copy of the platform that links the host for hot
+## reloading (see `joy_hot` in host.rs), unless --no-hot says to build what
+## ships. roc's --replace-dep puts the copy in the platform's place.
+##
 ## Open pages hear about builds from the dev server's event stream, which the
-## development runtime.js listens to: `hello` on connect, `reload` after a
-## rebuild, `failed` with roc's report, `fixed`, and `asset` when a file in
-## public/ or assets/ changes.
+## development runtime.js listens to (see www/hot.js): `hello` on connect,
+## `reload` after a bundle's rebuild, `server` after a server's, `failed` with
+## roc's report, `fixed`, and `asset` when a file in public/ or assets/
+## changes. `reload` and `server` wait until every build a save reached has
+## finished, so a page never reloads into a new server with an old bundle.
 Dev :: [].{
 
 	## The options of `./joy dev`.
@@ -52,6 +58,8 @@ Dev :: [].{
 		client_url : Try(Str, [NoValue]),
 		public_dir : Str,
 		poll : Bool,
+		no_hot : Bool,
+		watch : List(Str),
 	}
 
 	## `./joy dev` as a weaver subcommand, which also writes its --help.
@@ -70,6 +78,8 @@ Dev :: [].{
 				client_url: Opt.maybe_str({ short: "", long: "client-url", help: "Where the app serves client/, / by default. ($JOY_CLIENT_URL)" }),
 				public_dir: Opt.str({ short: "", long: "public-dir", help: "The folder of files served as they are.", default: Value("public") }),
 				poll: Opt.flag({ short: "", long: "poll", help: "Compare files on a timer, for filesystems that send no events." }),
+				watch: Opt.str_list({ short: "", long: "watch", help: "Run this command in a shell alongside the builds until Ctrl-C, to compile what goes in assets/. Repeatable." }),
+				no_hot: Opt.flag({ short: "", long: "no-hot", help: "Build what ships, and reload the page after each rebuild, for a bug that might live in the difference." }),
 			}.Cli,
 			{
 				name: "dev",
@@ -104,9 +114,11 @@ Dev :: [].{
 		}
 		Build.check_releases!(bundles)?
 		Build.ensure_hosts!(bundles)?
+		Build.fetch_release!(bundles)?
 		for dir in [".joy/dev/client", ".joy/dev/inputs", ".joy/dev/staging", ".joy/dev/servers"] {
 			Path.utf8(dir).create_all!()?
 		}
+		bundle_roc = (if (options.no_hot) [] else hot_platform!(bundles, root)?).concat(roc)
 
 		host = setting!(Args.given(options.host), "JOY_HOST") ?? "localhost"
 		events = Events.new!({})
@@ -167,12 +179,14 @@ Dev :: [].{
 		# Dev builds swap in nothing but what follows `--`, so every job has the
 		# same caches, see Compile.cache_root!.
 		caches = Compile.cache_root!(roc)?
-		bundle_jobs = bundles.map(|bundle| bundle_job(bundle, roc, caches))
+		bundle_caches = Compile.cache_root!(bundle_roc)?
+		bundle_jobs = bundles.map(|bundle| bundle_job(bundle, bundle_roc, bundle_caches))
 		server_jobs = servers.map(|file| server_job(file, server_name(file), roc, caches))
 		# Watch before building, so a file saved while the first builds run is
 		# not lost. The folders the builds read are known once they have run.
 		before = watch_config!(root, bundles, servers, public_dir, options.poll)?
 		watch = Watch.start!({ folders: before.folders, trees: before.trees, skip: before.skip, poll: before.poll })?
+		watchers = options.watch.map_try!(start_watcher!)?
 		Stdout.line!("Building ${(bundle_jobs.len() + server_jobs.len()).to_str()}, ${jobs.to_str()} at a time")?
 		results = Compile.run_all!(server_jobs.concat(bundle_jobs), jobs, |result| handle_result!(result, events, session, 0).map_ok(|_| {}))?
 		failed = results.keep_if(|result| result.outcome == Failed).map(|result| result.job.name)
@@ -202,9 +216,11 @@ Dev :: [].{
 			session,
 			build: 0,
 			failed,
+			landed: [],
 			queued: [],
 			compile: { queue: [], running: [], done: [] },
 			children: $children,
+			watchers,
 			server_env,
 			client_url,
 			check,
@@ -213,8 +229,10 @@ Dev :: [].{
 			jobs,
 			roc,
 			caches,
+			bundle_roc,
+			bundle_caches,
 		})
-		for child in $children {
+		for child in $children.concat(watchers) {
 			child.process.close!() ?? {}
 		}
 		Server.stop!(dev_server)
@@ -232,9 +250,16 @@ DevState : {
 	session : Str,
 	build : U64,
 	failed : List(Str),
+
+	## The builds that finished clean since open pages last heard, see
+	## tell_pages!.
+	landed : List(Str),
 	queued : List(Str),
 	compile : Compile.State,
 	children : List(Started),
+
+	## The --watch commands.
+	watchers : List(Started),
 
 	## What a started server gets in its environment besides ./joy's own.
 	server_env : List((Str, Str)),
@@ -250,10 +275,14 @@ DevState : {
 
 	## The roc caches of the builds, see Compile.cache_root!.
 	caches : Str,
+
+	## What a bundle's build gets on top of its own flags, and its caches.
+	bundle_roc : List(Str),
+	bundle_caches : Str,
 }
 
 ## A server ./joy started, and the part of a line it has printed so far.
-Started : { name : Str, process : Cmd.Child, pending : Str }
+Started : { name : Str, process : Cmd.Child, pending : Str, ended : Bool }
 
 loop! : DevState => Try({}, _)
 loop! = |initial| {
@@ -273,7 +302,8 @@ loop! = |initial| {
 		}
 		if !$stopped {
 			$state = step_builds!($state)?
-			$state = { ..$state, children: $state.children.map_try!(forward_output!)? }
+			$state = { ..$state, children: $state.children.map_try!(|child| forward_output!(child, "./joy starts it again after the next build."))? }
+			$state = { ..$state, watchers: $state.watchers.map_try!(|child| forward_output!(child, "./joy does not start it again."))? }
 			$state = check_server!($state)?
 		}
 	}
@@ -345,7 +375,7 @@ step_builds! = |state| {
 		was_failing = $state.failed.contains(result.job.name)
 		match outcome {
 			Built => {
-				$state = { ..$state, build, failed: $state.failed.drop_if(|name| name == result.job.name) }
+				$state = { ..$state, build, failed: $state.failed.drop_if(|name| name == result.job.name), landed: $state.landed.append(result.job.name) }
 				if $state.names.contains(result.job.name) {
 					$state = restart_server!($state, result.job.name)?
 				}
@@ -354,13 +384,14 @@ step_builds! = |state| {
 					_ = $state.events.publish!(Sse.Event.named("fixed", [result.job.name]))
 					{}
 				}
-				_ = $state.events.publish!(Sse.Event.named("reload", [result.job.name]))
-				{}
 			}
 			Failed => {
 				$state = { ..$state, failed: if (was_failing) $state.failed else $state.failed.append(result.job.name) }
 			}
 		}
+	}
+	if compile.running.is_empty() and compile.queue.is_empty() and $state.queued.is_empty() {
+		$state = tell_pages!($state)
 	}
 	if !compile.done.is_empty() {
 		# The builds may read other files now, so the watch follows them.
@@ -370,10 +401,24 @@ step_builds! = |state| {
 	Ok($state)
 }
 
+## Tell open pages about the builds that landed, once none is left to come. A
+## bundle's apps take the new build in place. After a server's, the pages ask it
+## for their markup again, which brings the new bundles along, so a bundle that
+## landed with it needs no event of its own.
+tell_pages! : DevState => DevState
+tell_pages! = |state| {
+	servers = state.landed.keep_if(|name| state.names.contains(name))
+	for name in if (servers.is_empty()) state.landed else servers {
+		event = if (servers.is_empty()) "reload" else "server"
+		_ = state.events.publish!(Sse.Event.named(event, [name]))
+	}
+	{ ..state, landed: [] }
+}
+
 job_for : DevState, Str -> Try(Compile.Job, [Gone])
 job_for = |state, name|
 	match state.bundles.find_first(|bundle| bundle.id == name) {
-		Ok(bundle) => Ok(bundle_job(bundle, state.roc, state.caches))
+		Ok(bundle) => Ok(bundle_job(bundle, state.bundle_roc, state.bundle_caches))
 		Err(_) =>
 			match state.servers.find_first(|file| server_name(file) == name) {
 				Ok(file) => Ok(server_job(file, name, state.roc, state.caches))
@@ -480,7 +525,7 @@ watch_config! = |root, bundles, servers, public_dir, poll| {
 			.join()
 			.map(|input| if (input.starts_with("/")) input else "${root}/${input}")
 			.keep_oks(folder_of)
-			.keep_if(|folder| !folder.contains("/.cache/roc/packages") and !folder.starts_with("${root}/client") and !folder.starts_with("${root}/${public_dir}") and !folder.starts_with("${root}/assets"))
+			.keep_if(|folder| !folder.contains("/.cache/roc/packages") and !folder.starts_with("${root}/.joy") and !folder.starts_with("${root}/client") and !folder.starts_with("${root}/${public_dir}") and !folder.starts_with("${root}/assets"))
 	distinct = folders.fold([], |seen, folder| if (seen.contains(folder)) seen else seen.append(folder))
 	existing = distinct.keep_if_try!(|folder| Ok(Path.utf8(folder).is_dir!() ?? False))?
 	trees = ["client", public_dir, "assets"].keep_if_try!(|dir| Ok(Path.utf8(dir).is_dir!() ?? False))?
@@ -624,14 +669,49 @@ has_extension = |path|
 		Err(_) => path.contains(".")
 	}
 
+## A copy of the platform in .joy/dev/platform that links the host for hot
+## reloading, and the roc flags that put it in the platform's place. A release
+## ships that host beside its own, and a checkout builds both.
+hot_platform! : List(Project.Bundle), Str => Try(List(Str), _)
+hot_platform! = |bundles, root| {
+	first =
+		match bundles {
+			[bundle, ..] => bundle
+			[] => return Ok([])
+		}
+	source = Project.platform!(first)
+	host = "targets/wasm32/host-hot.wasm"
+	if !(Path.utf8("${source}/${host}").is_file!() ?? False) {
+		return Build.fail!("There is no ${host} in ${source}. This Joy release is older than ./joy's hot reloading, so run ./joy dev --no-hot.")
+	}
+	copy = ".joy/dev/platform"
+	_ = Path.utf8(copy).delete_all!()
+	Path.utf8("${copy}/targets/wasm32").create_all!()?
+	for file in Build.list_files!(source)?.keep_if(|file| file.ends_with(".roc")) {
+		match file.split_last("/") {
+			Ok({ before, .. }) => Path.utf8("${copy}/${before}").create_all!()?
+			Err(_) => {}
+		}
+		text = Path.utf8("${source}/${file}").read_utf8!()?
+		Path.utf8("${copy}/${file}").write_utf8!(text.replace_each("# hot: ", ""))?
+	}
+	Path.utf8("${source}/${host}").copy!(Path.utf8("${copy}/targets/wasm32/host.wasm"))?
+	declared =
+		match Project.checkout(first) {
+			Some(_) => Path.display(Path.utf8("${source}/main.roc").canonicalize!()?)
+			None => first.joy
+		}
+	Ok(["--replace-dep", declared, "${root}/${copy}/main.roc"])
+}
+
 ## The development joy.js and runtime.js, the latter with every feature and
-## the listener for the dev server's events, and .joy/dev/assets.json, with
-## every name plain and the folders the files live in.
+## the hot reloading that listens for the dev server's events, and
+## .joy/dev/assets.json, with every name plain and the folders the files live
+## in.
 write_dev_files! : List(Project.Bundle), U16, Str, Str => Try({}, _)
 write_dev_files! = |bundles, dev_port, public_dir, client_url| {
 	if dev_port != 0 and !bundles.is_empty() {
-		runtime = Build.runtime!(bundles, Full)?
-		Path.utf8(".joy/dev/client/runtime.js").write_utf8!("${runtime}\n${dev_client(dev_port)}")?
+		Path.utf8(".joy/dev/client/runtime.js").write_utf8!(Build.dev_runtime!(bundles, dev_port)?)?
 		Path.utf8(".joy/dev/client/joy.js").write_utf8!(Build.loader!(bundles)?)?
 	}
 	assets = Build.list_files!("assets")?
@@ -660,54 +740,6 @@ write_dev_files! = |bundles, dev_port, public_dir, client_url| {
 	Ok({})
 }
 
-dev_client : U16 -> Str
-dev_client = |port|
-	dev_client_template.replace_each("JOY_DEV_PORT", port.to_str())
-
-dev_client_template =
-	\\// ./joy dev: reload the page when a build changes, and show failed
-	\\// builds in the console. Only the development runtime.js has this.
-	\\if (typeof window !== 'undefined' && typeof EventSource !== 'undefined' && !window.__joyDev) {
-	\\  window.__joyDev = true;
-	\\  const events = new EventSource(location.protocol + '//' + location.hostname + ':JOY_DEV_PORT/.joy/events');
-	\\  const newline = String.fromCharCode(10);
-	\\  let build = null;
-	\\  // A restarted server needs a moment before it answers again.
-	\\  const reload = async () => {
-	\\    for (let tries = 0; tries < 100; tries++) {
-	\\      try {
-	\\        const answer = await fetch(location.href, { method: 'HEAD', cache: 'no-store' });
-	\\        if (answer.status < 500) break;
-	\\      } catch {}
-	\\      await new Promise((resolve) => setTimeout(resolve, 100));
-	\\    }
-	\\    location.reload();
-	\\  };
-	\\  events.addEventListener('hello', (event) => {
-	\\    if (build !== null && build !== event.data) reload();
-	\\    build = event.data;
-	\\  });
-	\\  events.addEventListener('reload', reload);
-	\\  events.addEventListener('fixed', reload);
-	\\  events.addEventListener('failed', (event) => {
-	\\    const [name, ...report] = event.data.split(newline);
-	\\    console.error('Joy: ' + name + ' failed to build' + newline + report.join(newline));
-	\\  });
-	\\  events.addEventListener('asset', (event) => {
-	\\    const file = '/' + event.data;
-	\\    const sheets = [...document.querySelectorAll('link[rel="stylesheet"]')].filter((link) => new URL(link.href).pathname.endsWith(file));
-	\\    if (sheets.length > 0) {
-	\\      for (const link of sheets) {
-	\\        const url = new URL(link.href);
-	\\        url.searchParams.set('joy', String(Date.now()));
-	\\        link.href = url.href;
-	\\      }
-	\\    } else if (performance.getEntriesByType('resource').some((entry) => new URL(entry.name).pathname.endsWith(file))) {
-	\\      reload();
-	\\    }
-	\\  });
-	\\}
-
 hello : Str, U64 -> Sse.Event
 hello = |session, build| Sse.Event.named("hello", ["${session}-${build.to_str()}"])
 
@@ -725,7 +757,20 @@ start_server! = |root, name, env| {
 			.pending_limit(16 * 1024 * 1024)
 			.spawn_leashed!()?
 	Stdout.line!("Started ${name}")?
-	Ok({ name, process, pending: "" })
+	Ok({ name, process, pending: "", ended: False })
+}
+
+## Start a --watch command, known in the output by its program's name.
+start_watcher! : Str => Try(Started, _)
+start_watcher! = |command| {
+	name =
+		match command.trim().split_first(" ") {
+			Ok({ before, .. }) => before
+			Err(_) => command.trim()
+		}
+	process = Build.shell!(command).stdin(Null).stdout(Pipe).stderr(Pipe).pending_limit(16 * 1024 * 1024).spawn_leashed!()?
+	Stdout.line!("Started ${command}")?
+	Ok({ name, process, pending: "", ended: False })
 }
 
 ## Stop the old server and start the one just built.
@@ -798,11 +843,13 @@ free_port! = |{}| {
 	Ok(port)
 }
 
-## Print what a server printed since the last look, each line with its name.
-forward_output! : Started => Try(Started, _)
-forward_output! = |child| {
+## Print what a child printed since the last look, each line with its name,
+## and once, when it ends, `after_exit`.
+forward_output! : Started, Str => Try(Started, _)
+forward_output! = |child, after_exit| {
 	var $pending = child.pending
-	var $reading = True
+	var $ended = child.ended
+	var $reading = !child.ended
 	while $reading {
 		match child.process.read!(Duration.zero) {
 			Ok(Stdout(bytes)) | Ok(Stderr(bytes)) => {
@@ -819,7 +866,10 @@ forward_output! = |child| {
 					$pending = ""
 				}
 				match child.process.poll!() {
-					Ok(Finished(output)) => Stderr.line!("${child.name} exited: ${Str.inspect(output.status)}. ./joy starts it again after the next change it reaches.")?
+					Ok(Finished(output)) => {
+						Stderr.line!("${child.name} exited: ${Str.inspect(output.status)}. ${after_exit}")?
+						$ended = True
+					}
 					_ => {}
 				}
 				$reading = False
@@ -829,7 +879,7 @@ forward_output! = |child| {
 			}
 		}
 	}
-	Ok({ ..child, pending: $pending })
+	Ok({ ..child, pending: $pending, ended: $ended })
 }
 
 setting! : [Some(Str), None], Str => Try(Str, [Unset])

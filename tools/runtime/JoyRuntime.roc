@@ -83,6 +83,38 @@ JoyRuntime := [].{
 		Ok(ids.keep_if(|id| contains(data, id.to_utf8())))
 	}
 
+	## What a shipped app gets of a runtime: the code as written, without comments
+	## or indentation. Joy's own JavaScript holds no string across lines, so this can
+	## go by lines.
+	shipping : Str -> Str
+	shipping = |js| {
+		lines = js.split_on("\n").map(|line| line.trim()).drop_if(|code| code.is_empty() or code.starts_with("//"))
+		Str.join_with(lines, "\n")
+	}
+
+	## The runtime.js ./joy dev serves: `runtime` (see `full`) with hot reloading's
+	## additions from `seams` (the source of www/hot-seams.js), each section at the
+	## comment of its name, and the `module` section at the end.
+	hot : { runtime : Str, seams : Str } -> Try(Str, [NoSeam(Str)])
+	hot = |{ runtime, seams }| {
+		section = |name| {
+			parts = "\n${seams}".split_on("\n//// ")
+			match parts.keep_if(|part| part.starts_with("${name}\n")).first() {
+				Ok(part) => Ok(part.drop_prefix("${name}\n"))
+				Err(_) => Err(NoSeam(name))
+			}
+		}
+		for name in ["runtime", "mount"] {
+			if !runtime.contains("// hot:${name}") {
+				return Err(NoSeam(name))
+			}
+		}
+		in_runtime = section("runtime")?
+		in_mount = section("mount")?
+		at_end = section("module")?
+		Ok("${runtime.replace_first("// hot:runtime", in_runtime).replace_first("// hot:mount", in_mount)}\n${at_end}")
+	}
+
 	## The runtime.js for an app's release build: `core`, then for each
 	## feature in `features` (the sources of www/features/*.js) the
 	## operations whose ids `wasm` contains and the helpers those need, each
@@ -92,7 +124,7 @@ JoyRuntime := [].{
 		parsed = features.map_try(JoyRuntime.sections)?
 		used = JoyRuntime.used_ids(wasm, operation_ids(parsed))?
 		header = "\n// Features this app uses (see tools/runtime): ${if used.is_empty() "none" else Str.join_with(used, ", ")}\n"
-		Ok(assemble(core, header, parsed, used)?)
+		Ok(JoyRuntime.shipping(assemble(core, "\n", parsed, used)?).concat(header))
 	}
 
 	## The runtime.js for development: `core` and every feature, whatever
@@ -115,7 +147,7 @@ JoyRuntime := [].{
 		per_wasm = wasms.map_try(|wasm| JoyRuntime.used_ids(wasm, ids))?
 		used = ids.keep_if(|id| per_wasm.any(|found| found.contains(id)))
 		header = "\n// Features these apps use (see tools/runtime): ${if used.is_empty() "none" else Str.join_with(used, ", ")}\n"
-		Ok(assemble(core, header, parsed, used)?)
+		Ok(JoyRuntime.shipping(assemble(core, "\n", parsed, used)?).concat(header))
 	}
 }
 
@@ -279,6 +311,11 @@ wasm_with = |text| {
 	section_len = segment.len().to_u8_try() ?? 0
 	[0, 97, 115, 109, 1, 0, 0, 0, 11, section_len].concat(segment)
 }
+
+expect JoyRuntime.shipping("// about\n  keep();\n\n  // hot:mount\n  more();") == "keep();\nmore();"
+
+expect JoyRuntime.hot({ runtime: "a();\n// hot:runtime\nb();\n// hot:mount\nc();", seams: "// about\n//// runtime\nr();\n//// mount\nm();\n//// module\ne();\n" }) == Ok("a();\nr();\nb();\nm();\nc();\ne();\n")
+expect JoyRuntime.hot({ runtime: "a();", seams: "//// runtime\nr();\n" }) == Err(NoSeam("runtime"))
 
 expect JoyRuntime.sections(feature_source).map_ok(|s| s.map(|x| x.name)) == Ok(["shared", "joy/test/first", "joy/test/second"])
 expect JoyRuntime.sections("//// op joy/short\nx") == Err(ShortId("joy/short"))

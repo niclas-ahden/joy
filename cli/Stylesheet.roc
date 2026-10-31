@@ -6,6 +6,13 @@ import Reference
 ## in any case, as in CSS.
 Stylesheet :: [].{
 
+	## The paths `css` names, as written.
+	named : Str -> List(Str)
+	named = |css| {
+		bytes = Str.to_utf8(css)
+		spans(bytes).map(|span| text_of(bytes, span))
+	}
+
 	## The files below the client folder that `css`, the stylesheet at
 	## `file` below it, names.
 	references : Str, Str, Str -> List(Str)
@@ -183,5 +190,6 @@ expect rewritten("a{b:-webkit-image-set('../img/b.png' 1x)} c{d:\"../img/b.png\"
 expect rewritten("/* url(../img/b.png) */ a{content:\"url(../img/b.png)\"} b{content:\"a\\\"url(../img/b.png)\"}") == "/* url(../img/b.png) */ a{content:\"url(../img/b.png)\"} b{content:\"a\\\"url(../img/b.png)\"}"
 expect rewritten("a{b:myurl(../img/b.png)} c{d:url(data:image/png;base64,AA==)} e{f:url(https://x/img/b.png)} g{h:url(missing.png)}") == "a{b:myurl(../img/b.png)} c{d:url(data:image/png;base64,AA==)} e{f:url(https://x/img/b.png)} g{h:url(missing.png)}"
 expect rewritten("x{y:url(../../img/b.png)} z{filter:url(\"#blur\")} w{v:url(") == "x{y:url(../../img/b.png)} z{filter:url(\"#blur\")} w{v:url("
+expect Stylesheet.named("@import \"a.css\"; b{c:url(d.png)} /* url(e.png) */") == ["a.css", "d.png"]
 expect Stylesheet.rewrite("x{y:url(img/b.png)}", "site.css", "/", names) == "x{y:url(img/b.22.png)}"
 expect Stylesheet.references("@import \"base.css\"; a{b:url(../img/b.png)} c{d:url(/x.png)}", "css/site.css", "/static/") == ["css/base.css", "img/b.png"]

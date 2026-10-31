@@ -26,6 +26,10 @@ export const optLevel = () => {
 
 // Where build.roc put the app for the level under test.
 export const wasmPath = (name) => `build/${optLevel()}/${name}.wasm`;
+export const plainWasmPath = wasmPath;
+
+// An app's hot build (JOY_HOT, see build.roc), for the hot reload harnesses.
+export const hotWasmPath = (name) => `build/${optLevel()}/${name}.hot.wasm`;
 
 // The runtime.js build.roc generated for an app: the core plus the feature
 // code its wasm calls (see tools/runtime).

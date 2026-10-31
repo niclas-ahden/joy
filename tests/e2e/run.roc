@@ -1,7 +1,7 @@
 # roc-spec runner for the browser E2E tests: discovers tests/e2e/*_test.roc
-# and runs each as a standalone app (each launches its own Chromium via
-# roc-playwright). Invoked by e2e.roc, which builds the examples, serves the
-# repo root and exports E2E_URL first.
+# and runs each as a standalone app (each launches its own browser via
+# roc-playwright). Invoked by e2e.roc, which builds the examples, compiles the
+# tests (see compile.roc), serves the repo root and exports E2E_URL first.
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
 	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.7.0/BGjQKbG9U3V8cH6mRbypUAFVqFoVEu6n9bsA3QmFL1f4.tar.zst",
@@ -14,6 +14,7 @@ import pf.Sleep
 import pf.Stdout
 import pf.Utc
 import spec.Spec
+import Compiled
 
 hooks = {
 	new: Cmd.new,
@@ -48,9 +49,7 @@ main! = |_args| {
 		hooks,
 		"tests/e2e",
 		{
-			# WORKAROUND: roc-lang/roc#12693 and #12701. A shared roc cache can crash
-			# the compile of each test. Drop `--no-cache` when fixed.
-			test_command: ["roc", "--opt=speed", "--no-cache"],
+			test_command: [Compiled.binary!(Compiled.launcher_source)],
 			# Each test runs its own browser; two in flight keeps memory sane.
 			max_workers: 2,
 			worker_envs: |_index| [],

@@ -55,6 +55,28 @@ Reference :: [].{
 		}
 	}
 
+	## The relative paths in `names`, written in `file`, that will not load from
+	## a build, and why: they lead to one of `hashed`, which no longer has that
+	## name, or to none of `kept` either. An absolute path can be a server's
+	## route, so it is left alone.
+	broken : List(Str), Str, Str, { kept : List(Str), hashed : List(Str) } -> List((Str, [Hashed, Missing]))
+	broken = |names, file, client_url, { kept, hashed }|
+		names.keep_oks(
+			|name| {
+				if name.starts_with("/") {
+					return Err(Fine)
+				}
+				target = Reference.resolve(file, name, client_url) ? |_| Fine
+				if kept.contains(target) {
+					Err(Fine)
+				} else if hashed.contains(target) {
+					Ok((name, Hashed))
+				} else {
+					Ok((name, Missing))
+				}
+			},
+		)
+
 	## `bytes` with each edit's range replaced by its text. The edits are in
 	## order and do not overlap, and an empty range inserts.
 	apply : List(U8), List(Reference.Edit) -> Str
@@ -99,6 +121,11 @@ expect Reference.resolve("index.html", "/img/b.png", "/") == Ok("img/b.png")
 expect Reference.resolve("index.html", "//cdn.example.com/b.png", "/") == Err(Elsewhere)
 expect Reference.resolve("index.html", "data:image/png;base64,AA==", "/") == Err(Elsewhere)
 expect Reference.resolve("index.html", "https://example.com/b.png", "/") == Err(Elsewhere)
+expect Reference.broken(["./a.js", "../b.js", "./c.js"], "js/main.js", "/", { kept: ["b.js"], hashed: ["js/a.js"] }) == [("./a.js", Hashed), ("./c.js", Missing)]
+expect Reference.broken(["./a.js?v=1"], "js/main.js", "/", { kept: ["js/a.js"], hashed: [] }) == []
+expect Reference.broken(["base.css"], "css/site.css", "/", { kept: [], hashed: ["css/base.css"] }) == [("base.css", Hashed)]
+expect Reference.broken(["/x.js", "../../out.js", "https://a.b/c.js", "#blur", "data:x"], "js/main.js", "/", { kept: [], hashed: ["x.js"] }) == []
+expect Reference.broken(["a.png"], "site.css", "/static/", { kept: ["a.png"], hashed: [] }) == []
 expect Reference.renamed("../img/b.png?v=1#x", "img/b.22.png") == "../img/b.22.png?v=1#x"
 expect Reference.renamed("joy.js", "joy.11.js") == "joy.11.js"
 expect Reference.apply(Str.to_utf8("ab cd"), [{ start: 0, end: 2, text: "xy" }, { start: 5, end: 5, text: "!" }]) == "xy cd!"

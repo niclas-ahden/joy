@@ -17,12 +17,17 @@ defineEvents('joy/time/every', (args, host, emit) => {
 });
 
 //// helper debounces
-// Pending debounces by key. Re-arming or cancelling one ends its call
-// without an answer, which releases the app's callback.
-const debounces = new Map(); // key -> { handle, resolve }
-let clearsOnUnmount = false;
+// The app's pending debounces by key. Re-arming or cancelling one ends its
+// call without an answer, which releases the app's callback.
+function debouncesOf(host) {
+  return host.own('debounces', () => {
+    const debounces = new Map(); // key -> { handle, resolve }
+    host.onUnmount(() => { for (const key of [...debounces.keys()]) dropDebounce(debounces, key); });
+    return debounces;
+  });
+}
 
-function dropDebounce(key) {
+function dropDebounce(debounces, key) {
   const pending = debounces.get(key);
   if (!pending) return;
   clearTimeout(pending.handle);
@@ -34,11 +39,8 @@ function dropDebounce(key) {
 defineOperation('joy/time/debounce', (args, host) => {
   const key = args.str();
   const ms = args.u32();
-  if (!clearsOnUnmount) {
-    clearsOnUnmount = true;
-    host.onUnmount(() => { for (const key of [...debounces.keys()]) dropDebounce(key); });
-  }
-  dropDebounce(key);
+  const debounces = debouncesOf(host);
+  dropDebounce(debounces, key);
   return new Promise((resolve) => {
     const handle = setTimeout(() => {
       debounces.delete(key);
@@ -49,4 +51,4 @@ defineOperation('joy/time/debounce', (args, host) => {
 });
 
 //// op joy/time/cancel needs debounces
-defineOperation('joy/time/cancel', (args) => dropDebounce(args.str()));
+defineOperation('joy/time/cancel', (args, host) => dropDebounce(debouncesOf(host), args.str()));

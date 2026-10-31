@@ -132,6 +132,14 @@ runs:
         fi
         echo "$dest" >> "$GITHUB_PATH"
 
+    # cli/tests.roc runs the guide's commands for these, and ./joy has no Windows
+    # host yet. Keep in step with the devShell's
+    # (`nix develop -c sh -c 'esbuild --version; sass --version'`).
+    - name: Install esbuild and Sass
+      if: inputs.roc != 'pinned' && runner.os != 'Windows'
+      shell: bash
+      run: npm install -g esbuild@0.27.2 sass@1.105.1
+
     # Keep in step with the devShell's playwright-test
     # (`nix develop -c playwright --version`).
     - name: Install playwright and its browsers
@@ -139,7 +147,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        npm install -g playwright@1.61.1
+        npm install -g playwright@1.64.1
         if [ "$RUNNER_OS" = Linux ]; then
           playwright install --with-deps chromium firefox webkit
         else

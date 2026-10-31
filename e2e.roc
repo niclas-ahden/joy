@@ -28,12 +28,13 @@ import pf.Env
 import pf.OsStr
 import pf.Http
 import pf.Sleep
+import pf.System
 import pf.Stdout
 import spec.Wait
 import weaver.Cli
 import weaver.Opt
 import Args
-import Util exposing [fail!, run!]
+import Util exposing [fail!, run!, run_env!]
 
 main! = |args| {
 	{ opt: opt_arg, browser } = Args.parse!(parser, args, "--opt=speed")?
@@ -51,6 +52,14 @@ main! = |args| {
 	# WORKAROUND: roc-lang/roc#12693 and #12701. A shared roc cache can crash
 	# this compile. Drop `--no-cache` when fixed.
 	run!("roc", ["--no-cache", "./build.roc", "--opt=${opt}"])?
+
+	# tests/e2e/hot_dev_test.roc runs ./joy dev, which has no Windows host yet.
+	match System.target!().os() {
+		Windows(_) => {}
+		_ => run!("roc", ["build", "--no-cache", "--opt=speed", "--output=build/${opt}/joy-cli", "cli/main.roc"])?
+	}
+
+	run_env!("roc", ["tests/e2e/compile.roc"], "JOY_OPT", opt)?
 
 	port = Env.var_str!("E2E_PORT") ?? "8787"
 	url = "http://127.0.0.1:${port}"
@@ -84,7 +93,7 @@ main! = |args| {
 	) ? |_| ServerNeverAnswered(url)
 
 	# The runner is interpreted (default --opt=dev). It is only orchestration,
-	# each test is spawned compiled (`roc --opt=speed`) by roc-spec. JOY_OPT
+	# and runs the tests tests/e2e/compile.roc compiled above. JOY_OPT
 	# names the build under test (stack_depth_test gates its deep budget on
 	# it), JOY_BROWSER the engine (see tests/e2e/Browser.roc). One runner
 	# pass per engine, so a red engine shows next to the others instead of

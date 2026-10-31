@@ -17,6 +17,8 @@ import Generated
 import HtmlPage
 import JsonText
 import Project
+import Reference
+import Script
 import Stylesheet
 
 ## `./joy build`: what ships, into dist/ or `--out-dir`. The bundles go to
@@ -25,7 +27,7 @@ import Stylesheet
 ##
 ## The other functions here are shared with `./joy dev`.
 Build :: [].{
-	Options : { out_dir : Str, opt : Str, debug : Bool, jobs : Try(Str, [NoValue]), no_server : Bool, server_opt : Str, server_target : Try(Str, [NoValue]), public_dir : Str, client_url : Try(Str, [NoValue]) }
+	Options : { out_dir : Str, opt : Str, debug : Bool, jobs : Try(Str, [NoValue]), no_server : Bool, server_opt : Str, server_target : Try(Str, [NoValue]), public_dir : Str, client_url : Try(Str, [NoValue]), before : List(Str) }
 
 	## `./joy build` as a weaver subcommand, which also writes its --help.
 	command : (Build.Options -> command) -> SubCmd.SubcommandParserConfig(command)
@@ -41,6 +43,7 @@ Build :: [].{
 				server_target: Opt.maybe_str({ short: "", long: "server-target", help: "Cross-compile the server, roc's --target." }),
 				public_dir: Opt.str({ short: "", long: "public-dir", help: "The folder of files copied as they are.", default: Value("public") }),
 				client_url: Opt.maybe_str({ short: "", long: "client-url", help: "Where the app serves client/, / by default. Stylesheets and pages in public/ get the hashed names of files below it too. ($JOY_CLIENT_URL)" }),
+				before: Opt.str_list({ short: "", long: "before", help: "Run this command in a shell first, and stop if it fails, to compile what goes in assets/. Repeatable." }),
 			}.Cli,
 			{
 				name: "build",
@@ -71,6 +74,7 @@ Build :: [].{
 		}
 		check_releases!(bundles)?
 		ensure_hosts!(bundles)?
+		run_before!(options.before)?
 		claim_output!(out, { debug, opt })?
 
 		public_dir = options.public_dir.drop_suffix("/")
@@ -149,6 +153,7 @@ Build :: [].{
 		write_assets_json!(out, joy_name, runtime_name, names, assets, public)?
 		write_marker!(out, { debug, opt, complete: True })?
 
+		warn_about_paths!(assets.map(|(plain, _)| plain), public_dir, public_files, client_url)
 		took = Monotonic.since(Monotonic.now!(), started)
 		Stdout.line!("Built ${bundles.len().to_str()} bundle${plural(bundles.len())}${if (server == None) "" else " and the server"} into ${out}/ in ${seconds(took)}")
 	}
@@ -156,6 +161,14 @@ Build :: [].{
 	## Every file below `root`, by its path from `root`, links skipped.
 	list_files! : Str => Try(List(Str), _)
 	list_files! = |root| files_below!(root)
+
+	## A command line as the user's shell would run it.
+	shell! : Str => Cmd.Command
+	shell! = |line|
+		match System.target!().os() {
+			Windows(_) => Cmd.new(OsStr.from_str("cmd")).args(["/C", line].map(OsStr.from_str))
+			_ => Cmd.new(OsStr.from_str("sh")).args(["-c", line].map(OsStr.from_str))
+		}
 
 	## The roc flags of a bundle's build, with Joy's 1 MiB wasm stack.
 	bundle_args : Str, Bool, List(Str) -> List(Str)
@@ -210,6 +223,46 @@ Build :: [].{
 		match made {
 			Ok(js) => Ok(js)
 			Err(problem) => fail!("Could not put runtime.js together from ${www}: ${Str.inspect(problem)}")
+		}
+	}
+
+	## The runtime.js ./joy dev serves: every feature, with hot reloading's additions
+	## and, in a block of its own, its code and the port of the dev server.
+	dev_runtime! : List(Project.Bundle), U16 => Try(Str, _)
+	dev_runtime! = |bundles, port| {
+		www = www_of!(bundles)?
+		runtime = runtime!(bundles, Full)?
+		missing = |_| NoRuntime("There is no hot reloading in ${www}. This Joy release is older than ./joy's.")
+		seams = Path.utf8("${www}/hot-seams.js").read_utf8!() ? missing
+		hot = Path.utf8("${www}/hot.js").read_utf8!() ? missing
+		match JoyRuntime.hot({ runtime, seams }) {
+			Ok(js) => Ok("${js}\n{\nconst JOY_DEV_PORT = ${port.to_str()};\n${hot}\n}\n")
+			Err(problem) => fail!("Could not add hot reloading to runtime.js from ${www}: ${Str.inspect(problem)}")
+		}
+	}
+
+	## A release's files, which roc fetches on the first build of an app on it.
+	## ./joy dev reads them before it builds anything.
+	fetch_release! : List(Project.Bundle) => Try({}, _)
+	fetch_release! = |bundles| {
+		first =
+			match bundles {
+				[bundle, ..] => bundle
+				[] => return Ok({})
+			}
+		if Path.utf8(Project.www!(first)).is_dir!() ?? False {
+			return Ok({})
+		}
+		Stdout.line!("Fetching Joy")?
+		_ =
+			Cmd.new(OsStr.from_str("roc"))
+				.args(["check", first.file].map(OsStr.from_str))
+				.env(OsStr.from_str("ROC_CACHE_DIR"), OsStr.from_str(".joy/roc-cache/fetch"))
+				.run!()?
+		if Path.utf8(Project.www!(first)).is_dir!() ?? False {
+			Ok({})
+		} else {
+			fail!("Could not fetch ${first.joy}.")
 		}
 	}
 
@@ -271,6 +324,21 @@ Build :: [].{
 	}
 }
 
+## Run each --before command on the terminal. Before anything is built or
+## emptied, so one that fails leaves the last build as it was.
+run_before! : List(Str) => Try({}, _)
+run_before! = |commands| {
+	for command in commands {
+		Stdout.line!("Running ${command}")?
+		match Build.shell!(command).call!() {
+			Ok({}) => {}
+			Err(Interrupted) => return Err(Exit(130))
+			Err(_) => return Build.fail!("--before failed, so nothing was built: ${command}")
+		}
+	}
+	Ok({})
+}
+
 executable! : Str => Str
 executable! = |name|
 	match System.target!().os() {
@@ -299,32 +367,36 @@ www_of! = |bundles|
 ensure_host! : Str => Try({}, _)
 ensure_host! = |checkout| {
 	source = Path.utf8("${checkout}/host/host.rs")
-	host = Path.utf8("${checkout}/platform/targets/wasm32/host.wasm")
 	if !(source.is_file!() ?? False) {
 		return Ok({})
 	}
-	stale =
-		match (host.time_modified!(), source.time_modified!()) {
-			(Ok(built), Ok(changed)) => built.is_lt(changed)
-			_ => True
+	for (name, flags) in [("host", []), ("host-hot", ["--cfg", "joy_hot"])] {
+		host = Path.utf8("${checkout}/platform/targets/wasm32/${name}.wasm")
+		stale =
+			match (host.time_modified!(), source.time_modified!()) {
+				(Ok(built), Ok(changed)) => built.is_lt(changed)
+				_ => True
+			}
+		if stale {
+			Stdout.line!("Building Joy's wasm host ${name}.wasm in ${checkout}")?
+			staged = "${checkout}/platform/targets/wasm32/${name}.wasm.joy-new"
+			rustc = Env.var_str!("RUSTC") ?? "rustc"
+			built =
+				Cmd.new(OsStr.from_str(rustc))
+					.args(
+						["--edition", "2021", "--target", "wasm32-unknown-unknown", "--crate-type", "staticlib", "-C", "opt-level=2", "-C", "panic=abort", "--emit", "obj"]
+							.concat(flags)
+							.concat(["${checkout}/host/host.rs", "-o", staged])
+							.map(OsStr.from_str),
+					)
+					.run!()?
+			if built.status != Exited(0) {
+				return Build.fail!("Building Joy's wasm host failed:\n${Str.from_utf8_lossy(built.stderr_bytes)}")
+			}
+			Path.utf8(staged).rename!(host)?
 		}
-	if !stale {
-		return Ok({})
 	}
-	Stdout.line!("Building Joy's wasm host in ${checkout}")?
-	staged = "${checkout}/platform/targets/wasm32/host.wasm.joy-new"
-	rustc = Env.var_str!("RUSTC") ?? "rustc"
-	built =
-		Cmd.new(OsStr.from_str(rustc))
-			.args(
-				["--edition", "2021", "--target", "wasm32-unknown-unknown", "--crate-type", "staticlib", "-C", "opt-level=2", "-C", "panic=abort", "--emit", "obj", "${checkout}/host/host.rs", "-o", staged]
-					.map(OsStr.from_str),
-			)
-			.run!()?
-	if built.status != Exited(0) {
-		return Build.fail!("Building Joy's wasm host failed:\n${Str.from_utf8_lossy(built.stderr_bytes)}")
-	}
-	Path.utf8(staged).rename!(host)
+	Ok({})
 }
 
 ## Take the output directory: only inside the project, never the project or
@@ -390,11 +462,15 @@ hash_assets! = |client_url| {
 	var $names = []
 	for file in files {
 		if !file.ends_with(".css") {
-			digest = Crypt.hash_file!(Path.utf8("assets/${file}"), Sha256)?
+			digest =
+				match Crypt.hash_file!(Path.utf8("assets/${file}"), Sha256) {
+					Ok(hash) => hash
+					Err(err) => return Project.could_not!("read assets/${file}", err)
+				}
 			$names = $names.append((file, with_hash(file, short_hash(digest))))
 		}
 	}
-	var $waiting = files.keep_if(|file| file.ends_with(".css")).map_try!(|file| Path.utf8("assets/${file}").read_utf8!().map_ok(|text| (file, text)))?
+	var $waiting = files.keep_if(|file| file.ends_with(".css")).map_try!(|file| read_text!("assets/${file}").map_ok(|text| (file, text)))?
 	var $sheets = []
 	while !$waiting.is_empty() {
 		waiting = $waiting
@@ -436,6 +512,46 @@ generated_package! = |bundles, assets, public, client_url|
 		Err(SameTag(one, other)) => Build.fail!("The bundles ${one} and ${other} would both be ${Project.tag_of(one)} in generated/Bundle.roc. Rename one of them.")
 	}
 
+## Warn about paths in scripts and stylesheets that will 404 from a build. An
+## import between hashed files works in ./joy dev, which serves plain names, as
+## a build leaves it as written. Only a stylesheet in assets/ has its paths
+## rewritten. Files that are not UTF-8 are read as far as they can be, and one
+## that cannot be read at all has already failed the build.
+warn_about_paths! : List(Str), Str, List(Str), Str => {}
+warn_about_paths! = |assets, public_dir, public_files, client_url| {
+	kept = public_files.append("runtime.js")
+	var $found = []
+	for (dir, files) in [("assets", assets), (public_dir, public_files)] {
+		for file in files {
+			script = file.ends_with(".js") or file.ends_with(".mjs")
+			if script or file.ends_with(".css") {
+				text = Str.from_utf8_lossy(Path.utf8("${dir}/${file}").read_bytes!() ?? [])
+				broken =
+					if script {
+						Reference.broken(Script.relative_imported(text), file, client_url, { kept, hashed: assets })
+					} else if dir == "assets" {
+						Reference.broken(Stylesheet.named(text), file, client_url, { kept: kept.concat(assets), hashed: [] })
+					} else {
+						Reference.broken(Stylesheet.named(text), file, client_url, { kept, hashed: assets })
+					}
+				verb = if (script) "imports" else "names"
+				$found = $found.concat(broken.map(|(name, why)| ("  ${dir}/${file} ${verb} ${name}", why)))
+			}
+		}
+	}
+	if !$found.is_empty() {
+		lines = $found.map(
+			|(line, why)|
+				match why {
+					Hashed => "${line}, which a build gives a hashed name"
+					Missing => "${line}, which is in neither assets/ nor ${public_dir}/"
+				},
+		)
+		advice = if ($found.any(|(_, why)| why == Hashed)) ["Bundle the script into one file, or keep all of its modules in ${public_dir}/, which keeps its names."] else []
+		Stderr.line!(Str.join_with(["Warning: these paths will 404 from a build:"].concat(lines).concat(advice), "\n")) ?? {}
+	}
+}
+
 ## Copy assets/ into client/ under the hashed names, each stylesheet as
 ## [hash_assets!] rewrote it.
 copy_assets! : Str, List(Str), List((Str, Str)), List((Str, Str)) => Try({}, _)
@@ -450,7 +566,7 @@ copy_assets! = |out, reserved, assets, sheets|
 			create_parent!(destination)?
 			match sheets.find_first(|(sheet, _)| sheet == file) {
 				Ok((_, text)) => destination.write_utf8!(text)
-				Err(_) => Path.utf8("assets/${file}").copy!(destination)
+				Err(_) => copy_file!("assets/${file}", destination)
 			}
 		},
 	)
@@ -473,15 +589,29 @@ copy_public! = |out, public_dir, reserved, asset_files, client_url, renames, nam
 			destination = Path.utf8("${out}/client/${file}")
 			create_parent!(destination)?
 			if file.ends_with(".html") or file.ends_with(".htm") {
-				html = Path.utf8("${public_dir}/${file}").read_utf8!()?
+				html = read_text!("${public_dir}/${file}")?
 				destination.write_utf8!(HtmlPage.rewrite(html, file, client_url, renames, names))
 			} else {
-				Path.utf8("${public_dir}/${file}").copy!(destination)
+				copy_file!("${public_dir}/${file}", destination)
 			}
 		},
 	)?
 	Ok(files)
 }
+
+read_text! : Str => Try(Str, [Exit(I32)])
+read_text! = |path|
+	match Path.utf8(path).read_utf8!() {
+		Ok(text) => Ok(text)
+		Err(err) => Project.could_not!("read ${path}", err)
+	}
+
+copy_file! : Str, Path.Path => Try({}, [Exit(I32)])
+copy_file! = |path, destination|
+	match Path.utf8(path).copy!(destination) {
+		Ok(_) => Ok({})
+		Err(err) => Project.could_not!("copy ${path} to ${Path.display(destination)}", err)
+	}
 
 taken : List(Str), Str -> Bool
 taken = |reserved, path| reserved.any(|name| if (name.ends_with("/")) path.starts_with(name) else path == name)
@@ -512,7 +642,12 @@ files_below! = |root|
 
 files_in! : Str, Str => Try(List(Str), _)
 files_in! = |root, prefix| {
-	entries = Path.utf8(if (prefix.is_empty()) root else "${root}/${prefix}").list!()?
+	folder = if (prefix.is_empty()) root else "${root}/${prefix}"
+	entries =
+		match Path.utf8(folder).list!() {
+			Ok(found) => found
+			Err(err) => return Project.could_not!("read ${folder}/", err)
+		}
 	entries.fold_try!(
 		[],
 		|found, entry| {

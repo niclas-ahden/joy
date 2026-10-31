@@ -223,6 +223,17 @@ jobs:
           done
           cd verify-cli/app
           ${{ steps.setup.outputs.prefix }} roc run --opt=speed "http://127.0.0.1:8789/joy/$cli" init --template spa --no-input
+          # ./joy dev first, as a new project does: it reads the release's files
+          # before anything has built, so it has to fetch them itself.
+          ${{ steps.setup.outputs.prefix }} ./joy dev --port 8790 > ../dev.log 2>&1 &
+          dev=$!
+          for _ in $(seq 1 240); do
+            grep -q 'built app' ../dev.log && break
+            sleep 0.5
+          done
+          grep -q 'built app' ../dev.log || { cat ../dev.log; exit 1; }
+          curl -sf http://localhost:8790/runtime.js | grep -q JOY_DEV_PORT
+          kill "$dev"
           ${{ steps.setup.outputs.prefix }} ./joy build
           test -f dist/client/index.html
 

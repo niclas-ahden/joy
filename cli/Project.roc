@@ -1,5 +1,6 @@
 import pf.Env
 import pf.Path
+import pf.Stderr
 import pf.System
 
 ## A Joy project as ./joy sees it from the directory it runs in: the bundles
@@ -38,6 +39,15 @@ Project :: [].{
 	}
 
 	## Every .roc file in the project, apart from the folders ./joy writes.
+	## Stop with a message that names the file, for one in the project ./joy cannot use.
+	could_not! : Str, _ => Try(_ok, [Exit(I32)])
+	could_not! = |what, err| {
+		detail = Str.inspect(err)
+		reason = if (detail.contains("PermissionDenied")) "permission denied" else detail
+		Stderr.line!("Could not ${what}: ${reason}") ?? {}
+		Err(Exit(1))
+	}
+
 	project_roc_files! : () => Try(List(Str), _)
 	project_roc_files! = || {
 		files = roc_files!(".", ["dist", ".joy", "node_modules", "target", "result"])?
@@ -127,6 +137,16 @@ Project :: [].{
 			"${platform_dir(bundle.file, bundle.joy)}/../www"
 		}
 
+	## The folder of a bundle's platform: in a checkout, or in roc's package
+	## cache for a release, once roc has fetched it.
+	platform! : Bundle => Str
+	platform! = |bundle|
+		if is_url(bundle.joy) {
+			www!(bundle).drop_suffix("/www")
+		} else {
+			platform_dir(bundle.file, bundle.joy)
+		}
+
 	## The checkout a path platform belongs to, for building its host.
 	checkout : Bundle -> [Some(Str), None]
 	checkout = |bundle|
@@ -186,7 +206,11 @@ joy_app! = |file| {
 ## named in `skip`.
 roc_files! : Str, List(Str) => Try(List(Str), _)
 roc_files! = |dir, skip| {
-	entries = Path.utf8(dir).list!()?
+	entries =
+		match Path.utf8(dir).list!() {
+			Ok(found) => found
+			Err(err) => return Project.could_not!("read ${dir.drop_prefix("./")}/", err)
+		}
 	entries.fold_try!(
 		[],
 		|found, entry| {

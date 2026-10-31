@@ -13,7 +13,7 @@ platform ""
 		# this exact URL and `import html.Html`. It must be the same URL, or
 		# the app's Html is a different nominal type than the one `view`
 		# is required to return.
-		html: "https://github.com/niclas-ahden/joy-html/releases/download/0.17.1/AcmwFzyfbsf5RALWNdX6cXw1cuuDXt96YfcysNqgFqoG.tar.zst",
+		html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc1/6eTqakHk59tsBefdx2VPuYDVZxG8SoEtzE74e7MzyoBq.tar.zst",
 	}
 	provides {
 		"roc_init": init_for_host,
@@ -29,6 +29,9 @@ platform ""
 		"roc_drop_file_callback": drop_file_callback_for_host,
 		"roc_drop_bytes_callback": drop_bytes_callback_for_host,
 		"roc_drop_bytes": drop_bytes_for_host,
+		# hot: "roc_drop_msg": drop_msg_for_host,
+		# hot: "roc_inspect_msg": inspect_msg_for_host,
+		# hot: "roc_drop_str": drop_str_for_host,
 	}
 	targets: {
 		inputs_dir: "targets/",
@@ -63,6 +66,9 @@ platform ""
 				"lazy_entries",
 				"patch_ops",
 				"bench_phase_ms",
+				# hot: "hot_mode",
+				# hot: "hot_expect",
+				# hot: "hot_matched",
 			],
 		},
 	}
@@ -149,3 +155,19 @@ drop_bytes_callback_for_host = |_| {}
 
 drop_bytes_for_host : List(U8) -> {}
 drop_bytes_for_host = |_| {}
+
+# Hot reload (see `joy_hot` in host.rs): the host renders each message as
+# text to record it, and to recognise it again when a rebuilt app replays the
+# session. Messages are otherwise always consumed by `update`, so a replayed
+# one that matches nothing needs a dropper of its own. Only a hot build has any
+# of this: its copy of this file is this file with each `# hot: ` taken off, so
+# what ships is built as if none of it were here.
+
+# hot: drop_msg_for_host : Box(Msg) -> {}
+# hot: drop_msg_for_host = |_| {}
+
+# hot: inspect_msg_for_host : Box(Msg) -> Str
+# hot: inspect_msg_for_host = |boxed| Str.inspect(Box.unbox(boxed))
+
+# hot: drop_str_for_host : Str -> {}
+# hot: drop_str_for_host = |_| {}

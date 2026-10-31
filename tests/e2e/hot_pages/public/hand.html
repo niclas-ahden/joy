@@ -1,0 +1,11 @@
+<!doctype html>
+<html>
+<body>
+  <div id="cart"></div>
+  <script type="module">
+    import { mount } from '/runtime.js';
+    await mount({ wasm: '/Shop/cart/app.wasm', root: document.getElementById('cart'), flags: '' });
+    document.body.dataset.ready = 'yes';
+  </script>
+</body>
+</html>

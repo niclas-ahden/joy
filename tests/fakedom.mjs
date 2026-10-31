@@ -23,9 +23,24 @@ export class El {
     this.parent = null;
   }
   listenerCount(event) { return (this.bound[event] ?? []).length; }
+  get textContent() { return this.children.map((c) => c.textContent).join(''); }
+  getAttribute(name) { return this.attrs.get(name) ?? null; }
+  // A harness's root is an element named like `#root`, which stands for
+  // the document, so a node is connected when one is at the top of its tree.
+  get isConnected() {
+    let top = this;
+    while (top.parent) top = top.parent;
+    return top.tag.startsWith('#') && top.tag !== '#frag';
+  }
+  // The removal of a listener, which only Joy's dev module does (see www/hot.js).
+  removeEventListener(event, fn) {
+    const fns = this.bound[event] ?? [];
+    if (fns.includes(fn)) fns.splice(fns.indexOf(fn), 1);
+  }
 }
 export class Text {
   constructor(s) { this.text = s; this.parent = null; }
+  get textContent() { return this.text; }
 }
 
 // Neither element nor text, so hydration must drop it on sight. The parser
@@ -238,8 +253,9 @@ export const fakeDom = {
     const el = findElement(selector);
     return el === null ? null : textContent(el);
   },
-  observeVisibility: (node, rootMargin, fire) => {
-    const observer = { node, rootMargin, fire, active: true };
+  // `seen` is kept for assertions: a browser leaves out the first report.
+  observeVisibility: (node, rootMargin, fire, seen) => {
+    const observer = { node, rootMargin, fire, seen: Boolean(seen), active: true };
     observers.push(observer);
     return () => { observer.active = false; };
   },
@@ -429,14 +445,18 @@ export const fakeDocument = { title: '' };
 export const scrolls = [];
 
 // Every <dialog> element ever created, plus the modal calls made against
-// them, for assertions. Dialogs track `open` like the browser's property.
+// them, for assertions. Dialogs track `open` like the browser's property,
+// and a selector finds a connected one, as querySelector does. As each
+// harness root stands for a document, the one found is the latest made, so a
+// harness must not show dialogs in two roots at once.
 export const dialogs = [];
 export const modalCalls = [];
 function findDialog(selector) {
+  const connected = dialogs.filter((d) => d.isConnected);
   if (selector.startsWith('#')) {
-    return dialogs.find((d) => d.attrs.get('id') === selector.slice(1)) ?? null;
+    return connected.findLast((d) => d.attrs.get('id') === selector.slice(1)) ?? null;
   }
-  return dialogs.find((d) => d.tag === selector) ?? null;
+  return connected.findLast((d) => d.tag === selector) ?? null;
 }
 
 // Every element ever created, the focus calls made, and the element focus
@@ -618,4 +638,26 @@ export function byLabel(root, text) {
     if (control) return control;
   }
   return null;
+}
+
+// Count the reads of an element's text from here on, which is what Joy's dev
+// module reads to recognise an element (see www/hot.js). A read of a subtree
+// counts once, not once per element in it.
+export function countTextReads() {
+  const read = Object.getOwnPropertyDescriptor(El.prototype, 'textContent').get;
+  const counter = { reads: 0 };
+  let depth = 0;
+  Object.defineProperty(El.prototype, 'textContent', {
+    configurable: true,
+    get() {
+      if (depth === 0) counter.reads++;
+      depth++;
+      try {
+        return read.call(this);
+      } finally {
+        depth--;
+      }
+    },
+  });
+  return counter;
 }

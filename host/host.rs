@@ -2854,11 +2854,19 @@ unsafe fn msg_scratch(n: usize) -> *mut u32 {
 /// One render over the final model is also what a burst of messages should
 /// look like.
 unsafe fn finish_msgs(msgs: *mut u32, n: usize) -> u32 {
+    #[cfg_attr(not(joy_hot), allow(unused_mut))]
+    let mut applied = n;
     for i in 0..n {
-        apply_msg(*msgs.add(i) as usize);
+        let msg = *msgs.add(i) as usize;
+        #[cfg(joy_hot)]
+        if !hot_admit(msg) {
+            applied -= 1;
+            continue;
+        }
+        apply_msg(msg);
     }
     roc_dealloc(msgs as *mut u8, 4);
-    if n > 0 {
+    if applied > 0 {
         render_current();
         sync_subs();
         1
@@ -2935,12 +2943,263 @@ unsafe fn apply_msg(msg_box: usize) {
 }
 
 /// `apply_msg`, then render and re-sync subscriptions. An unchanged model
-/// diffs to an empty patch, so the paint is a no-op then.
+/// diffs to an empty patch, so the paint is a no-op then. A replaying hot
+/// build drops the messages it was not told to expect instead (see
+/// `hot_admit`), and returns 0, which leaves nothing to render or paint.
 unsafe fn run_update(msg_box: usize) -> u32 {
+    #[cfg(joy_hot)]
+    if !hot_admit(msg_box) {
+        return 0;
+    }
     apply_msg(msg_box);
     render_current();
     sync_subs();
     1
+}
+
+// --- Hot reload ---
+// Compiled in only under `--cfg joy_hot` (`JOY_HOT=1 ./build.roc`, and the
+// host-hot.wasm a release ships for ./joy dev). Such a build can record its
+// session, so that a rebuilt app replays it and picks up where this one left
+// off (see www/hot.js). Two
+// builds share no memory layout, so a message is known between them by the
+// app's own `Str.inspect` of it, kept as a 128-bit hash of that text: a
+// message can be any size (an HTTP response's body prints at about five
+// characters per byte), and a session keeps every one.
+//
+// - Recording, every message `update` receives is queued for the runtime at
+//   LOG_LEVEL_MSG beside the console messages, as its hash, flags and the
+//   start of its text, for the runtime to show (see `hot_record`).
+// - Replaying, the runtime names the hash it expects next (`hot_expect`) and
+//   offers the new build sources that could produce it: handlers in the view,
+//   pending effect callbacks, live subscriptions. A message runs only when
+//   its hash matches, every other one is dropped, and `hot_matched` reports
+//   whether one ran.
+// - Probing is replaying that never runs anything: every message is dropped,
+//   and `hot_matched` counts those that matched. The runtime probes when a
+//   text could belong to several messages, since a function or an opaque
+//   value inside one is printed without its contents (HOT_AMBIGUOUS).
+//
+// The text rendering grows the wasm with the app's message type, 8% for
+// examples/todomvc, which is why release builds leave it all out, its exports
+// too (see `# hot:` in platform/main.roc). The runtime sees those are missing,
+// and a rebuild reloads the page instead of replaying.
+#[cfg(joy_hot)]
+const HOT_RECORD: u32 = 1;
+#[cfg(joy_hot)]
+const HOT_REPLAY: u32 = 2;
+#[cfg(joy_hot)]
+const HOT_PROBE: u32 = 3;
+#[cfg(joy_hot)]
+const LOG_LEVEL_MSG: u32 = 2;
+
+// The flags of a recorded message: its text has a function or an opaque
+// value in it, and the preview stops short of the whole text.
+#[cfg(joy_hot)]
+const HOT_AMBIGUOUS: u8 = 1;
+#[cfg(joy_hot)]
+const HOT_TRUNCATED: u8 = 2;
+
+// How much of a message's text a record carries, for the runtime to show.
+#[cfg(joy_hot)]
+const HOT_PREVIEW: usize = 160;
+
+#[cfg(joy_hot)]
+static mut HOT_MODE: u32 = 0; // off
+#[cfg(joy_hot)]
+static mut HOT_EXPECTED: [u64; 2] = [0; 2];
+#[cfg(joy_hot)]
+static mut HOT_MATCHED: u32 = 0;
+
+/// Switch between off (0), recording (1), replaying (2) and probing (3).
+/// Returns 1.
+#[cfg(joy_hot)]
+#[no_mangle]
+pub extern "C" fn hot_mode(mode: u32) -> u32 {
+    unsafe { HOT_MODE = mode };
+    1
+}
+
+/// Name the hash of the message the next replayed dispatch must produce, as
+/// the four little-endian words a record carries it in, and reset the match
+/// count.
+#[cfg(joy_hot)]
+#[no_mangle]
+pub extern "C" fn hot_expect(a: u32, b: u32, c: u32, d: u32) {
+    unsafe {
+        HOT_EXPECTED = [(a as u64) | ((b as u64) << 32), (c as u64) | ((d as u64) << 32)];
+        HOT_MATCHED = 0;
+    }
+}
+
+/// How many messages matched since `hot_expect`: 0 or 1 when replaying, any
+/// number when probing.
+#[cfg(joy_hot)]
+#[no_mangle]
+pub extern "C" fn hot_matched() -> u32 {
+    unsafe { HOT_MATCHED }
+}
+
+/// Whether `apply_msg` may run `update` with this message: always, unless
+/// replaying, and then only the first message matching the expected hash, or
+/// probing, and then never. A message turned away is dropped here, since
+/// `update` will not consume it.
+#[cfg(joy_hot)]
+unsafe fn hot_admit(msg_box: usize) -> bool {
+    if HOT_MODE != HOT_RECORD && HOT_MODE != HOT_REPLAY && HOT_MODE != HOT_PROBE {
+        return true;
+    }
+    incref(msg_box); // the inspector consumes a reference, update needs its own
+    let text = abi::roc_inspect_msg(msg_box as abi::RocBox);
+    let (tp, tl) = str_at(&raw const text as usize);
+    let hash = hot_hash(tp as usize, tl as usize);
+    let admit = if HOT_MODE == HOT_RECORD {
+        hot_record(hash, tp as usize, tl as usize);
+        true
+    } else if HOT_MODE == HOT_PROBE {
+        if hot_expected(hash) {
+            HOT_MATCHED += 1;
+        }
+        false
+    } else if HOT_MATCHED == 0 && hot_expected(hash) {
+        HOT_MATCHED = 1;
+        true
+    } else {
+        false
+    };
+    abi::roc_drop_str(text);
+    if !admit {
+        abi::roc_drop_msg(msg_box as abi::RocBox);
+    }
+    admit
+}
+
+/// Whether a hash is the one `hot_expect` named. Word by word: comparing the
+/// arrays whole compiles to a call to `memcmp`, which this import-free host
+/// does not have.
+#[cfg(joy_hot)]
+unsafe fn hot_expected(hash: [u64; 2]) -> bool {
+    hash[0] == HOT_EXPECTED[0] && hash[1] == HOT_EXPECTED[1]
+}
+
+/// Queue a recorded message for the runtime at LOG_LEVEL_MSG: its hash as two
+/// little-endian u64s, a flags byte (HOT_AMBIGUOUS, HOT_TRUNCATED), then up to
+/// HOT_PREVIEW bytes of its text, cut at a character boundary.
+#[cfg(joy_hot)]
+unsafe fn hot_record(hash: [u64; 2], text: usize, len: usize) {
+    let mut flags = 0;
+    if hot_contains(text, len, b"<function>") || hot_contains(text, len, b"<opaque>") {
+        flags |= HOT_AMBIGUOUS;
+    }
+    let mut shown = len;
+    if len > HOT_PREVIEW {
+        flags |= HOT_TRUNCATED;
+        shown = HOT_PREVIEW;
+        // Back off to the start of a UTF-8 character: continuation bytes
+        // are 0b10xxxxxx.
+        while shown > 0 && *((text + shown) as *const u8) & 0xC0 == 0x80 {
+            shown -= 1;
+        }
+    }
+    let record = roc_alloc(17 + shown, 1);
+    if record.is_null() {
+        core::arch::wasm32::unreachable();
+    }
+    core::ptr::write_unaligned(record as *mut u64, hash[0]);
+    core::ptr::write_unaligned(record.add(8) as *mut u64, hash[1]);
+    *record.add(16) = flags;
+    core::ptr::copy_nonoverlapping(text as *const u8, record.add(17), shown);
+    buf_push(&mut LOG_PTR, &mut LOG_CAP, &mut LOG_LEN, LOG_INITIAL, record as u32);
+    buf_push(&mut LOG_PTR, &mut LOG_CAP, &mut LOG_LEN, LOG_INITIAL, (17 + shown) as u32);
+    buf_push(&mut LOG_PTR, &mut LOG_CAP, &mut LOG_LEN, LOG_INITIAL, LOG_LEVEL_MSG);
+}
+
+/// Whether `len` bytes at `text` contain `needle`.
+#[cfg(joy_hot)]
+unsafe fn hot_contains(text: usize, len: usize, needle: &[u8]) -> bool {
+    let n = needle.len();
+    let mut i = 0;
+    while i + n <= len {
+        let mut j = 0;
+        while j < n && *((text + i + j) as *const u8) == *needle.as_ptr().add(j) {
+            j += 1;
+        }
+        if j == n {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+/// MurmurHash3's x64 128-bit variant, seed 0, of `len` bytes at `data`. Not
+/// for anything adversarial: two different messages of one session sharing
+/// a hash is what it must make unlikely, and at 128 bits it does.
+#[cfg(joy_hot)]
+unsafe fn hot_hash(data: usize, len: usize) -> [u64; 2] {
+    const C1: u64 = 0x87c3_7b91_1142_53d5;
+    const C2: u64 = 0x4cf5_ad43_2745_937f;
+    let mut h1: u64 = 0;
+    let mut h2: u64 = 0;
+    let blocks = len / 16;
+    for i in 0..blocks {
+        let mut k1 = core::ptr::read_unaligned((data + i * 16) as *const u64);
+        let mut k2 = core::ptr::read_unaligned((data + i * 16 + 8) as *const u64);
+        k1 = k1.wrapping_mul(C1).rotate_left(31).wrapping_mul(C2);
+        h1 ^= k1;
+        h1 = h1.rotate_left(27).wrapping_add(h2).wrapping_mul(5).wrapping_add(0x52dc_e729);
+        k2 = k2.wrapping_mul(C2).rotate_left(33).wrapping_mul(C1);
+        h2 ^= k2;
+        h2 = h2.rotate_left(31).wrapping_add(h1).wrapping_mul(5).wrapping_add(0x3849_5ab5);
+    }
+    let tail = data + blocks * 16;
+    let rest = len & 15;
+    let mut k1: u64 = 0;
+    let mut k2: u64 = 0;
+    let mut i = rest;
+    while i > 8 {
+        i -= 1;
+        k2 ^= (*((tail + i) as *const u8) as u64) << ((i - 8) * 8);
+    }
+    if rest > 8 {
+        h2 ^= k2.wrapping_mul(C2).rotate_left(33).wrapping_mul(C1);
+    }
+    let mut i = if rest > 8 { 8 } else { rest };
+    let low = i;
+    while i > 0 {
+        i -= 1;
+        k1 ^= (*((tail + i) as *const u8) as u64) << (i * 8);
+    }
+    if low > 0 {
+        h1 ^= k1.wrapping_mul(C1).rotate_left(31).wrapping_mul(C2);
+    }
+    h1 ^= len as u64;
+    h2 ^= len as u64;
+    h1 = h1.wrapping_add(h2);
+    h2 = h2.wrapping_add(h1);
+    h1 = hot_fmix(h1);
+    h2 = hot_fmix(h2);
+    h1 = h1.wrapping_add(h2);
+    h2 = h2.wrapping_add(h1);
+    [h1, h2]
+}
+
+#[cfg(joy_hot)]
+fn hot_fmix(mut k: u64) -> u64 {
+    k ^= k >> 33;
+    k = k.wrapping_mul(0xff51_afd7_ed55_8ccd);
+    k ^= k >> 33;
+    k = k.wrapping_mul(0xc4ce_b9fe_1a85_ec53);
+    k ^ (k >> 33)
+}
+
+/// Whether a one-shot callback should be released after its dispatch. One
+/// whose message did not run, because it matched nothing or was only probed,
+/// stays with JS, which may offer it the next recorded message, or run it for
+/// real once the replay is over.
+#[cfg(joy_hot)]
+unsafe fn hot_release(changed: u32) -> bool {
+    changed != 0 || (HOT_MODE != HOT_REPLAY && HOT_MODE != HOT_PROBE)
 }
 
 /// Initialise the app: hand the flags string JS wrote via `js_alloc` to the
@@ -3135,6 +3394,10 @@ pub extern "C" fn dispatch_bytes(callable: usize, ptr: usize, len: usize) -> u32
         // The callable consumes its args (the list moves into the msg).
         let msg_box = call_callable(callable, &raw const args as *const u8);
         let changed = run_update(msg_box);
+        #[cfg(joy_hot)]
+        if !hot_release(changed) {
+            return changed;
+        }
         abi::roc_drop_bytes_callback(callable as abi::RocErasedCallable);
         changed
     }
@@ -3187,7 +3450,9 @@ pub extern "C" fn drop_call_cb(callable: usize) {
 // after every entry call (start/dispatch/dispatch_value). Two levels feed
 // the queue: LOG_LEVEL_LOG entries come from the ConsoleLog effect and go
 // to `console.log`, LOG_LEVEL_DBG entries come from the compiler's `dbg`
-// statement (via `roc_dbg`) and go to `console.debug`.
+// statement (via `roc_dbg`) and go to `console.debug`. A recording hot
+// build adds a third, LOG_LEVEL_MSG, with the text of each message `update`
+// received, which the runtime keeps instead of printing.
 static mut LOG_PTR: usize = 0; // heap buffer of (ptr, len, level) triples
 static mut LOG_CAP: usize = 0;
 static mut LOG_LEN: usize = 0; // number of u32 words used

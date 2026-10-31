@@ -28,19 +28,27 @@ main! = |_args| {
 	assert!(page.find("#shown").has_text("Hello, Ada Lovelace"))?
 
 	# A selector that matches nothing leaves focus where it was.
-	page.find("#nothing").click!()?
+	focus_and_click!(page, "#nothing")?
 	assert!(page.find("#missing").has_text("missing 1"))?
 	Assert.eq(focused_id!(page)?, "nothing") ? |e| MissingSelectorShouldNotMoveFocus(Str.inspect(e))
 
 	# A selector that is not valid CSS ("#12") matches nothing either, for
 	# DOM.focus, show_modal and close_modal alike. The second click proves
 	# the app is still running after the first.
-	page.find("#bad").click!()?
-	page.find("#bad").click!()?
+	focus_and_click!(page, "#bad")?
+	focus_and_click!(page, "#bad")?
 	assert!(page.find("#invalid").has_text("invalid 2"))?
 	Assert.eq(focused_id!(page)?, "bad") ? |e| InvalidSelectorShouldNotMoveFocus(Str.inspect(e))
 
 	browser.close!()?
+	Ok({})
+}
+
+# Focus a button and click it. WebKit on macOS does not focus a button that is
+# clicked, as Safari does not, so a real click would leave the focus elsewhere
+# there and prove nothing about the effect.
+focus_and_click! = |page, selector| {
+	_ = page.evaluate!("(document.querySelector('${selector}').focus(), document.querySelector('${selector}').click(), 'clicked')")?
 	Ok({})
 }
 
