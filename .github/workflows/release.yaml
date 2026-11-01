@@ -236,6 +236,9 @@ jobs:
           kill "$dev"
           ${{ steps.setup.outputs.prefix }} ./joy build
           test -f dist/client/index.html
+          # What a build ships is minified, from the copies the bundle carries.
+          test "$(cat dist/client/joy.*.js | wc -l)" -le 2
+          test "$(cat dist/client/runtime.*.js | wc -l)" -le 40
 
       # For `bundle`. Draft assets need a token and roc fetches anonymously,
       # so the bundle travels as an artifact and each leg serves it to roc

@@ -63,7 +63,12 @@ main! = |_args| {
 	run!("mkdir", ["-p", "dist/.platform/www/features"])?
 	run!("bash", ["-c", "cp www/runtime.js www/joy.js www/hot.js www/hot-seams.js dist/.platform/www/ && cp www/features/*.js dist/.platform/www/features/"])?
 
-	platform_archive = bundle!("cd dist/.platform && roc bundle main.roc targets/wasm32/host.wasm targets/wasm32/host-hot.wasm www/runtime.js www/joy.js www/hot.js www/hot-seams.js www/features/*.js --output-dir ..")?
+	# What ./joy build ships, minified here so an app's machine needs no JavaScript
+	# tools. The files above stay as written, since ./joy dev serves them and they
+	# hold the comments hot reloading finds its place by.
+	minify_for_build!("dist/.platform/www")?
+
+	platform_archive = bundle!("cd dist/.platform && roc bundle main.roc targets/wasm32/host.wasm targets/wasm32/host-hot.wasm www/runtime.js www/joy.js www/hot.js www/hot-seams.js www/features/*.js www/min/runtime.js www/min/joy.js www/min/features/*.js --output-dir ..")?
 
 	run!("rm", ["-rf", "dist/.platform"])?
 
@@ -116,3 +121,42 @@ html_url! = |{}| {
 		Err(_) => fail!("no html dependency in platform/main.roc")
 	}
 }
+
+## Minified copies of the runtime, the loader and the features, in `www`/min.
+##
+## Each file is minified on its own, and a feature section by section, because
+## tools/runtime joins the sections an app uses after the core: they call each
+## other by their top level names, so those are kept. The `////` lines stay, as
+## tools/runtime picks the sections by them. The loader is an ES module that
+## nothing reaches into, so --module also mangles its top level.
+minify_for_build! : Str => Try({}, _)
+minify_for_build! = |www| {
+	min = "${www}/min"
+	Path.utf8("${min}/features").create_all!()?
+	uglify!("${www}/runtime.js", "${min}/runtime.js", [])?
+	uglify!("${www}/joy.js", "${min}/joy.js", ["--module"])?
+	for entry in Path.utf8("${www}/features").list!()? {
+		file = Path.display(entry)
+		if file.ends_with(".js") {
+			name = file.drop_prefix("${www}/features/")
+			source = entry.read_utf8!()?
+			var $out = ""
+			for section in "\n${source}".split_on("\n//// ").drop_first(1) {
+				{ before: header, after: code } = section.split_first("\n") ? |_| SectionWithoutCode(name, section)
+				part = "${min}/features/part.tmp"
+				Path.utf8(part).write_utf8!(code)?
+				uglify!(part, part, [])?
+				minified = Path.utf8(part).read_utf8!()?
+				Path.utf8(part).delete!()?
+				$out = "${$out}\n//// ${header}\n${minified}\n"
+			}
+			Path.utf8("${min}/features/${name}").write_utf8!($out)?
+		} else {
+			{}
+		}
+	}
+	Ok({})
+}
+
+uglify! : Str, Str, List(Str) => Try({}, _)
+uglify! = |from, to, flags| run!("uglifyjs", [from, "--compress", "--mangle"].concat(flags).concat(["-o", to]))

@@ -143,7 +143,7 @@ Build :: [].{
 		runtime_name = "runtime.${short_hash(Crypt.hash!(Str.to_utf8(runtime), Sha256))}.js"
 		Path.utf8("${out}/client/runtime.js").write_utf8!(runtime)?
 		Path.utf8("${out}/client/${runtime_name}").write_utf8!(runtime)?
-		loader = loader!(bundles)?.replace_each("'./runtime.js'", "'./${runtime_name}'").replace_each("\"./runtime.js\"", "\"./${runtime_name}\"")
+		loader = shipped_loader!(bundles, debug)?.replace_each("'./runtime.js'", "'./${runtime_name}'").replace_each("\"./runtime.js\"", "\"./${runtime_name}\"")
 		joy_name = "joy.${short_hash(Crypt.hash!(Str.to_utf8(loader), Sha256))}.js"
 		Path.utf8("${out}/client/${joy_name}").write_utf8!(loader)?
 
@@ -209,7 +209,12 @@ Build :: [].{
 	## given wasm modules call.
 	runtime! : List(Project.Bundle), [Full, Used(List(List(U8)))] => Try(Str, _)
 	runtime! = |bundles, which| {
-		www = www_of!(bundles)?
+		written = www_of!(bundles)?
+		www =
+			match which {
+				Full => written
+				Used(_) => minified_or!(written)
+			}
 		core = Path.utf8("${www}/runtime.js").read_utf8!() ? |_| NoRuntime(www)
 		features =
 			(Path.utf8("${www}/features").list!() ?? [])
@@ -270,6 +275,17 @@ Build :: [].{
 	loader! : List(Project.Bundle) => Try(Str, _)
 	loader! = |bundles| {
 		www = www_of!(bundles)?
+		match Path.utf8("${www}/joy.js").read_utf8!() {
+			Ok(js) => Ok(js)
+			Err(_) => fail!("There is no joy.js in ${www}. This Joy release is older than ./joy's loader.")
+		}
+	}
+
+	## The loader a build ships.
+	shipped_loader! : List(Project.Bundle), Bool => Try(Str, _)
+	shipped_loader! = |bundles, debug| {
+		written = www_of!(bundles)?
+		www = if (debug) written else minified_or!(written)
 		match Path.utf8("${www}/joy.js").read_utf8!() {
 			Ok(js) => Ok(js)
 			Err(_) => fail!("There is no joy.js in ${www}. This Joy release is older than ./joy's loader.")
@@ -356,6 +372,12 @@ release_of! = |bundle| {
 		Err(_) => bundle.joy
 	}
 }
+
+## The minified copies of `www` a release ships. A checkout has none, and gets
+## the files as written.
+minified_or! : Str => Str
+minified_or! = |www|
+	if Path.utf8("${www}/min/runtime.js").is_file!() ?? False "${www}/min" else www
 
 www_of! : List(Project.Bundle) => Try(Str, _)
 www_of! = |bundles|

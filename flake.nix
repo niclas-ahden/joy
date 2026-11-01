@@ -60,6 +60,7 @@
                 watchexec
                 caddy # serves the todomvc template's dev and test servers
                 nodejs_22 # runs the tests/check_*.mjs harnesses
+                uglify-js # bundle.roc minifies what a release ships
                 esbuild # cli/tests.roc runs the guide's commands for these two
                 dart-sass
                 # Testing
