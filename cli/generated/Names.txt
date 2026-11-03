@@ -46,7 +46,13 @@ Names := {
 			}
 		}
 		for (name, path) in Asset.all {
-			if !assets.contains((name, path)) {
+			# WORKAROUND: `any` with `==`, not `contains`. On roc 34bd006 a
+			# server built with --opt=dev --specialize=no gets False from
+			# `assets.contains((name, path))` for a pair the list holds, so it
+			# refuses its own assets.json, while `any` with `==` on the same
+			# list is right. It depends on the rest of the program, so there
+			# is no repro yet. Go back to `contains` once that is fixed.
+			if !assets.any(|(given, file)| given == name and file == path) {
 				return Err(AssetsDiffer(name))
 			}
 		}

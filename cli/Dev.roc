@@ -28,7 +28,8 @@ import Project
 ## `./joy dev`: build every bundle, rebuild exactly the bundles a change
 ## reaches, and serve or start what the project needs, until Ctrl-C.
 ##
-## Bundles build into .joy/dev/, never dist/, at --opt=size. Each build
+## Bundles build into .joy/dev/, never dist/, at --opt=size unless --opt
+## says otherwise. Each build
 ## writes the files it read through roc's --watch-inputs-file, which is how a
 ## change finds the bundles and servers it reaches. A build goes to a staging
 ## folder first, and only a clean one replaces what pages load.
@@ -60,6 +61,9 @@ Dev :: [].{
 		poll : Bool,
 		no_hot : Bool,
 		watch : List(Str),
+		opt : Try(Str, [NoValue]),
+		specialize : Try(Str, [NoValue]),
+		server_specialize : Try(Str, [NoValue]),
 	}
 
 	## `./joy dev` as a weaver subcommand, which also writes its --help.
@@ -80,6 +84,9 @@ Dev :: [].{
 				poll: Opt.flag({ short: "", long: "poll", help: "Compare files on a timer, for filesystems that send no events." }),
 				watch: Opt.str_list({ short: "", long: "watch", help: "Run this command in a shell alongside the builds until Ctrl-C, to compile what goes in assets/. Repeatable." }),
 				no_hot: Opt.flag({ short: "", long: "no-hot", help: "Build what ships, and reload the page after each rebuild, for a bug that might live in the difference." }),
+				opt: Opt.maybe_str({ short: "", long: "opt", help: "The bundles' roc --opt, size by default. ($JOY_OPT)" }),
+				specialize: Opt.maybe_str({ short: "", long: "specialize", help: "The bundles' roc --specialize, yes or no. Unset, roc's default. ($JOY_SPECIALIZE)" }),
+				server_specialize: Opt.maybe_str({ short: "", long: "server-specialize", help: "The servers' roc --specialize, yes or no. Unset, roc's default. ($JOY_SERVER_SPECIALIZE)" }),
 			}.Cli,
 			{
 				name: "dev",
@@ -118,7 +125,10 @@ Dev :: [].{
 		for dir in [".joy/dev/client", ".joy/dev/inputs", ".joy/dev/staging", ".joy/dev/servers"] {
 			Path.utf8(dir).create_all!()?
 		}
-		bundle_roc = (if (options.no_hot) [] else hot_platform!(bundles, root)?).concat(roc)
+		bundle_opt = setting!(Args.given(options.opt), "JOY_OPT") ?? "size"
+		specialize! = |given, variable| Build.specialize_flag(setting!(Args.given(given), variable).map_err(|_| NoValue))
+		bundle_roc = specialize!(options.specialize, "JOY_SPECIALIZE").concat(if (options.no_hot) [] else hot_platform!(bundles, root)?).concat(roc)
+		server_roc = specialize!(options.server_specialize, "JOY_SERVER_SPECIALIZE").concat(roc)
 
 		host = setting!(Args.given(options.host), "JOY_HOST") ?? "localhost"
 		events = Events.new!({})
@@ -178,10 +188,10 @@ Dev :: [].{
 		names = servers.map(server_name)
 		# Dev builds swap in nothing but what follows `--`, so every job has the
 		# same caches, see Compile.cache_root!.
-		caches = Compile.cache_root!(roc)?
+		caches = Compile.cache_root!(server_roc)?
 		bundle_caches = Compile.cache_root!(bundle_roc)?
-		bundle_jobs = bundles.map(|bundle| bundle_job(bundle, bundle_roc, bundle_caches))
-		server_jobs = servers.map(|file| server_job(file, server_name(file), roc, caches))
+		bundle_jobs = bundles.map(|bundle| bundle_job(bundle, bundle_opt, bundle_roc, bundle_caches))
+		server_jobs = servers.map(|file| server_job(file, server_name(file), server_roc, caches))
 		# Watch before building, so a file saved while the first builds run is
 		# not lost. The folders the builds read are known once they have run.
 		before = watch_config!(root, bundles, servers, public_dir, options.poll)?
@@ -227,8 +237,9 @@ Dev :: [].{
 			watch,
 			poll: options.poll,
 			jobs,
-			roc,
+			roc: server_roc,
 			caches,
+			bundle_opt,
 			bundle_roc,
 			bundle_caches,
 		})
@@ -276,7 +287,9 @@ DevState : {
 	## The roc caches of the builds, see Compile.cache_root!.
 	caches : Str,
 
-	## What a bundle's build gets on top of its own flags, and its caches.
+	## What a bundle's build gets: its --opt, the flags on top of its own,
+	## and its caches.
+	bundle_opt : Str,
 	bundle_roc : List(Str),
 	bundle_caches : Str,
 }
@@ -418,7 +431,7 @@ tell_pages! = |state| {
 job_for : DevState, Str -> Try(Compile.Job, [Gone])
 job_for = |state, name|
 	match state.bundles.find_first(|bundle| bundle.id == name) {
-		Ok(bundle) => Ok(bundle_job(bundle, state.bundle_roc, state.bundle_caches))
+		Ok(bundle) => Ok(bundle_job(bundle, state.bundle_opt, state.bundle_roc, state.bundle_caches))
 		Err(_) =>
 			match state.servers.find_first(|file| server_name(file) == name) {
 				Ok(file) => Ok(server_job(file, name, state.roc, state.caches))
@@ -457,12 +470,12 @@ handle_result! = |result, events, _session, _build|
 served_path : Compile.Job -> Str
 served_path = |job| job.output.replace_first(".joy/dev/staging/", ".joy/dev/")
 
-bundle_job : Project.Bundle, List(Str), Str -> Compile.Job
-bundle_job = |bundle, roc, caches| {
+bundle_job : Project.Bundle, Str, List(Str), Str -> Compile.Job
+bundle_job = |bundle, opt, roc, caches| {
 	name: bundle.id,
 	file: bundle.file,
 	output: ".joy/dev/staging/client/${bundle.id}/app.wasm",
-	args: Build.bundle_args("size", False, roc),
+	args: Build.bundle_args(opt, False, roc),
 	inputs: ".joy/dev/inputs/${safe_name(bundle.id)}",
 	cache: Compile.bundle_cache(caches),
 	own_warnings_fail: False,

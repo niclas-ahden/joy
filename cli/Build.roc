@@ -27,7 +27,7 @@ import Stylesheet
 ##
 ## The other functions here are shared with `./joy dev`.
 Build :: [].{
-	Options : { out_dir : Str, opt : Str, debug : Bool, jobs : Try(Str, [NoValue]), no_server : Bool, server_opt : Str, server_target : Try(Str, [NoValue]), public_dir : Str, client_url : Try(Str, [NoValue]), before : List(Str) }
+	Options : { out_dir : Str, opt : Str, debug : Bool, jobs : Try(Str, [NoValue]), no_server : Bool, server_opt : Str, server_target : Try(Str, [NoValue]), specialize : Try(Str, [NoValue]), server_specialize : Try(Str, [NoValue]), public_dir : Str, client_url : Try(Str, [NoValue]), before : List(Str) }
 
 	## `./joy build` as a weaver subcommand, which also writes its --help.
 	command : (Build.Options -> command) -> SubCmd.SubcommandParserConfig(command)
@@ -41,6 +41,8 @@ Build :: [].{
 				no_server: Opt.flag({ short: "", long: "no-server", help: "Build the bundles alone." }),
 				server_opt: Opt.str({ short: "", long: "server-opt", help: "The server's roc --opt.", default: Value("speed") }),
 				server_target: Opt.maybe_str({ short: "", long: "server-target", help: "Cross-compile the server, roc's --target." }),
+				specialize: Opt.maybe_str({ short: "", long: "specialize", help: "The bundles' roc --specialize, yes or no. Unset, roc's default." }),
+				server_specialize: Opt.maybe_str({ short: "", long: "server-specialize", help: "The server's roc --specialize, yes or no. Unset, roc's default." }),
 				public_dir: Opt.str({ short: "", long: "public-dir", help: "The folder of files copied as they are.", default: Value("public") }),
 				client_url: Opt.maybe_str({ short: "", long: "client-url", help: "Where the app serves client/, / by default. Stylesheets and pages in public/ get the hashed names of files below it too. ($JOY_CLIENT_URL)" }),
 				before: Opt.str_list({ short: "", long: "before", help: "Run this command in a shell first, and stop if it fails, to compile what goes in assets/. Repeatable." }),
@@ -95,7 +97,7 @@ Build :: [].{
 							Ok(given) => ["--target=${given}"]
 							Err(NoValue) => []
 						}
-					args = ["build", "--opt=${server_opt}"].concat(target).concat(if (Generated.used_by!(file)) replace else []).concat(roc)
+					args = ["build", "--opt=${server_opt}"].concat(specialize_flag(options.server_specialize)).concat(target).concat(if (Generated.used_by!(file)) replace else []).concat(roc)
 					[
 						{
 							name: "server",
@@ -113,7 +115,7 @@ Build :: [].{
 		bundle_jobs = bundles.map_try!(
 			|bundle| {
 				Path.utf8("${out}/client/${bundle.id}").create_all!()?
-				args = bundle_args(opt, debug, (if (Generated.used_by!(bundle.file)) replace else []).concat(roc))
+				args = bundle_args(opt, debug, specialize_flag(options.specialize).concat(if (Generated.used_by!(bundle.file)) replace else []).concat(roc))
 				Ok({
 					name: bundle.id,
 					file: bundle.file,
@@ -168,6 +170,14 @@ Build :: [].{
 		match System.target!().os() {
 			Windows(_) => Cmd.new(OsStr.from_str("cmd")).args(["/C", line].map(OsStr.from_str))
 			_ => Cmd.new(OsStr.from_str("sh")).args(["-c", line].map(OsStr.from_str))
+		}
+
+	## roc's --specialize when one is given, and nothing for roc's default.
+	specialize_flag : Try(Str, [NoValue]) -> List(Str)
+	specialize_flag = |given|
+		match given {
+			Ok(value) => ["--specialize=${value}"]
+			Err(NoValue) => []
 		}
 
 	## The roc flags of a bundle's build, with Joy's 1 MiB wasm stack.
