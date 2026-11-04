@@ -50,8 +50,8 @@ Names := {
 			# server built with --opt=dev --specialize=no gets False from
 			# `assets.contains((name, path))` for a pair the list holds, so it
 			# refuses its own assets.json, while `any` with `==` on the same
-			# list is right. It depends on the rest of the program, so there
-			# is no repro yet. Go back to `contains` once that is fixed.
+			# list is right: https://github.com/roc-lang/roc/issues/12828.
+			# Go back to `contains` once that is fixed.
 			if !assets.any(|(given, file)| given == name and file == path) {
 				return Err(AssetsDiffer(name))
 			}
