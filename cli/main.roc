@@ -4,7 +4,7 @@
 app [main!] {
 	http: "https://github.com/roc-lang/http/releases/download/1.0.0/6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst",
 	joy_runtime: "../tools/runtime/main.roc",
-	pf: platform "https://github.com/growthagent/joy-cli-platform/releases/download/0.1.0-rc1/71QJT9cSt2W6XM4ovm4w6A2PAnq9uUpzn7jxT8PiTGqX.tar.zst",
+	pf: platform "https://github.com/growthagent/joy-cli-platform/releases/download/0.1.0-rc2/GRtP7M2SpyV7QhXgN5kHKsP7qw5hpghZ1ymQKB8z45ca.tar.zst",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
 }
 

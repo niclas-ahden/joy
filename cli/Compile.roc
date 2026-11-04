@@ -97,10 +97,29 @@ Compile :: [].{
 	bundle_cache : Str -> Str
 	bundle_cache = |root| "${root}/bundles"
 
-	## Collect the builds that finished, then start queued ones until `jobs`
-	## run. Returns at once.
-	step! : State, U64 => Try(State, _)
-	step! = |state, jobs| {
+	## How many builds run at once: all of them, or at most what --jobs says.
+	Limit : [All, AtMost(U64)]
+
+	## Whether another build may start beside `running` others.
+	has_room : Limit, U64 -> Bool
+	has_room = |limit, running|
+		match limit {
+			All => True
+			AtMost(jobs) => running < jobs
+		}
+
+	## The end of the line that announces the builds, nothing without a limit.
+	at_a_time : Limit -> Str
+	at_a_time = |limit|
+		match limit {
+			All => ""
+			AtMost(jobs) => ", ${jobs.to_str()} at a time"
+		}
+
+	## Collect the builds that finished, then start queued ones while `limit`
+	## has room. Returns at once.
+	step! : State, Limit => Try(State, _)
+	step! = |state, limit| {
 		var $running = []
 		var $done = state.done
 		for running in state.running {
@@ -117,7 +136,7 @@ Compile :: [].{
 			}
 		}
 		var $queue = state.queue
-		while $running.len() < jobs and !$queue.is_empty() {
+		while has_room(limit, $running.len()) and !$queue.is_empty() {
 			match $queue {
 				[job, .. as rest] => {
 					$queue = rest
@@ -136,18 +155,18 @@ Compile :: [].{
 		Ok({ queue: $queue, running: $running, done: $done })
 	}
 
-	## Run every job, `jobs` at a time, and wait for all of them. `finished!`
+	## Run every job, within `limit`, and wait for all of them. `finished!`
 	## hears about each build as it ends.
-	run_all! : List(Job), U64, (Compile.Result => Try({}, _)) => Try(List(Compile.Result), _)
-	run_all! = |all, jobs, finished!| {
+	run_all! : List(Job), Limit, (Compile.Result, U64 => Try({}, _)) => Try(List(Compile.Result), _)
+	run_all! = |all, limit, finished!| {
 		var $state = { queue: all, running: [], done: [] }
 		var $reported = 0
 		while !$state.queue.is_empty() or !$state.running.is_empty() {
-			$state = step!($state, jobs)?
+			$state = step!($state, limit)?
 			for result in $state.done.drop_first($reported) {
-				finished!(result)?
+				$reported = $reported + 1
+				finished!(result, $reported)?
 			}
-			$reported = $state.done.len()
 			if !$state.running.is_empty() {
 				Sleep.millis!(20)?
 			}
@@ -257,3 +276,9 @@ replace_deps = |args|
 
 expect replace_deps(["build", "--replace-dep", "a", "b", "--opt=dev", "--replace-dep", "c", "d"]) == ["a", "b", "c", "d"]
 expect replace_deps(["build", "--opt=dev"]) == []
+
+expect Compile.has_room(All, 1000)
+expect Compile.has_room(AtMost(2), 1)
+expect !Compile.has_room(AtMost(2), 2)
+expect Compile.at_a_time(All) == ""
+expect Compile.at_a_time(AtMost(3)) == ", 3 at a time"

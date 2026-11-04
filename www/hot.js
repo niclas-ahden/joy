@@ -279,7 +279,7 @@ function adopt(app, cap) {
       report(await run);
     } catch (err) {
       console.error(err);
-      overlay.show(`The app crashed while picking up where it was, so it started over.\n\n${describe(err)}`);
+      overlay.report(bundleOf(cap), `The app crashed while picking up where it was, so it started over.\n\n${describe(err)}`);
       control.letGo();
     }
   };
@@ -362,8 +362,15 @@ function instrument(rt) {
 
   // Answers this app passes on once retired, by callback: those of the calls in
   // flight its successor took over (see goLive), which is also how they reach a
-  // successor of the successor.
+  // successor of the successor. One effect repeated in a list is one callback
+  // waiting for several answers, so each callback has a list.
   const forwards = new Map();
+  const nextForward = (cb) => {
+    const waiting = forwards.get(cb);
+    const forward = waiting?.shift();
+    if (waiting?.length === 0) forwards.delete(cb);
+    return forward;
+  };
 
   // The last dialog effect for each selector, run or, while replaying, held:
   // the state this app leaves its dialogs in.
@@ -419,9 +426,8 @@ function instrument(rt) {
       const inputs = args.slice(0, op.inputs);
       if (op.answer) {
         settle(source);
-        const forward = forwards.get(source);
+        const forward = nextForward(source);
         if (forward) {
-          forwards.delete(source);
           forward(inputs[0]);
           return;
         }
@@ -438,9 +444,8 @@ function instrument(rt) {
   // A call that ended without an answer, which a successor may be waiting on.
   ops.endCall = (cb) => {
     settle(cb);
-    const forward = forwards.get(cb);
+    const forward = nextForward(cb);
     if (forward) {
-      forwards.delete(cb);
       forward(null);
       return;
     }
@@ -1016,7 +1021,7 @@ function instrument(rt) {
     inFlight: () => inFlight,
     leftovers: () => replaying.oneShots,
     dialogs: () => dialogs,
-    forward: (cb, deliver) => forwards.set(cb, deliver),
+    forward: (cb, deliver) => forwards.set(cb, [...(forwards.get(cb) ?? []), deliver]),
     catchUp,
     retire,
     goLive,
@@ -1042,6 +1047,12 @@ function sessionKey(cap) {
   const base = `joy/session/${typeof cap.wasm === 'string' ? cap.wasm : 'app'}/`;
   const place = [...hot.apps].filter((app) => sessionKeys.get(app).startsWith(base)).length;
   return `${base}${place}`;
+}
+
+// What to call the bundle an app runs when reporting on it. An app mounted by hand
+// has no id, so its module's URL says.
+function bundleOf(cap) {
+  return cap.root.dataset?.joyBundle ?? (typeof cap.wasm === 'string' ? cap.wasm : 'app');
 }
 
 // The apps a rebuild of the bundle `id` reaches. An app mounted by hand has no
@@ -1125,41 +1136,54 @@ function connect(port) {
   let queue = Promise.resolve();
   let build = null;
   let leaving = false;
+  let events = null;
 
-  const events = new EventSource(`${location.protocol}//${location.hostname}:${port}/.joy/events`);
+  function listen() {
+    events = new EventSource(`${location.protocol}//${location.hostname}:${port}/.joy/events`);
 
-  // A reconnect, to a dev server that restarted or after a rebuild this page
-  // never heard of.
-  events.addEventListener('hello', (e) => {
-    if (build !== null && build !== e.data) leave();
-    build = e.data;
-  });
+    // A reconnect, to a dev server that restarted or after a rebuild this page
+    // never heard of.
+    events.addEventListener('hello', (e) => {
+      if (build !== null && build !== e.data) leave();
+      build = e.data;
+    });
 
-  events.addEventListener('reload', (e) => {
-    queue = queue.then(() => reloadBundle(e.data));
-  });
+    events.addEventListener('reload', (e) => {
+      queue = queue.then(() => reloadBundle(e.data));
+    });
 
-  events.addEventListener('server', () => leave());
+    events.addEventListener('server', () => leave());
 
-  events.addEventListener('failed', (e) => {
-    const [name, ...log] = e.data.split('\n');
-    console.error(`Joy: ${name} failed to build\n${log.join('\n')}`);
-    overlay.show(log.join('\n'));
-  });
-  events.addEventListener('fixed', () => overlay.hide());
+    events.addEventListener('failed', (e) => {
+      const [name, ...log] = e.data.split('\n');
+      console.error(`Joy: ${name} failed to build\n${log.join('\n')}`);
+      overlay.report(name, log.join('\n'));
+    });
+    events.addEventListener('fixed', (e) => overlay.clear(e.data));
 
-  events.addEventListener('asset', (e) => {
-    const file = `/${e.data}`;
-    const sheets = [...document.querySelectorAll('link[rel="stylesheet"]')].filter((link) => new URL(link.href).pathname.endsWith(file));
-    if (sheets.length > 0) {
-      for (const link of sheets) {
-        const url = new URL(link.href);
-        url.searchParams.set('joy', String(Date.now()));
-        link.href = url.href;
+    events.addEventListener('asset', (e) => {
+      const file = `/${e.data}`;
+      const sheets = [...document.querySelectorAll('link[rel="stylesheet"]')].filter((link) => new URL(link.href).pathname.endsWith(file));
+      if (sheets.length > 0) {
+        for (const link of sheets) {
+          const url = new URL(link.href);
+          url.searchParams.set('joy', String(Date.now()));
+          link.href = url.href;
+        }
+      } else if (performance.getEntriesByType('resource').some((entry) => new URL(entry.name).pathname.endsWith(file))) {
+        leave();
       }
-    } else if (performance.getEntriesByType('resource').some((entry) => new URL(entry.name).pathname.endsWith(file))) {
-      leave();
-    }
+    });
+  }
+  listen();
+
+  // A browser can keep a page it left, for Back and Forward, and the page's
+  // stream stays open with it. A browser opens 6 connections to a port, so a few
+  // clicks would use them up. A page that comes back listens again, and `hello`
+  // tells it if it missed a build.
+  addEventListener('pagehide', () => events.close());
+  addEventListener('pageshow', (e) => {
+    if (e.persisted) listen();
   });
 
   // The page takes the new files only if the browser asks for them again.
@@ -1174,6 +1198,7 @@ function connect(port) {
     // No app means the page never got one going, most likely because it opened
     // while the build was broken, or that it does not hold this bundle.
     if (hot.apps.size === 0) return leave();
+    overlay.clear(id);
     for (const app of apps) {
       // A build without hot reloading (./joy dev --no-hot) can only start over.
       if (hot.session(app) === null) return leave();
@@ -1181,7 +1206,7 @@ function connect(port) {
         report(await app.reload(undefined, { replay: hot.replay }));
       } catch (err) {
         console.error(err);
-        overlay.show(`The rebuilt app crashed while starting, so the page keeps running the previous build.\n\n${describe(err)}`);
+        overlay.report(id, `The rebuilt app crashed while starting, so the page keeps running the previous build.\n\n${describe(err)}`);
       }
     }
   }
@@ -1256,8 +1281,23 @@ const describe = (err) => [err, err.cause].filter(Boolean).map(String).join('\n'
 // cannot reach it and its own cannot leak out.
 const overlay = {
   host: null,
-  show(text) {
+  // What is wrong now, by the bundle it is about, with a tab for each when there
+  // are several. The newest report is the one on show.
+  reports: new Map(),
+  current: null,
+  report(name, text) {
+    this.reports.set(name, text);
+    this.current = name;
+    this.show();
+  },
+  clear(name) {
+    if (!this.reports.delete(name)) return;
+    if (this.current === name) this.current = [...this.reports.keys()].at(-1) ?? null;
+    this.show();
+  },
+  show() {
     if (!globalThis.document) return;
+    if (this.reports.size === 0) return this.hide();
     if (!this.host) {
       this.host = document.createElement('joy-build-report');
       const shadow = this.host.attachShadow({ mode: 'open' });
@@ -1266,14 +1306,30 @@ const overlay = {
           div { position: fixed; inset: 0; z-index: 2147483647; overflow: auto; padding: 24px;
                 background: rgba(20, 20, 24, 0.94); color: #eee; font: 14px/1.5 ui-monospace, monospace; }
           pre { white-space: pre-wrap; margin: 0; }
-          button { position: fixed; top: 12px; right: 16px; font: inherit; color: inherit;
-                   background: none; border: 1px solid #888; border-radius: 4px; padding: 2px 10px; cursor: pointer; }
+          button { font: inherit; color: inherit; background: none; border: 1px solid #888; border-radius: 4px;
+                   padding: 2px 10px; cursor: pointer; }
+          .close { position: fixed; top: 12px; right: 16px; }
+          nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 80px 16px 0; }
+          nav:empty { display: none; }
+          [aria-selected="true"] { background: #eee; color: #141418; }
         </style>
-        <div><button title="Hide until the next build">close</button><pre></pre></div>`;
-      shadow.querySelector('button').onclick = () => this.hide();
+        <div><button class="close" title="Hide until the next build">close</button><nav role="tablist"></nav><pre></pre></div>`;
+      shadow.querySelector('.close').onclick = () => this.hide();
     }
+    const tabs = [...this.reports.keys()].map((name) => {
+      const tab = document.createElement('button');
+      tab.textContent = name;
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-selected', String(name === this.current));
+      tab.onclick = () => {
+        this.current = name;
+        this.show();
+      };
+      return tab;
+    });
+    this.host.shadowRoot.querySelector('nav').replaceChildren(...(tabs.length > 1 ? tabs : []));
     // roc colors its report on a terminal. Drop the escapes.
-    this.host.shadowRoot.querySelector('pre').textContent = text.replace(/\x1b\[[0-9;]*m/g, '');
+    this.host.shadowRoot.querySelector('pre').textContent = this.reports.get(this.current).replace(/\x1b\[[0-9;]*m/g, '');
     if (!this.host.isConnected) document.documentElement.append(this.host);
   },
   hide() {

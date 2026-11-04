@@ -63,5 +63,19 @@ main! = |_args| {
 	HotDev.same_page!(page)?
 	assert!(page.find("#count").has_text("3"))?
 
+	# A page opened while the build is broken shows the report too.
+	HotDev.edit!(file, "client four", "client four\" oops = = \"")?
+	HotDev.reports!(page, "oops")?
+	HotDev.open!(page, "${url}/", "[data-joy-mounted]")?
+	HotDev.reports!(page, "oops")?
+	HotDev.edit!(file, "client four\" oops = = \"", "client five")?
+	HotDev.no_report!(page)?
+
+	# A rebuilt app that crashes while starting is reported until one that starts.
+	HotDev.edit!(file, "init = |flags| (", "init = |_| crash \"boom\"\n\nnot_init = |flags| (")?
+	HotDev.reports!(page, "crashed while starting")?
+	HotDev.edit!(file, "init = |_| crash \"boom\"\n\nnot_init = |flags| (", "init = |flags| (")?
+	HotDev.no_report!(page)?
+
 	HotDev.stop!(started)
 }

@@ -37,7 +37,7 @@ Build :: [].{
 				out_dir: Opt.str({ short: "", long: "out-dir", help: "Write here instead of dist/, a directory inside the project.", default: Value("dist") }),
 				opt: Opt.str({ short: "", long: "opt", help: "The bundles' roc --opt: size, speed or dev.", default: Value("size") }),
 				debug: Opt.flag({ short: "", long: "debug", help: "The whole runtime, and roc's --debug." }),
-				jobs: Opt.maybe_str({ short: "", long: "jobs", help: "Builds at a time, 4 by default." }),
+				jobs: Opt.maybe_str({ short: "", long: "jobs", help: "Limit how many builds run at once. Without it they all start at once." }),
 				no_server: Opt.flag({ short: "", long: "no-server", help: "Build the bundles alone." }),
 				server_opt: Opt.str({ short: "", long: "server-opt", help: "The server's roc --opt.", default: Value("speed") }),
 				server_target: Opt.maybe_str({ short: "", long: "server-target", help: "Cross-compile the server, roc's --target." }),
@@ -128,9 +128,9 @@ Build :: [].{
 			},
 		)?
 		count = (server_jobs.len() + bundle_jobs.len()).to_str()
-		Stdout.line!("Building ${count} at --opt=${opt}${if (server == None) "" else ", the server at --opt=${server_opt}"}, ${jobs.to_str()} at a time")?
+		Stdout.line!("Building ${count} at --opt=${opt}${if (server == None) "" else ", the server at --opt=${server_opt}"}${Compile.at_a_time(jobs)}")?
 		# The server starts first, since it is usually the longest build.
-		results = Compile.run_all!(server_jobs.concat(bundle_jobs), jobs, report!)?
+		results = Compile.run_all!(server_jobs.concat(bundle_jobs), jobs, |result, _done| report!(result))?
 		failed = results.keep_if(|result| result.outcome == Failed)
 		if !failed.is_empty() {
 			return fail!("${failed.len().to_str()} of ${results.len().to_str()} builds failed, so ${out}/ is incomplete.")
@@ -320,13 +320,13 @@ Build :: [].{
 		"/${value.drop_prefix("/").drop_suffix("/")}/".replace_each("//", "/")
 	}
 
-	parse_jobs! : [Some(Str), None] => Try(U64, _)
+	parse_jobs! : [Some(Str), None] => Try(Compile.Limit, _)
 	parse_jobs! = |given|
 		match given {
-			None => Ok(4)
+			None => Ok(All)
 			Some(text) =>
 				match U64.from_str(text) {
-					Ok(jobs) if jobs > 0 => Ok(jobs)
+					Ok(jobs) if jobs > 0 => Ok(AtMost(jobs))
 					_ => fail!("--jobs takes a number of builds to run at once, not ${text}.")
 				}
 		}

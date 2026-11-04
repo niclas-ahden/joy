@@ -56,6 +56,8 @@ Dev :: [].{
 		server : List(Str),
 		no_server : Bool,
 		proxy : List(Str),
+		mount : List(Str),
+		mount_download : List(Str),
 		client_url : Try(Str, [NoValue]),
 		public_dir : Str,
 		poll : Bool,
@@ -71,14 +73,16 @@ Dev :: [].{
 	command = |wrap|
 		SubCmd.finish(
 			{
-				jobs: Opt.maybe_str({ short: "", long: "jobs", help: "Builds at a time, 4 by default." }),
+				jobs: Opt.maybe_str({ short: "", long: "jobs", help: "Limit how many builds run at once. Without it they all start at once." }),
 				serve_files: Opt.flag({ short: "", long: "serve-files", help: "Serve the files under the client URL and pass everything else to the project's server, as a proxy or a CDN in front of it does in production. Without it the server serves its own files. The server listens on $PORT, which ./joy picks when unset. ($JOY_SERVE_FILES=1)" }),
 				port: Opt.maybe_str({ short: "", long: "port", help: "Where ./joy serves the pages, with --serve-files or when the project has no server, 8000 or the next free one. ($JOY_PORT)" }),
-				events_port: Opt.maybe_str({ short: "", long: "events-port", help: "Where ./joy sends its events when the project's server serves the pages. ($JOY_EVENTS_PORT)" }),
+				events_port: Opt.maybe_str({ short: "", long: "events-port", help: "Where ./joy sends its events, the port it had last time or one the system picks. ($JOY_EVENTS_PORT)" }),
 				host: Opt.maybe_str({ short: "", long: "host", help: "The address to listen on, localhost by default. ($JOY_HOST)" }),
 				server: Opt.str_list({ short: "", long: "server", help: "Start this server instead of server/main.roc, repeatable." }),
 				no_server: Opt.flag({ short: "", long: "no-server", help: "Start no server, only the dev server." }),
 				proxy: Opt.str_list({ short: "", long: "proxy", help: "PATH=URL: forward requests under PATH to a backend, repeatable. ($JOY_PROXY, space separated)" }),
+				mount: Opt.str_list({ short: "", long: "mount", help: "PATH=DIR: serve the files of the folder DIR under PATH, as the file server that holds them does in production, and create it if it is missing. Repeatable. ($JOY_MOUNT, space separated)" }),
+				mount_download: Opt.str_list({ short: "", long: "mount-download", help: "PATH=DIR: like --mount, with each file answered as a download. Repeatable. ($JOY_MOUNT_DOWNLOAD, space separated)" }),
 				client_url: Opt.maybe_str({ short: "", long: "client-url", help: "Where the app serves client/, / by default. ($JOY_CLIENT_URL)" }),
 				public_dir: Opt.str({ short: "", long: "public-dir", help: "The folder of files served as they are.", default: Value("public") }),
 				poll: Opt.flag({ short: "", long: "poll", help: "Compare files on a timer, for filesystems that send no events." }),
@@ -125,6 +129,7 @@ Dev :: [].{
 		for dir in [".joy/dev/client", ".joy/dev/inputs", ".joy/dev/staging", ".joy/dev/servers"] {
 			Path.utf8(dir).create_all!()?
 		}
+		write_status!("Preparing the builds")?
 		bundle_opt = setting!(Args.given(options.opt), "JOY_OPT") ?? "size"
 		specialize! = |given, variable| Build.specialize_flag(setting!(Args.given(given), variable).map_err(|_| NoValue))
 		bundle_roc = specialize!(options.specialize, "JOY_SPECIALIZE").concat(if (options.no_hot) [] else hot_platform!(bundles, root)?).concat(roc)
@@ -153,38 +158,60 @@ Dev :: [].{
 				None if serve_files => Some(free_port!({})?)
 				other => other
 			}
-		behind =
+		server_url =
 			match server_port {
-				Some(port) if serve_files => [("/", "http://127.0.0.1:${port.to_str()}")]
-				_ => []
+				Some(port) if serve_files => Some("http://127.0.0.1:${port.to_str()}")
+				_ => None
+			}
+		behind =
+			match server_url {
+				Some(url) => [("/", url)]
+				None => []
 			}
 		server_env =
 			match server_port {
 				Some(port) if serve_files => [("PORT", port.to_str())]
 				_ => []
 			}
-		proxy_settings = (Env.var_str!(OsStr.from_str("JOY_PROXY")) ?? "").split_on(" ").drop_if(|part| part.is_empty())
-		proxies = options.proxy.concat(proxy_settings).map_try!(parse_proxy!)?.concat(behind)
+		proxies = options.proxy.concat(setting_words!("JOY_PROXY")).map_try!(parse_proxy!)?.concat(behind)
+		mounts = start_mounts!(
+			options.mount.concat(setting_words!("JOY_MOUNT")).map_try!(|given| parse_mount!("--mount", given))?.map(|(prefix, dir)| { prefix, dir, download: False }),
+			options.mount_download.concat(setting_words!("JOY_MOUNT_DOWNLOAD")).map_try!(|given| parse_mount!("--mount-download", given))?.map(|(prefix, dir)| { prefix, dir, download: True }),
+		)?
 		roots = ["client", "public", "assets"].keep_if_try!(|name| Ok(Path.utf8(root_dir(name, public_dir)).is_dir!() ?? False))?
 		# The dev server is the front door when no server serves the pages, or
-		# when it forwards to one. With --no-server the project's own server runs
-		# on its own, so the dev server only sends events.
+		# when it forwards to one or serves a folder. With --no-server the
+		# project's own server runs on its own, so the dev server only sends
+		# events.
 		no_server = options.no_server
-		front_door = (servers.is_empty() and !no_server) or !proxies.is_empty()
-		site = { client_url, public_dir, roots, proxies, fallback: servers.is_empty() and !no_server }
+		front_door = (servers.is_empty() and !no_server) or !proxies.is_empty() or !mounts.is_empty()
+		site = { client_url, public_dir, roots, proxies, mounts, server_url, fallback: servers.is_empty() and !no_server }
 		dev_server = start_dev_server!(options, host, events, site, front_door)?
 		dev_port = dev_server.port()
+		# A browser opens 6 connections to a port, and every open page holds one
+		# for its events, so on the port of the pages a few tabs would leave the
+		# page being opened waiting for a connection.
+		events_port =
+			if front_door {
+				events_site = { ..site, roots: [], proxies: [], mounts: [], server_url: None, fallback: False }
+				start_dev_server!(options, host, events, events_site, False)?.port()
+			} else {
+				dev_port
+			}
 		if front_door {
-			Stdout.line!("Serving the pages on http://${host}:${dev_port.to_str()}/")?
+			Stdout.line!("Starting on http://${host}:${dev_port.to_str()}/")?
 			match server_port {
 				Some(port) if serve_files => Stdout.line!("  the files under ${client_url} from the builds, and everything else from the server on ${port.to_str()}")?
 				_ => {}
+			}
+			for mount in mounts {
+				Stdout.line!("  the files under ${mount.prefix} from ${mount.dir}")?
 			}
 		} else {
 			Stdout.line!("The dev server sends events on http://${host}:${dev_port.to_str()}/.joy/events")?
 		}
 
-		write_dev_files!(bundles, dev_port, public_dir, client_url)?
+		write_dev_files!(bundles, events_port, public_dir, client_url)?
 		names = servers.map(server_name)
 		# Dev builds swap in nothing but what follows `--`, so every job has the
 		# same caches, see Compile.cache_root!.
@@ -197,21 +224,41 @@ Dev :: [].{
 		before = watch_config!(root, bundles, servers, public_dir, options.poll)?
 		watch = Watch.start!({ folders: before.folders, trees: before.trees, skip: before.skip, poll: before.poll })?
 		watchers = options.watch.map_try!(start_watcher!)?
-		Stdout.line!("Building ${(bundle_jobs.len() + server_jobs.len()).to_str()}, ${jobs.to_str()} at a time")?
-		results = Compile.run_all!(server_jobs.concat(bundle_jobs), jobs, |result| handle_result!(result, events, session, 0).map_ok(|_| {}))?
-		failed = results.keep_if(|result| result.outcome == Failed).map(|result| result.job.name)
+		total = (bundle_jobs.len() + server_jobs.len()).to_str()
+		Stdout.line!("Building ${total}${Compile.at_a_time(jobs)}")?
+		write_status!("Building: 0 of ${total} done")?
+		results = Compile.run_all!(
+			server_jobs.concat(bundle_jobs),
+			jobs,
+			|result, done| {
+				_ = handle_result!(result, events, session, 0)?
+				write_status!("Building: ${done.to_str()} of ${total} done")
+			},
+		)?
+		failed = results.keep_if(|result| result.outcome == Failed).map(|result| { name: result.job.name, log: result.log })
+		greet!(events, session, 0, failed)
 		var $children = []
 		for name in names {
-			if !failed.contains(name) {
+			if failed.any(|broken| broken.name == name) {
+				write_status!(did_not_build)?
+			} else {
 				$children = $children.append(start_server!(root, name, server_env)?)
 			}
 		}
 
-		# A server that serves its own files is asked for the loader once it
-		# runs, see check_server!.
+		pages_url =
+			match server_port {
+				Some(port) if !front_door => "http://${host}:${port.to_str()}/"
+				_ => "http://${host}:${dev_port.to_str()}/"
+			}
+		# A server's pages are ready once it answers, see check_server!. Without
+		# one they are ready now.
+		if names.is_empty() and front_door {
+			Stdout.line!("Ready on ${pages_url}")?
+		}
 		check =
-			match given_port {
-				Some(port) if !serve_files and port != 0 and !names.is_empty() => if ($children.is_empty()) Waiting(port) else Pending({ port, since: Monotonic.now!() })
+			match server_port {
+				Some(port) if port != 0 and !names.is_empty() => if ($children.is_empty()) Waiting(port) else Pending({ port, since: Monotonic.now!() })
 				_ => Done
 			}
 		watched = watch_config!(root, bundles, servers, public_dir, options.poll)?
@@ -233,6 +280,8 @@ Dev :: [].{
 			watchers,
 			server_env,
 			client_url,
+			serve_files,
+			pages_url,
 			check,
 			watch,
 			poll: options.poll,
@@ -260,7 +309,7 @@ DevState : {
 	events : Events,
 	session : Str,
 	build : U64,
-	failed : List(Str),
+	failed : List({ name : Str, log : Str }),
 
 	## The builds that finished clean since open pages last heard, see
 	## tell_pages!.
@@ -275,13 +324,17 @@ DevState : {
 	## What a started server gets in its environment besides ./joy's own.
 	server_env : List((Str, Str)),
 	client_url : Str,
+	serve_files : Bool,
+
+	## Where the pages are, for the line that says they are ready.
+	pages_url : Str,
 
 	## The server on $PORT, before it starts and while ./joy waits for it to
 	## answer, see check_server!.
 	check : [Waiting(U16), Pending({ port : U16, since : Monotonic }), Done],
 	watch : Watch,
 	poll : Bool,
-	jobs : U64,
+	jobs : Compile.Limit,
 	roc : List(Str),
 
 	## The roc caches of the builds, see Compile.cache_root!.
@@ -315,7 +368,12 @@ loop! = |initial| {
 		}
 		if !$stopped {
 			$state = step_builds!($state)?
-			$state = { ..$state, children: $state.children.map_try!(|child| forward_output!(child, "./joy starts it again after the next build."))? }
+			after_exit = "./joy starts it again after the next build."
+			children = $state.children.map_try!(|child| forward_output!(child, after_exit))?
+			if children.any(|child| child.ended) and !$state.children.any(|child| child.ended) {
+				write_status!("The server exited. ${after_exit}")?
+			}
+			$state = { ..$state, children }
 			$state = { ..$state, watchers: $state.watchers.map_try!(|child| forward_output!(child, "./joy does not start it again."))? }
 			$state = check_server!($state)?
 		}
@@ -385,21 +443,26 @@ step_builds! = |state| {
 	for result in compile.done {
 		build = $state.build + 1
 		outcome = handle_result!(result, $state.events, $state.session, build)?
-		was_failing = $state.failed.contains(result.job.name)
+		was_failing = $state.failed.any(|broken| broken.name == result.job.name)
 		match outcome {
 			Built => {
-				$state = { ..$state, build, failed: $state.failed.drop_if(|name| name == result.job.name), landed: $state.landed.append(result.job.name) }
+				$state = { ..$state, build, failed: $state.failed.drop_if(|broken| broken.name == result.job.name), landed: $state.landed.append(result.job.name) }
 				if $state.names.contains(result.job.name) {
 					$state = restart_server!($state, result.job.name)?
 				}
-				$state.events.set_greeting!([hello($state.session, build)])
+				greet!($state.events, $state.session, build, $state.failed)
 				if was_failing {
 					_ = $state.events.publish!(Sse.Event.named("fixed", [result.job.name]))
 					{}
 				}
 			}
 			Failed => {
-				$state = { ..$state, failed: if (was_failing) $state.failed else $state.failed.append(result.job.name) }
+				failed = $state.failed.drop_if(|broken| broken.name == result.job.name).append({ name: result.job.name, log: result.log })
+				$state = { ..$state, failed }
+				if $state.names.contains(result.job.name) {
+					write_status!(did_not_build)?
+				}
+				greet!($state.events, $state.session, $state.build, failed)
 			}
 		}
 	}
@@ -461,7 +524,7 @@ handle_result! = |result, events, _session, _build|
 		}
 		Failed => {
 			Stderr.line!("  ${result.job.name} failed:\n${result.log}")?
-			_ = events.publish!(Sse.Event.named("failed", [result.job.name, result.log]))
+			_ = events.publish!(report(result.job.name, result.log))
 			Ok(Failed)
 		}
 	}
@@ -560,19 +623,26 @@ folder_of = |file|
 ## What the dev server answers besides its event stream: the files under
 ## `client_url`, from the dev builds, assets/ and the public folder, the
 ## paths of each --proxy forwarded to its backend, and, with `fallback`,
-## index.html for a page path, as a single-page app needs.
+## index.html for a page path, as a single-page app needs. `server_url` is the
+## project's server when one sits behind the dev server, which then answers
+## for it while it is not up, see server_down!.
 Site : {
 	client_url : Str,
 	public_dir : Str,
 	roots : List(Str),
 	proxies : List((Str, Str)),
+	mounts : List(Mount),
+	server_url : [Some(Str), None],
 	fallback : Bool,
 }
 
+## A folder served under a path, and `root`, its name among the server's roots.
+Mount : { prefix : Str, dir : Str, root : Str, download : Bool }
+
 ## The dev server: the event stream, with CORS for pages another origin
 ## serves, and the files and proxies of `site`. As the front door it takes
-## --port, 8000 or the next free one. Beside a server that serves the pages
-## it takes the port it had last time, or one the system picks.
+## --port, 8000 or the next free one. For the events alone it takes the port it
+## had last time, or one the system picks.
 start_dev_server! : Dev.Options, Str, Events, Site, Bool => Try(Server, _)
 start_dev_server! = |options, host, events, site, front_door| {
 	if front_door {
@@ -596,13 +666,31 @@ start_dev_server! = |options, host, events, site, front_door| {
 ## Bind `port`, or the next free one, up to `tries` more.
 bind_from! : Str, U16, U16, Events, Site => Try(Server, _)
 bind_from! = |host, port, tries, events, site| {
-	roots = site.roots.map(|name| { name, path: Path.utf8(root_dir(name, site.public_dir)), cache: Revalidate })
-	match Server.start!({ host, port, roots }, |request| route!(events, site, request)) {
+	built_roots = site.roots.map(|name| { name, path: Path.utf8(root_dir(name, site.public_dir)), cache: Revalidate })
+	mount_roots = site.mounts.map(|mount| { name: mount.root, path: Path.utf8(mount.dir), cache: Revalidate })
+	roots = built_roots.concat(mount_roots)
+	match Server.start!({ host, port, roots, file_routes: file_routes(site), handlers: front_door_handlers }, |request| route!(events, site, request)) {
 		Ok(server) => Ok(server)
 		Err(ServerErr(AddrInUse)) if tries > 0 => bind_from!(host, port + 1, tries - 1, events, site)
 		Err(err) => Err(err)
 	}
 }
+
+## What the host answers by itself, so a file never waits behind a slow page.
+## The dev builds, public/ and assets/ share the client URL, and what none of
+## them has goes on to `route!`. A mount owns its path.
+file_routes : Site -> List(Server.FileRoute)
+file_routes = |site| {
+	built = if (site.roots.is_empty()) [] else [{ path: site.client_url, roots: site.roots, miss: AskHandler, download: False }]
+	built.concat(site.mounts.map(|mount| { path: mount.prefix, roots: [mount.root], miss: NotFound, download: mount.download }))
+}
+
+## A forwarded request holds its handler until the backend answers, even when
+## the browser has given up on it. So the dev server is never narrower than
+## basic-webserver's default of 32 behind it, or clicking through slow pages
+## holds up the next one.
+front_door_handlers : U16
+front_door_handlers = 32
 
 root_dir : Str, Str -> Str
 root_dir = |name, public_dir|
@@ -622,9 +710,11 @@ route! = |events, site, request| {
 	if path == "/.joy/events" {
 		return Ok(Server.stream(events, [{ name: "Access-Control-Allow-Origin", value: "*" }]))
 	}
-	if path.starts_with(site.client_url) {
-		relative = path.drop_prefix(site.client_url)
-		file = if (relative.is_empty() or relative.ends_with("/")) "${relative}index.html" else relative
+	# The host has answered every file by now, see file_routes, all but a
+	# folder's index.
+	relative = path.drop_prefix(site.client_url)
+	if path.starts_with(site.client_url) and (relative.is_empty() or relative.ends_with("/")) {
+		file = "${relative}index.html"
 		found = site.roots.keep_if_try!(|name| Ok(Path.utf8("${root_dir(name, site.public_dir)}/${file}").is_file!() ?? False))?
 		match found.first() {
 			Ok(name) => return Ok(Server.file(name, file))
@@ -632,7 +722,7 @@ route! = |events, site, request| {
 		}
 	}
 	match site.proxies.keep_if(|(prefix, _)| under(path, prefix)).sort_with(|(a, _), (b, _)| longer_first(a, b)).first() {
-		Ok((_, target)) => forward!(target, request)
+		Ok((_, target)) => forward!(site, target, request)
 		Err(_) =>
 		# A path without an extension is a page, so an app that changes the
 		# URL survives a refresh. A missing file with one is a 404, so a
@@ -663,17 +753,79 @@ hop_by_hop = ["connection", "keep-alive", "proxy-connection", "transfer-encoding
 ## behind a reverse proxy, and a remote one its own. The whole answer is read
 ## before it is passed on, so streamed answers and WebSockets do not go
 ## through.
-forward! : Str, Request.Request => Try(Server.Reply, _)
-forward! = |target, request| {
+forward! : Site, Str, Request.Request => Try(Server.Reply, _)
+forward! = |site, target, request| {
 	base = target.drop_suffix("/")
 	local = ["http://localhost", "http://127.0.0.1", "http://[::1]"].any(|start| base.starts_with(start))
 	headers = Request.headers(request).drop_if(|header| hop_by_hop.contains(header.name.with_ascii_lowercased()) or (!local and header.name.caseless_ascii_equals("host")))
 	outgoing = request.with_uri("${base}${Request.uri(request)}").with_headers(headers)
 	match Http.send!(outgoing, {}) {
 		Ok(response) => Ok(Server.respond(response.with_headers(Response.headers(response).drop_if(|header| hop_by_hop.contains(header.name.with_ascii_lowercased())))))
-		Err(err) => Ok(Server.respond(Response.from_status(502).with_body(Str.to_utf8("./joy dev could not reach ${base}: ${Str.inspect(err)}"))))
+		Err(err) => {
+			reason = "./joy dev could not reach ${base}: ${failure_text(err)}"
+			if site.server_url == Some(target) {
+				server_down!(request, reason)
+			} else {
+				hint = if (local) " Is it running?" else ""
+				Ok(Server.respond(Response.from_status(502).with_body(Str.to_utf8("${reason}.${hint}"))))
+			}
+		}
 	}
 }
+
+## Why a request failed, in words. The HTTP client's own message arrives as
+## bytes.
+failure_text : _ -> Str
+failure_text = |err|
+	match err {
+		HttpErr(Other(bytes)) => Str.from_utf8_lossy(bytes)
+		other => Str.inspect(other)
+	}
+
+## What the dev server answers for the project's server while that is not up:
+## what it is waiting for, and for a page, a document that asks again each
+## second, so the page opens by itself once the server answers.
+server_down! : Request.Request, Str => Try(Server.Reply, _)
+server_down! = |request, reason| {
+	status = Path.utf8(status_file).read_utf8!() ?? "The server is not answering"
+	wants_page = Request.method_str(request) == "GET" and Request.headers(request).any(|header| header.name.caseless_ascii_equals("accept") and header.value.contains("text/html"))
+	response =
+		if wants_page {
+			Response.from_status(503)
+				.with_headers([{ name: "Content-Type", value: "text/html; charset=utf-8" }])
+				.with_body(Str.to_utf8(waiting_page(status, reason)))
+		} else {
+			Response.from_status(503).with_body(Str.to_utf8("${status}\n${reason}\n"))
+		}
+	Ok(Server.respond(response))
+}
+
+waiting_page : Str, Str -> Str
+waiting_page = |status, reason| {
+	(title, why) = (escape_html(status), escape_html(reason))
+	Str.join_with(
+		[
+			"<!doctype html>",
+			"<html>",
+			"<head>",
+			"<meta charset=\"utf-8\">",
+			"<meta name=\"color-scheme\" content=\"light dark\">",
+			"<meta http-equiv=\"refresh\" content=\"1\">",
+			"<title>${title}</title>",
+			"</head>",
+			"<body style=\"font-family: system-ui, sans-serif; max-width: 40rem; margin: 4rem auto; padding: 0 1rem\">",
+			"<h1 style=\"font-size: 1.25rem\">${title}</h1>",
+			"<p>This page opens by itself once the server answers.</p>",
+			"<p><small>${why}</small></p>",
+			"</body>",
+			"</html>",
+		],
+		"\n",
+	)
+}
+
+escape_html : Str -> Str
+escape_html = |text| text.replace_each("&", "&amp;").replace_each("<", "&lt;")
 
 has_extension : Str -> Bool
 has_extension = |path|
@@ -756,10 +908,30 @@ write_dev_files! = |bundles, dev_port, public_dir, client_url| {
 hello : Str, U64 -> Sse.Event
 hello = |session, build| Sse.Event.named("hello", ["${session}-${build.to_str()}"])
 
+report : Str, Str -> Sse.Event
+report = |name, log| Sse.Event.named("failed", [name, log])
+
+## What a page hears when it connects: where the builds are, and the report of
+## each broken one, so a page opened meanwhile shows it too.
+greet! : Events, Str, U64, List({ name : Str, log : Str }) => {}
+greet! = |events, session, build, failed|
+	events.set_greeting!([hello(session, build)].concat(failed.map(|{ name, log }| report(name, log))))
+
+## Where the loop leaves what the project's server is waiting for, for
+## server_down!. It is a file because a request's handler shares nothing else
+## with the loop.
+status_file = ".joy/dev/status"
+
+write_status! : Str => Try({}, _)
+write_status! = |status| Path.utf8(status_file).write_utf8!(status)
+
+did_not_build = "The server did not build. roc's report is in the terminal."
+
 ## Start a built server, with JOY_ASSETS_JSON pointing it at the dev build
 ## and `env` besides.
 start_server! : Str, Str, List((Str, Str)) => Try(Started, _)
 start_server! = |root, name, env| {
+	write_status!("The server is starting")?
 	process =
 		env
 			.fold(Cmd.new(OsStr.from_str("${root}/.joy/dev/servers/${name}/main")), |cmd, (key, value)| cmd.env(OsStr.from_str(key), OsStr.from_str(value)))
@@ -803,10 +975,10 @@ restart_server! = |state, name| {
 	Ok({ ..state, children: state.children.drop_if(|child| child.name == name).append(started), check })
 }
 
-## Ask a server that serves its own files for the loader once it answers,
-## and say what to do when it answers 404, since its pages then load without
-## their bundles. A server that has not answered after 30 seconds is left
-## alone.
+## Ask the server for the loader until it answers, and say that the pages are
+## ready. A server that serves its own files and answers 404 hears what to do,
+## since its pages then load without their bundles. After 30 seconds without an
+## answer ./joy says so, and asks again after the next build.
 check_server! : DevState => Try(DevState, _)
 check_server! = |state|
 	match state.check {
@@ -815,14 +987,16 @@ check_server! = |state|
 			request = Request.from_method(GET).with_uri("http://127.0.0.1:${port.to_str()}${loader}").with_timeout(TimeoutMilliseconds(500))
 			match Http.send!(request, {}) {
 				Ok(response) => {
-					if Response.status(response) == 404 {
+					if !state.serve_files and Response.status(response) == 404 {
 						Stderr.line!("The server on ${port.to_str()} answers 404 for ${loader}, so its pages load without their bundles. Serve the files with Names.file from generated/, or set JOY_SERVE_FILES=1 if a proxy or a CDN serves them in production, and ./joy dev serves them as it would.")?
 					}
+					Stdout.line!("Ready on ${state.pages_url}")?
 					Ok({ ..state, check: Done })
 				}
 				Err(_) =>
 					if Duration.to_seconds(Monotonic.since(Monotonic.now!(), since)) >= 30 {
-						Ok({ ..state, check: Done })
+						Stderr.line!("The server on ${port.to_str()} has not answered after 30 seconds.")?
+						Ok({ ..state, check: Waiting(port) })
 					} else {
 						Ok(state)
 					}
@@ -920,3 +1094,27 @@ parse_proxy! = |given|
 		Ok({ before, after }) if before.starts_with("/") and (after.starts_with("http://") or after.starts_with("https://")) => Ok((before, after))
 		_ => Build.fail!("--proxy takes PATH=URL, like /api=http://localhost:3000, not ${given}.")
 	}
+
+## `PATH=DIR`: requests whose path starts with PATH get the files of DIR.
+parse_mount! : Str, Str => Try((Str, Str), _)
+parse_mount! = |flag, given|
+	match given.split_first("=") {
+		Ok({ before, after }) if before.starts_with("/") and !after.is_empty() => Ok((before, after))
+		_ => Build.fail!("${flag} takes PATH=DIR, like /videos=uploads/videos, not ${given}.")
+	}
+
+## Give every mount its root's name and make sure its folder exists: a folder
+## of uploads may have nothing in it yet, and a root has to exist to be served.
+start_mounts! : List({ prefix : Str, dir : Str, download : Bool }), List({ prefix : Str, dir : Str, download : Bool }) => Try(List(Mount), _)
+start_mounts! = |plain, downloads| {
+	var $mounts = []
+	for mount in plain.concat(downloads) {
+		Path.utf8(mount.dir).create_all!()?
+		$mounts = $mounts.append({ prefix: mount.prefix, dir: mount.dir, root: "mount-${$mounts.len().to_str()}", download: mount.download })
+	}
+	Ok($mounts)
+}
+
+## The words of a space separated setting, none when it is not set.
+setting_words! : Str => List(Str)
+setting_words! = |name| (Env.var_str!(OsStr.from_str(name)) ?? "").split_on(" ").drop_if(|part| part.is_empty())
