@@ -32,9 +32,7 @@ import pf.Stdout
 main! : List(OsStr) => Try({}, _)
 main! = |forwarded| {
 	# Fresh wasm before any server starts serving www/.
-	# WORKAROUND: roc-lang/roc#12693 and #12701. A shared roc cache can crash
-	# this compile. Drop `--no-cache` when fixed.
-	build!("roc", ["--no-cache", "./build.roc"])?
+	build!("roc", ["./build.roc"])?
 
 	# systemd scope when available (ensures all descendant processes die with
 	# the run, browsers included). Fall back to a plain spawn in CI where no
@@ -151,7 +149,7 @@ wait_for_output! = |child, part, seen, attempts_left| {
 	} else if attempts_left == 0 {
 		Err(WatchNeverBuilt)
 	} else {
-		match read_child!(child, Duration.millis(200)) {
+		match child.read!(Duration.millis(200)) {
 			Ok(Stdout(bytes)) | Ok(Stderr(bytes)) => {
 				text = Str.from_utf8_lossy(bytes)
 				Stdout.write!(text) ?? {}
@@ -162,11 +160,6 @@ wait_for_output! = |child, part, seen, attempts_left| {
 		}
 	}
 }
-
-# WORKAROUND: roc-lang/roc#12692. A dev build frees a Child whose method a
-# `match` with an early return called, which kills the child. Call
-# `child.read!(timeout)` directly when fixed.
-read_child! = |child, timeout| child.read!(timeout)
 
 # Any successful response means the server is up. Bounded, so a watch.roc
 # that never serves fails the smoke instead of hanging it.

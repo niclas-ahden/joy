@@ -28,9 +28,7 @@ import Util exposing [fail!, run!]
 main! = |_args| {
 	# The host ships inside the platform bundle, so it must be fresh.
 	# Naming an example is the cheapest way through build.roc.
-	# WORKAROUND: roc-lang/roc#12693 and #12701. A shared roc cache can crash
-	# this compile. Drop `--no-cache` when fixed.
-	run!("roc", ["--no-cache", "./build.roc", "--opt=speed", "hello"])?
+	run!("roc", ["./build.roc", "--opt=speed", "hello"])?
 
 	# The host for hot reloading, which ./joy dev links in place of host.wasm.
 	run!("rustc", ["--edition", "2021", "--target", "wasm32-unknown-unknown", "--crate-type", "staticlib", "-C", "opt-level=2", "-C", "panic=abort", "--emit", "obj", "--cfg", "joy_hot", "host/host.rs", "-o", "platform/targets/wasm32/host-hot.wasm"])?

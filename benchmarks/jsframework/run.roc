@@ -233,7 +233,7 @@ run_pair! = |fork, in_fork, framework, bench, extra| {
 # when the deadline passes. SIGKILL skips puppeteer's exit handlers, so a
 # timed out pair reliably leaves its browser behind for barrier! to sweep.
 wait_pair! = |child, polls_left| {
-	match poll!(child) {
+	match child.poll!() {
 		Ok(Finished(exit)) => Finished(exit)
 		Err(_) => Lost
 		Ok(Running) => {
@@ -566,8 +566,3 @@ fail! = |message| {
 	Stderr.line!("error: ${message}") ?? {}
 	Err(Exit(1))
 }
-
-# WORKAROUND: roc-lang/roc#12692. A dev build frees a Child whose method a
-# `match` with an early return called, which kills the child. Call
-# `child.poll!()` directly when fixed.
-poll! = |child| child.poll!()

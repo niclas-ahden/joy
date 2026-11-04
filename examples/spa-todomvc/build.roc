@@ -150,8 +150,6 @@ build_app! = |release| {
 
 # Read the counts out of a line like "0 errors and 1 warning found in 704ms".
 # Lines that are not a summary fail to parse and are skipped by the caller.
-# WORKAROUND: roc-lang/roc#12707. Without this annotation roc can panic with
-# `guarded list invalidated` while building. Drop the annotation when fixed.
 summary_counts : Str -> Try({ errors : U64, warnings : U64 }, [NotFound])
 summary_counts = |line| {
 	at_error = line.split_first(" error")?

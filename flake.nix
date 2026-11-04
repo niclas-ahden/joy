@@ -11,7 +11,7 @@
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     # Roc compiler revision, keep the `?dir=src` at the end.
-    roc-src.url = "github:roc-lang/roc/1837c6c20efe045cb82898e9d121604586c61023?dir=src";
+    roc-src.url = "github:roc-lang/roc/262206271cf05db948eef2b96fae88a1aca07b19?dir=src";
     roc-nix = {
       url = "github:niclas-ahden/roc-nix";
       inputs.nixpkgs.follows = "nixpkgs";

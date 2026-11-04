@@ -49,9 +49,7 @@ main! = |args| {
 		fail!("playwright not found. The nix devShell provides it, or install it with `npm install -g playwright && playwright install chromium`.")?
 	}
 
-	# WORKAROUND: roc-lang/roc#12693 and #12701. A shared roc cache can crash
-	# this compile. Drop `--no-cache` when fixed.
-	run!("roc", ["--no-cache", "./build.roc", "--opt=${opt}"])?
+	run!("roc", ["./build.roc", "--opt=${opt}"])?
 
 	# The browser tests of ./joy dev pass without running when there is no
 	# build/<opt>/joy-cli. It has no Windows host yet, and on macOS it does not
@@ -59,7 +57,7 @@ main! = |args| {
 	match System.target!().os() {
 		Windows(_) => {}
 		MacOS(_) => {}
-		_ => run!("roc", ["build", "--no-cache", "--opt=speed", "--output=build/${opt}/joy-cli", "cli/main.roc"])?
+		_ => run!("roc", ["build", "--opt=speed", "--output=build/${opt}/joy-cli", "cli/main.roc"])?
 	}
 
 	run_env!("roc", ["tests/e2e/compile.roc"], "JOY_OPT", opt)?

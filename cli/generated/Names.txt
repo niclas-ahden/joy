@@ -46,13 +46,7 @@ Names := {
 			}
 		}
 		for (name, path) in Asset.all {
-			# WORKAROUND: `any` with `==`, not `contains`. On roc 34bd006 a
-			# server built with --opt=dev --specialize=no gets False from
-			# `assets.contains((name, path))` for a pair the list holds, so it
-			# refuses its own assets.json, while `any` with `==` on the same
-			# list is right: https://github.com/roc-lang/roc/issues/12828.
-			# Go back to `contains` once that is fixed.
-			if !assets.any(|(given, file)| given == name and file == path) {
+			if !assets.contains((name, path)) {
 				return Err(AssetsDiffer(name))
 			}
 		}

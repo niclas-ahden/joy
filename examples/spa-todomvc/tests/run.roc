@@ -148,9 +148,7 @@ main! = |os_args| {
 	Stdout.line!("All ${workers.to_str()} test servers ready")?
 
 	results = Spec.run_filtered!(hooks, "tests", {
-		# WORKAROUND: roc-lang/roc#12693 and #12701. A shared roc cache can crash
-		# the compile of each test. Drop `--no-cache` when fixed.
-		test_command: ["roc", "--opt=speed", "--no-cache"],
+		test_command: ["roc", "--opt=speed"],
 		max_workers: workers,
 		worker_envs,
 		before_each!: |_index| Ok({}),

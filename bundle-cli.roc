@@ -50,10 +50,8 @@ main! = |args| {
 	named = "current = Published({ tag: \"${config.tag}\", platform_url: \"${config.platform_url}\", notes_url: \"${config.notes_url}\" })"
 	release.write_utf8!(release_source.replace_first(in_checkout_release, named))?
 
-	# WORKAROUND: roc-lang/roc#12693 and #12701. A shared roc cache can crash
-	# the check roc bundle runs. Drop the cache of its own when fixed.
-	archive = bundle!("cd '${stage}' && ROC_CACHE_DIR=\"$PWD/../.roc-cache\" roc bundle $(find . -type f | sed 's|^\\./||' | sort) --output-dir ..")?
-	run!("rm", ["-rf", stage, "${out}/.roc-cache"])?
+	archive = bundle!("cd '${stage}' && roc bundle $(find . -type f | sed 's|^\\./||' | sort) --output-dir ..")?
+	run!("rm", ["-rf", stage])?
 
 	Stdout.line!("Bundled ./joy for ${config.tag} into ${out}/${archive}")
 }

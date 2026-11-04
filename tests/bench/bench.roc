@@ -53,10 +53,8 @@ main! = |args| {
 	threshold = F64.from_str(Env.var_str!("BENCH_THRESHOLD") ?? "") ?? 1.10
 
 	Stdout.line!("== building jsbench_keyed with joy_bench instrumentation ==")?
-	# WORKAROUND: roc-lang/roc#12693 and #12701. A shared roc cache can crash
-	# this compile. Drop `--no-cache` when fixed.
 	built = Cmd.new(OsStr.from_str("roc"))
-		.args(["--no-cache", "./build.roc", "--opt=speed", "tests/apps/jsbench_keyed.roc"].map(OsStr.from_str))
+		.args(["./build.roc", "--opt=speed", "tests/apps/jsbench_keyed.roc"].map(OsStr.from_str))
 		.env(OsStr.from_str("JOY_BENCH"), OsStr.from_str("1"))
 		.inherit_stdio()
 		.run!()

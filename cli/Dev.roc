@@ -213,12 +213,12 @@ Dev :: [].{
 
 		write_dev_files!(bundles, events_port, public_dir, client_url)?
 		names = servers.map(server_name)
-		# Dev builds swap in nothing but what follows `--`, so every job has the
-		# same caches, see Compile.cache_root!.
-		caches = Compile.cache_root!(server_roc)?
-		bundle_caches = Compile.cache_root!(bundle_roc)?
-		bundle_jobs = bundles.map(|bundle| bundle_job(bundle, bundle_opt, bundle_roc, bundle_caches))
-		server_jobs = servers.map(|file| server_job(file, server_name(file), server_roc, caches))
+		# WORKAROUND: the servers and the bundles keep apart roc caches, see
+		# Compile.cache!.
+		server_cache = Compile.cache!(Servers)?
+		bundle_cache = Compile.cache!(Bundles)?
+		bundle_jobs = bundles.map(|bundle| bundle_job(bundle, bundle_opt, bundle_roc, bundle_cache))
+		server_jobs = servers.map(|file| server_job(file, server_name(file), server_roc, server_cache))
 		# Watch before building, so a file saved while the first builds run is
 		# not lost. The folders the builds read are known once they have run.
 		before = watch_config!(root, bundles, servers, public_dir, options.poll)?
@@ -287,10 +287,10 @@ Dev :: [].{
 			poll: options.poll,
 			jobs,
 			roc: server_roc,
-			caches,
+			server_cache,
 			bundle_opt,
 			bundle_roc,
-			bundle_caches,
+			bundle_cache,
 		})
 		for child in $children.concat(watchers) {
 			child.process.close!() ?? {}
@@ -337,14 +337,14 @@ DevState : {
 	jobs : Compile.Limit,
 	roc : List(Str),
 
-	## The roc caches of the builds, see Compile.cache_root!.
-	caches : Str,
+	## The servers' roc cache, see Compile.cache!.
+	server_cache : Str,
 
 	## What a bundle's build gets: its --opt, the flags on top of its own,
-	## and its caches.
+	## and its roc cache.
 	bundle_opt : Str,
 	bundle_roc : List(Str),
-	bundle_caches : Str,
+	bundle_cache : Str,
 }
 
 ## A server ./joy started, and the part of a line it has printed so far.
@@ -494,10 +494,10 @@ tell_pages! = |state| {
 job_for : DevState, Str -> Try(Compile.Job, [Gone])
 job_for = |state, name|
 	match state.bundles.find_first(|bundle| bundle.id == name) {
-		Ok(bundle) => Ok(bundle_job(bundle, state.bundle_opt, state.bundle_roc, state.bundle_caches))
+		Ok(bundle) => Ok(bundle_job(bundle, state.bundle_opt, state.bundle_roc, state.bundle_cache))
 		Err(_) =>
 			match state.servers.find_first(|file| server_name(file) == name) {
-				Ok(file) => Ok(server_job(file, name, state.roc, state.caches))
+				Ok(file) => Ok(server_job(file, name, state.roc, state.server_cache))
 				Err(_) => Err(Gone)
 			}
 	}
@@ -534,26 +534,26 @@ served_path : Compile.Job -> Str
 served_path = |job| job.output.replace_first(".joy/dev/staging/", ".joy/dev/")
 
 bundle_job : Project.Bundle, Str, List(Str), Str -> Compile.Job
-bundle_job = |bundle, opt, roc, caches| {
+bundle_job = |bundle, opt, roc, cache| {
 	name: bundle.id,
 	file: bundle.file,
 	output: ".joy/dev/staging/client/${bundle.id}/app.wasm",
 	args: Build.bundle_args(opt, False, roc),
 	inputs: ".joy/dev/inputs/${safe_name(bundle.id)}",
-	cache: Compile.bundle_cache(caches),
+	cache,
 	own_warnings_fail: False,
 }
 
 ## A server builds at --opt=dev, roc's own backend: seconds where an LLVM
 ## build of a large server takes minutes.
 server_job : Str, Str, List(Str), Str -> Compile.Job
-server_job = |file, name, roc, caches| {
+server_job = |file, name, roc, cache| {
 	name,
 	file,
 	output: ".joy/dev/staging/servers/${name}/main",
 	args: ["build", "--opt=dev"].concat(roc),
 	inputs: ".joy/dev/inputs/${safe_name(name)}",
-	cache: Compile.server_cache(caches, name),
+	cache,
 	own_warnings_fail: False,
 }
 

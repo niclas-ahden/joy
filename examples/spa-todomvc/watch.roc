@@ -28,9 +28,7 @@ main! = |_args| {
 	port = Env.var_str!("JOY_WATCH_PORT") ?? "8000"
 
 	# ./build.roc once up front so that Joy's assets are in place when the server starts
-	# WORKAROUND: roc-lang/roc#12693 and #12701. A shared roc cache can crash
-	# this compile. Drop `--no-cache` when fixed.
-	build = Cmd.new(OsStr.from_str("roc")).args([OsStr.from_str("--no-cache"), OsStr.from_str("./build.roc")]).inherit_stdio().run!()
+	build = Cmd.new(OsStr.from_str("roc")).args([OsStr.from_str("./build.roc")]).inherit_stdio().run!()
 
 	build_code = match build {
 		Ok(output) => exit_code(output.status)
@@ -59,7 +57,7 @@ main! = |_args| {
 	# config, then poll! to verify it's running
 	Sleep.millis!(200)?
 
-	match poll!(caddy) {
+	match caddy.poll!() {
 		Ok(Running) => {}
 		Ok(Finished(exited)) => {
 			code = match exited.status {
@@ -94,11 +92,6 @@ main! = |_args| {
 		Err(failure) => log_and_exit!("roc", failure)
 	}
 }
-
-# WORKAROUND: roc-lang/roc#12692. A dev build frees a Child whose method a
-# `match` with an early return called, which kills the child. Call
-# `child.poll!()` directly when fixed.
-poll! = |child| child.poll!()
 
 # A child's exit code, 1 for one killed by a signal.
 exit_code : Cmd.ExitStatus -> I32

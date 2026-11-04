@@ -66,11 +66,9 @@ main! = |args| {
 }
 
 # The rebuild loop: watchexec reruns build.roc whenever a source file changes.
-# WORKAROUND: roc-lang/roc#12693 and #12701. A shared roc cache can crash the
-# build.roc compile. Drop `--no-cache` when fixed.
 watchexec_cmd = |opt, full_name|
 	Cmd.new(OsStr.from_str("watchexec"))
-		.args(["--no-global-ignore", "--restart", "--print-events", "--debounce", "500ms", "--exts", "roc,rs,html,css,js,mjs,toml", "--", "roc", "--no-cache", "./build.roc", "--opt=${opt}", full_name].map(OsStr.from_str))
+		.args(["--no-global-ignore", "--restart", "--print-events", "--debounce", "500ms", "--exts", "roc,rs,html,css,js,mjs,toml", "--", "roc", "./build.roc", "--opt=${opt}", full_name].map(OsStr.from_str))
 
 # Check that watchexec is installed
 check_watchexec! = |probe|
@@ -117,7 +115,7 @@ start_server! = |port, opt, name| {
 
 	Sleep.millis!(300)?
 
-	match poll!(server) {
+	match server.poll!() {
 		Ok(Running) => Ok(server)
 
 		Ok(Finished(exit)) => {
@@ -168,8 +166,3 @@ parser = Cli.assert_valid(
 		},
 	),
 )
-
-# WORKAROUND: roc-lang/roc#12692. A dev build frees a Child whose method a
-# `match` with an early return called, which kills the child. Call
-# `child.poll!()` directly when fixed.
-poll! = |child| child.poll!()

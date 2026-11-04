@@ -43,7 +43,7 @@ main! = |args| {
 		Windows(_) => {}
 		_ => {
 			Stdout.line!("== roc test cli/main.roc")?
-			run!("roc", ["test", "--no-cache", "cli/main.roc"])?
+			run!("roc", ["test", "cli/main.roc"])?
 		}
 	}
 
@@ -51,20 +51,18 @@ main! = |args| {
 	# links are read from the page it builds.
 	Stdout.line!("== roc check guide/samples")?
 	samples = sample_apps!("guide/samples")?
-	_ = samples.map_try!(|file| run!("roc", ["check", "--no-cache", file]))?
+	_ = samples.map_try!(|file| run!("roc", ["check", file]))?
 	Stdout.line!("== building the guide")?
-	built = Cmd.new(OsStr.from_str("roc")).args(["--no-cache", "./build.roc"].map(OsStr.from_str)).cwd(Path.utf8("guide")).inherit_stdio().run!()?
+	built = Cmd.new(OsStr.from_str("roc")).args(["./build.roc"].map(OsStr.from_str)).cwd(Path.utf8("guide")).inherit_stdio().run!()?
 	Util.exit_of(built.status)?
 
 	Stdout.line!("== building and testing with --opt=${opt}")?
-	# WORKAROUND: roc-lang/roc#12693 and #12701. A shared roc cache can crash
-	# this compile. Drop `--no-cache` when fixed.
-	run!("roc", ["--no-cache", "./build.roc", "--opt=${opt}"])?
+	run!("roc", ["./build.roc", "--opt=${opt}"])?
 
 	# The hot reload harnesses (tests/check_hot*.mjs) reload between builds of
 	# one app, which need hot reload compiled in, so those are built again
 	# with JOY_HOT, and so is TodoMVC, for the differential harness.
-	_ = hot_apps.map_try!(|name| run_env!("roc", ["--no-cache", "./build.roc", "--opt=${opt}", name], "JOY_HOT", "1"))?
+	_ = hot_apps.map_try!(|name| run_env!("roc", ["./build.roc", "--opt=${opt}", name], "JOY_HOT", "1"))?
 
 	# node:test runs each harness in its own child process (concurrently) and
 	# keeps going past a failing file, so one broken harness can't hide the

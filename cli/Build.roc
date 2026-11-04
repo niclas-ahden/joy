@@ -105,7 +105,7 @@ Build :: [].{
 							output: "${out}/server/${executable!("main")}",
 							args,
 							inputs: "",
-							cache: Compile.server_cache(Compile.cache_root!(args)?, "server"),
+							cache: Compile.cache!(Servers)?,
 							own_warnings_fail: True,
 						},
 					]
@@ -122,7 +122,7 @@ Build :: [].{
 					output: "${out}/client/${bundle.id}/app.wasm",
 					args,
 					inputs: "",
-					cache: Compile.bundle_cache(Compile.cache_root!(args)?),
+					cache: Compile.cache!(Bundles)?,
 					own_warnings_fail: True,
 				})
 			},
@@ -272,7 +272,6 @@ Build :: [].{
 		_ =
 			Cmd.new(OsStr.from_str("roc"))
 				.args(["check", first.file].map(OsStr.from_str))
-				.env(OsStr.from_str("ROC_CACHE_DIR"), OsStr.from_str(".joy/roc-cache/fetch"))
 				.run!()?
 		if Path.utf8(Project.www!(first)).is_dir!() ?? False {
 			Ok({})

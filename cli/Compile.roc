@@ -1,5 +1,4 @@
 import pf.Cmd
-import pf.Crypt
 import pf.Duration
 import pf.Env
 import pf.OsStr
@@ -19,7 +18,7 @@ Compile :: [].{
 		args : List(Str),
 		inputs : Str,
 
-		## The roc cache the build uses, see [cache_root!].
+		## The roc cache the build uses, see [cache!].
 		cache : Str,
 		own_warnings_fail : Bool,
 	}
@@ -45,8 +44,8 @@ Compile :: [].{
 		child =
 			Cmd.new(OsStr.from_str("roc"))
 				.args(args.map(OsStr.from_str))
-				# WORKAROUND: a cache per server and one for the bundles, for each
-				# set of --replace-dep flags, see cache_root!.
+				# WORKAROUND: the servers and the bundles keep apart roc caches, see
+				# cache!.
 				.env(OsStr.from_str("ROC_CACHE_DIR"), OsStr.from_str(job.cache))
 				.stdin(Null)
 				.stdout(Capture)
@@ -56,46 +55,25 @@ Compile :: [].{
 		Ok({ job, child })
 	}
 
-	## WORKAROUND: the folder that holds the roc caches of the builds whose
-	## arguments are `args`. Every server gets a cache of its own and the
-	## bundles share one, all apart from roc's default cache, so neither a
-	## server's build nor an editor's `roc check` of a server writes into the
-	## cache a bundle's build reads. On roc 0c440e5 a check or build of one
-	## program caches results that name a module only that program has, and
-	## the next build of another program that shares a package with it
-	## segfaults in post-check monotype when it reads them:
-	## https://github.com/roc-lang/roc/issues/12693 and
-	## https://github.com/roc-lang/roc/issues/12701. A build with other
-	## `--replace-dep` flags is another program too: `./joy build` swaps
-	## generated/ for the build's hashed copy and `./joy dev` does not, and a
-	## server built one way crashes when it is built the other way in the
-	## same cache. So each set of `--replace-dep` flags gets caches of its
-	## own, in a folder named after their hash. Bundles sharing a cache have
-	## not shown it. The caches live below `ROC_CACHE_DIR` when it is set,
-	## else in .joy/roc-cache. Remove this once both issues are fixed.
-	cache_root! : List(Str) => Try(Str, _)
-	cache_root! = |args| {
+	## WORKAROUND: the roc cache of the servers' or the bundles' builds. A
+	## project can build its bundles with --specialize=no and its servers with
+	## roc's default, and a module compiled one way and then the other in one
+	## cache can crash the compiler:
+	## https://github.com/roc-lang/roc/issues/12853. So the servers and the
+	## bundles each get a cache of their own, below `ROC_CACHE_DIR` when it is
+	## set, else in .joy/roc-cache. Remove this once the issue is fixed.
+	cache! : [Servers, Bundles] => Try(Str, _)
+	cache! = |kind| {
 		base =
 			match Env.var_str!(OsStr.from_str("ROC_CACHE_DIR")) {
 				Ok(dir) if !dir.is_empty() => "${dir}/joy"
 				_ => "${Path.display(Env.cwd!()?)}/.joy/roc-cache"
 			}
-		replaced = replace_deps(args)
-		if replaced.is_empty() {
-			Ok("${base}/plain")
-		} else {
-			digest = Crypt.hash!(Str.to_utf8(Str.join_with(replaced, " ")), Sha256)
-			Ok("${base}/${Str.from_utf8(Str.to_utf8(digest).take_first(8)) ?? digest}")
+		match kind {
+			Servers => Ok("${base}/servers")
+			Bundles => Ok("${base}/bundles")
 		}
 	}
-
-	## The roc cache of the server `name`, see [cache_root!].
-	server_cache : Str, Str -> Str
-	server_cache = |root, name| "${root}/servers/${name}"
-
-	## The roc cache the bundles share, see [cache_root!].
-	bundle_cache : Str -> Str
-	bundle_cache = |root| "${root}/bundles"
 
 	## How many builds run at once: all of them, or at most what --jobs says.
 	Limit : [All, AtMost(U64)]
@@ -264,18 +242,6 @@ strip_ansi_bytes = |bytes, kept, mode|
 				Sequence => if (byte >= 0x40 and byte <= 0x7e) strip_ansi_bytes(rest, kept, Plain) else strip_ansi_bytes(rest, kept, Sequence)
 			}
 	}
-
-## The OLD and NEW of every `--replace-dep OLD NEW` in a roc command line.
-replace_deps : List(Str) -> List(Str)
-replace_deps = |args|
-	match args {
-		["--replace-dep", old, new, .. as rest] => [old, new].concat(replace_deps(rest))
-		[_, .. as rest] => replace_deps(rest)
-		[] => []
-	}
-
-expect replace_deps(["build", "--replace-dep", "a", "b", "--opt=dev", "--replace-dep", "c", "d"]) == ["a", "b", "c", "d"]
-expect replace_deps(["build", "--opt=dev"]) == []
 
 expect Compile.has_room(All, 1000)
 expect Compile.has_room(AtMost(2), 1)

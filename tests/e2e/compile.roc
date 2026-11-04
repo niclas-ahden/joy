@@ -49,10 +49,8 @@ main! = |_args| {
 	}
 }
 
-# WORKAROUND: roc-lang/roc#12693 and #12701. A shared roc cache can crash the
-# compile of each test. Drop `--no-cache` when fixed.
 spawn_compile! = |source| {
-	args = ["build", "--no-cache", "--opt=speed", "--output=${Compiled.binary!(source)}", source]
+	args = ["build", "--opt=speed", "--output=${Compiled.binary!(source)}", source]
 	child = Cmd.new(OsStr.from_str("roc")).args(args.map(OsStr.from_str)).stdout(Capture).stderr(Capture).spawn_leashed!()?
 	Ok((source, child))
 }
