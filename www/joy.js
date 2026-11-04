@@ -16,6 +16,8 @@
 // script can set `detail.setup`, a function that gets the app before init
 // runs, to wire ports. Once mounted, the root has the app in `root.joy` and
 // the attribute data-joy-mounted, and `joy:mounted` bubbles with the app.
+//
+// A root inside another root does not mount: everything in a root is its app's.
 import { mount } from './runtime.js';
 
 async function mountRoot(root) {
@@ -37,6 +39,11 @@ async function mountRoot(root) {
 
 // One root that fails to mount leaves the others running.
 for (const root of document.querySelectorAll('[data-joy-bundle]')) {
+  const around = root.parentElement?.closest('[data-joy-bundle]');
+  if (around) {
+    console.error(`Joy: the bundle ${root.dataset.joyBundle} did not mount: its root is inside the root of ${around.dataset.joyBundle}. Write it as part of that app.`);
+    continue;
+  }
   mountRoot(root).catch((error) => {
     console.error(`Joy: the bundle ${root.dataset.joyBundle} did not mount`, error);
   });

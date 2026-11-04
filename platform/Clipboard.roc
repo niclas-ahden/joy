@@ -22,7 +22,8 @@ Clipboard := [].{
 
 	## Put the text of the element matching this CSS selector on the
 	## clipboard (its `textContent`). For text the app does not hold, such
-	## as a code block in the page's own HTML around the app's root.
+	## as a code block in the page's own HTML around the app's root. The
+	## selector looks in this app's own view first.
 	write_text_of : Str, (Try({}, Clipboard.Problem) -> msg) -> Effect(msg)
 	write_text_of = |selector, on_done| Effect.call("joy/clipboard/write_text_of", Wire.writer({}).str(selector).done(), |reply| on_done(done(reply)))
 }

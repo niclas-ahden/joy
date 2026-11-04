@@ -28,7 +28,8 @@ Keyboard := [].{
 	on_down_keys : List(Str), (Sub.KeyEvent -> msg) -> Sub(msg)
 	on_down_keys = |keys, to_msg| listen_keys("keydown", keys, Bool.False, to_msg)
 
-	## Like `on_down_keys`, and preventDefault on the matching events.
+	## Like `on_down_keys`, and preventDefault on the matching events, except a
+	## key typed into a field outside this app, which keeps its default.
 	on_down_keys_prevent_default : List(Str), (Sub.KeyEvent -> msg) -> Sub(msg)
 	on_down_keys_prevent_default = |keys, to_msg| listen_keys("keydown", keys, Bool.True, to_msg)
 
@@ -40,7 +41,8 @@ Keyboard := [].{
 	on_up_keys : List(Str), (Sub.KeyEvent -> msg) -> Sub(msg)
 	on_up_keys = |keys, to_msg| listen_keys("keyup", keys, Bool.False, to_msg)
 
-	## Like `on_up_keys`, and preventDefault on the matching events.
+	## Like `on_up_keys`, and preventDefault on the matching events, except a
+	## key typed into a field outside this app, which keeps its default.
 	on_up_keys_prevent_default : List(Str), (Sub.KeyEvent -> msg) -> Sub(msg)
 	on_up_keys_prevent_default = |keys, to_msg| listen_keys("keyup", keys, Bool.True, to_msg)
 }

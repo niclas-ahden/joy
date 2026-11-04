@@ -1,6 +1,7 @@
 // Keys pressed anywhere on the page, for the platform's Keyboard module.
 // The key filter and preventDefault are the subscription's own data, so they
-// run here without entering the app.
+// run here without entering the app. A key typed into a field outside the app
+// keeps its default, as the app cannot know about that field.
 //
 // Sections as in media.js: an app's runtime.js holds the ones its wasm uses.
 
@@ -16,7 +17,9 @@ defineEvents('joy/keyboard/keys', (args, host, emit) => {
   return host.dom.onGlobal(event, (domEvent) => {
     const info = host.dom.eventKeyInfo(domEvent);
     if (keys.length > 0 && !keys.includes(info.key)) return;
-    if (preventDefault) domEvent.preventDefault?.();
+    const target = domEvent.target;
+    const typing = target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName);
+    if (preventDefault && !(typing && !host.root().contains?.(target))) domEvent.preventDefault?.();
     const flags =
       (info.ctrl ? 1 : 0) | (info.shift ? 2 : 0) | (info.alt ? 4 : 0) | (info.meta ? 8 : 0) | (info.repeat ? 16 : 0) |
       (info.isComposing ? 32 : 0);

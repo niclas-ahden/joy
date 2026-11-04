@@ -219,13 +219,13 @@ export function foreignAttr(ns, key) {
 //   eventKeyInfo(domEvent) -> {key, code, ctrl, shift, alt, meta, repeat}
 //   eventPointerInfo(domEvent) -> {clientX..offsetY, button, buttons, ctrl..meta}
 //   eventFile(domEvent) -> File | null
-//   showModal(sel)
-//   closeModal(sel)
+//   showModal(sel, within)
+//   closeModal(sel, within)
 //   setTitle(s)
 //   scrollTo(x, y), in CSS pixels
 //   clickedAttr(domEvent, k) -> the value of k on the event's target or its
 //     nearest ancestor that has it, or null
-//   textOf(sel) -> the text content of the element sel matches, or null
+//   textOf(sel, within) -> the text content of the element sel matches, or null
 //   elementTag(node) -> tag | null
 //   getAttr(node, k, exact) -> string | null
 //   (exact: k is a qualified name as attrNames reports it, not a view's)
@@ -1590,7 +1590,8 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
   // keeps for an app goes in `own`, not at the top of its file.
   const featureHost = {
     file: (id) => files.get(id) ?? null,
-    element: (selector) => dom.element?.(selector) ?? null,
+    element: (selector) => dom.element?.(selector, root) ?? null,
+    root: () => root,
     addFile: (file) => {
       const id = fileIds.next++;
       files.set(id, file);
@@ -2033,13 +2034,15 @@ function defaultOptionIndex(select) {
   return options.findIndex((o) => !o.disabled);
 }
 
-// The element a selector-addressed effect targets, or null. querySelector
+// The element a selector-addressed effect targets, or null: the first match
+// inside `within`, the app's root, and otherwise on the page, so copies of an
+// app on one page reach their own elements. querySelector
 // throws on a selector it cannot parse ("#12": an id cannot start with a
 // digit), and such a selector matches nothing either, so it gets the same
 // no-op and warning as a missing element instead of killing the app.
-function query(selector) {
+function query(selector, within) {
   try {
-    return document.querySelector(selector);
+    return within?.querySelector(selector) ?? document.querySelector(selector);
   } catch {
     return null;
   }
@@ -2141,21 +2144,21 @@ export const browserDom = {
   eventFile: (e) => e?.target?.files?.[0] ?? null,
   // The element a selector names, or null, for feature modules (see
   // featureHost).
-  element: (selector) => query(selector),
-  showModal: (selector) => {
-    const el = query(selector);
+  element: (selector, within) => query(selector, within),
+  showModal: (selector, within) => {
+    const el = query(selector, within);
     if (el && typeof el.showModal === 'function' && !el.open) el.showModal();
     return el !== null;
   },
-  closeModal: (selector) => {
-    const el = query(selector);
+  closeModal: (selector, within) => {
+    const el = query(selector, within);
     if (el && typeof el.close === 'function' && el.open) el.close();
     return el !== null;
   },
   // These three report whether the selector matched at all, so the
   // runtime can warn about the ones that did nothing.
-  focus: (selector) => {
-    const el = query(selector);
+  focus: (selector, within) => {
+    const el = query(selector, within);
     if (!el || typeof el.focus !== 'function') return el !== null;
     el.focus();
     // A text field gets its caret at the end, where typing continues the
@@ -2188,7 +2191,7 @@ export const browserDom = {
     }
     return null;
   },
-  textOf: (selector) => query(selector)?.textContent ?? null,
+  textOf: (selector, within) => query(selector, within)?.textContent ?? null,
   observeVisibility: (node, rootMargin, fire) => {
     const observer = new IntersectionObserver(
       (entries) => entries.forEach((entry) => { if (entry.isIntersecting) fire(); }),

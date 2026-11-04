@@ -119,7 +119,8 @@ Media := [].{
 			|reply| on_url(answer(reply, |r| r.str().map_ok(|(url, _)| url))),
 		)
 
-	## Play the `<audio>` or `<video>` element the selector names. Browsers
+	## Play the `<audio>` or `<video>` element the selector names, in this
+	## app's own view first and then on the rest of the page. Browsers
 	## refuse to play with sound before the user has interacted with the
 	## page, which arrives as `NotAllowed`.
 	play : Str, (Try({}, Media.Problem) -> msg) -> Effect(msg)

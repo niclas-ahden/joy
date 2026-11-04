@@ -9,6 +9,8 @@
 ## deliberate, so an app can focus a field only some pages have, and there
 ## is no error to handle. The runtime does log a console warning naming the
 ## effect and the selector, which is how a typo shows up in development.
+## A selector looks in this app's own view first and then on the rest of the
+## page, so copies of an app on one page each reach their own elements.
 ##
 ## The three ways to change the URL:
 ##

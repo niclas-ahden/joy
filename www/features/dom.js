@@ -16,19 +16,19 @@ function warnUnmatched(what, selector) {
 //// op joy/dom/show_modal needs warn_unmatched
 defineOperation('joy/dom/show_modal', (args, host) => {
   const selector = args.str();
-  if (!host.dom.showModal(selector)) warnUnmatched('DOM.show_modal', selector);
+  if (!host.dom.showModal(selector, host.root())) warnUnmatched('DOM.show_modal', selector);
 });
 
 //// op joy/dom/close_modal needs warn_unmatched
 defineOperation('joy/dom/close_modal', (args, host) => {
   const selector = args.str();
-  if (!host.dom.closeModal(selector)) warnUnmatched('DOM.close_modal', selector);
+  if (!host.dom.closeModal(selector, host.root())) warnUnmatched('DOM.close_modal', selector);
 });
 
 //// op joy/dom/focus needs warn_unmatched
 defineOperation('joy/dom/focus', (args, host) => {
   const selector = args.str();
-  if (!host.dom.focus(selector)) warnUnmatched('DOM.focus', selector);
+  if (!host.dom.focus(selector, host.root())) warnUnmatched('DOM.focus', selector);
 });
 
 //// op joy/dom/navigate

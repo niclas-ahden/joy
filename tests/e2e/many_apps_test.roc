@@ -1,6 +1,6 @@
-# Real-browser E2E: two apps on one page. Both use the same debounce key and get
-# the same file id, and each keeps its own. The object URLs are the browser's, so
-# reading one back shows whose file it holds.
+# Real-browser E2E: two apps on one page. Both use the same debounce key and
+# selectors and get the same file id, and each keeps its own. The object URLs are
+# the browser's, so reading one back shows whose file it holds.
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
 	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.13.1/AWahhV9oKjtqpZNTG5mUK5i86Fy1Lwssrg6yeDG52Bvy.tar.zst",
@@ -20,7 +20,7 @@ main! = |_args| {
 		\\  const root = document.createElement('div');
 		\\  root.id = 'second';
 		\\  document.body.append(root);
-		\\  window.second = await mount({ wasm: new URL('./app.wasm', location.href).href, root, flags: '' });
+		\\  window.second = await mount({ wasm: new URL('./app.wasm', location.href).href, root, flags: 'grab' });
 		\\  return 'mounted';
 		\\})()
 	)?
@@ -42,6 +42,44 @@ main! = |_args| {
 	Assert.eq(read_url!(page, "#app")?, "from the first") ? |e| FirstAppShouldGetItsOwnFile(Str.inspect(e))
 	Assert.eq(read_url!(page, "#second")?, "from the second") ? |e| SecondAppShouldGetItsOwnFile(Str.inspect(e))
 
+	# A selector finds the app's own element, and a dialog elsewhere on the page.
+	_ = page.evaluate!(
+		\\(() => {
+		\\  HTMLMediaElement.prototype.play = function () { window.played = this.closest('#app, #second').id; return Promise.resolve(); };
+		\\  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text) => { window.copied = text; } } });
+		\\  document.querySelector('#second #quote').textContent = 'quote of the second';
+		\\  const dialog = document.createElement('dialog');
+		\\  dialog.id = 'page-dialog';
+		\\  document.body.append(dialog);
+		\\  return 'set';
+		\\})()
+	)?
+	page.find("#second #focus").click!()?
+	same!(page, "document.activeElement.closest('#app, #second').id", "second")?
+	press!(page, "#second #open")?
+	same!(page, "String(document.querySelector('#second #dialog').open)", "true")?
+	same!(page, "String(document.querySelector('#app #dialog').open)", "false")?
+	_ = page.evaluate!("(document.querySelector('#app #dialog').showModal(), 'open')")?
+	press!(page, "#second #shut")?
+	same!(page, "String(document.querySelector('#second #dialog').open)", "false")?
+	same!(page, "String(document.querySelector('#app #dialog').open)", "true")?
+	_ = page.evaluate!("(document.querySelector('#app #dialog').close(), 'closed')")?
+	press!(page, "#second #play")?
+	same!(page, "window.played", "second")?
+	press!(page, "#second #copy")?
+	same!(page, "window.copied", "quote of the second")?
+	press!(page, "#second #open-page-dialog")?
+	same!(page, "String(document.querySelector('#page-dialog').open)", "true")?
+	_ = page.evaluate!("(document.querySelector('#page-dialog').close(), 'closed')")?
+
+	# The second app holds on to the space key, except in a field that is not its own.
+	page.key_type!("#app #name", "a b")?
+	assert!(page.find("#app #name").has_value("a b"))?
+	assert!(page.find("#second #keys").has_text("1"))?
+	page.key_type!("#second #name", "c d")?
+	assert!(page.find("#second #name").has_value("cd"))?
+	assert!(page.find("#second #keys").has_text("2"))?
+
 	# Unmounting one leaves the other's debounce and its URL.
 	page.find("#app #arm").click!()?
 	page.find("#second #arm").click!()?
@@ -50,6 +88,17 @@ main! = |_args| {
 	Assert.eq(read_url!(page, "#app")?, "from the first") ? |e| FirstUrlShouldOutliveTheSecondApp(Str.inspect(e))
 
 	browser.close!()
+}
+
+# A click from the page, which a modal dialog's inert background would not take.
+press! = |page, selector| {
+	_ = page.evaluate!("new Promise((done) => { document.querySelector('${selector}').click(); setTimeout(() => done('pressed'), 50) })")?
+	Ok({})
+}
+
+same! = |page, expression, want| {
+	Assert.eq(page.evaluate!(expression)?, want) ? |e| NotTheAppsOwn(Str.inspect({ expression, e }))
+	Ok({})
 }
 
 pick! = |page, root, content| {

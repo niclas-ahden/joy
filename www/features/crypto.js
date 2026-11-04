@@ -12,13 +12,15 @@ defineOperation('joy/crypto/digest', async (args) => {
 });
 
 //// helper digest_queue
-// File digests waiting for a turn, and how many are reading or hashing now.
+// The apps with file digests waiting, in the order of their turns, and how many
+// digests are reading or hashing now.
 // A digest holds its whole slice in memory until the hash is done, so at
 // most navigator.hardwareConcurrency run at once: an app that asks for
 // every 16 MiB chunk of a 10 GB file at once then holds a few chunks, not
 // the file. This is the one state apps on a page share, as the limit is on
-// the machine and not on an app.
-const digestQueue = [];
+// the machine and not on an app. Taking turns keeps an app's big file from
+// holding up another app.
+const digestQueues = [];
 let digestsRunning = 0;
 
 // A file's byte range as a Blob: len 0 means through the end of the file.
@@ -32,8 +34,10 @@ function sliceFile(file, start, len) {
 // makes room for the next, also when it failed.
 function startDigests() {
   const limit = Math.max(1, globalThis.navigator?.hardwareConcurrency || 4);
-  while (digestsRunning < limit && digestQueue.length > 0) {
-    const { slice, algorithm, resolve, reject } = digestQueue.shift();
+  while (digestsRunning < limit && digestQueues.length > 0) {
+    const queue = digestQueues.shift();
+    const { slice, algorithm, resolve, reject } = queue.shift();
+    if (queue.length > 0) digestQueues.push(queue);
     digestsRunning++;
     slice
       .arrayBuffer()
@@ -55,7 +59,17 @@ defineOperation('joy/crypto/digest_file', (args, host) => {
   const file = host.file(fileId);
   if (!file) throw new Error(`no file ${fileId}`);
   return new Promise((resolve, reject) => {
-    digestQueue.push({ slice: sliceFile(file, start, len), algorithm, resolve, reject });
+    const queue = host.own('digests', () => {
+      const waiting = [];
+      host.onUnmount(() => {
+        const turn = digestQueues.indexOf(waiting);
+        if (turn >= 0) digestQueues.splice(turn, 1);
+        for (const digest of waiting.splice(0)) digest.resolve(NO_REPLY);
+      });
+      return waiting;
+    });
+    if (queue.length === 0) digestQueues.push(queue);
+    queue.push({ slice: sliceFile(file, start, len), algorithm, resolve, reject });
     startDigests();
   });
 });

@@ -24,7 +24,7 @@ defineOperation('joy/clipboard/write_text', (args) => writeClipboard(args.str())
 // An element that is not there fails as NotFoundError.
 defineOperation('joy/clipboard/write_text_of', async (args, host) => {
   const selector = args.str();
-  const text = host.dom.textOf(selector);
+  const text = host.dom.textOf(selector, host.root());
   if (text === null) {
     const err = new Error(`nothing on the page matches "${selector}"`);
     err.name = 'NotFoundError';

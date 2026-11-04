@@ -130,12 +130,72 @@ const pair = async () => [await start(mount, wasm), await start(mount, wasm)];
   b.app.unmount();
 }
 
+// --- File digests take turns under one limit, and an unmounted app's are dropped ---
+// The fixture asks for six at a time. One runs at a time here, each a read that
+// says whose file it is.
+Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { hardwareConcurrency: 1 } });
+let reads = [];
+FakeFile.prototype.arrayBuffer = async function () {
+  reads.push(this.name);
+  await sleep(2);
+  return new ArrayBuffer(8);
+};
+{
+  const [a, b] = await pair();
+  a.pick('a');
+  b.pick('b');
+  a.click('hash');
+  b.click('hash');
+  await until(() => a.read('hashed') === '6' && b.read('hashed') === '6');
+  expect('digests: apps take turns', reads.join(' '), 'a a b a b a b a b a b b');
+  expect('digests: each app gets all its answers', `${a.read('hashed')}|${b.read('hashed')}`, '6|6');
+
+  reads = [];
+  a.click('hash');
+  b.click('hash');
+  a.app.unmount();
+  await until(() => b.read('hashed') === '12');
+  expect('digests: an unmounted app reads no more', reads.join(' '), 'a b b b b b b');
+  b.app.unmount();
+}
+
 // --- A hot reload keeps what features hold, and each app keeps its own ---
 {
   const { mount: hotMount } = await import(`../build/${process.env.JOY_OPT}/runtime.js`);
   await import('../www/hot.js');
   const build = readFileSync(hotWasmPath('many_apps'));
   const hotPair = async () => [await start(hotMount, build), await start(hotMount, build)];
+
+  {
+    const [a, b] = await hotPair();
+    a.pick('a');
+    a.click('hash');
+    await a.app.reload(build);
+    await until(() => a.read('hashed') === '6');
+    expect('hot: digests still waiting answer the rebuilt app', a.read('hashed'), '6');
+
+    // One effect repeated in a list is one callback waiting for several answers.
+    const [before, after] = [await start(hotMount, build), await start(hotMount, build)];
+    before.pick('c');
+    reads = [];
+    before.click('hash-repeated');
+    await before.app.reload(build);
+    await until(() => before.read('hashed') === '6');
+    await sleep(30);
+    expect('hot: an effect repeated in a list gets all its answers', before.read('hashed'), '6');
+    expect('hot: and none is worked out again', reads.length, 6);
+
+    after.pick('d');
+    reads = [];
+    after.click('hash-repeated');
+    await until(() => after.read('hashed') === '2');
+    await after.app.reload(build);
+    await until(() => after.read('hashed') === '6');
+    await sleep(30);
+    expect('hot: and so does one with some answers in already', `${after.read('hashed')}|${reads.length}`, '6|6');
+
+    for (const t of [a, b, before, after]) t.app.unmount();
+  }
 
   const [a, b] = await hotPair();
   a.pick('a.mp3');
@@ -170,7 +230,7 @@ const pair = async () => [await start(mount, wasm), await start(mount, wasm)];
 // --- State at the top of a feature file is shared by every app on the page ---
 // The digest queue is the exception: it limits what the whole page holds in memory.
 {
-  const shared = new Set(['digestQueue', 'digestsRunning']);
+  const shared = new Set(['digestQueues', 'digestsRunning']);
   const found = [];
   for (const name of readdirSync('www/features')) {
     for (const line of readFileSync(`www/features/${name}`, 'utf8').split('\n')) {
