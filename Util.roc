@@ -1,6 +1,8 @@
 import pf.Cmd
+import pf.Duration
 import pf.OsStr
 import pf.Stderr
+import pf.Tcp
 
 ## Helpers shared by the executable scripts in the repo root: build.roc,
 ## tests.roc, e2e.roc and watch.roc. All of them are run from the repo root.
@@ -66,5 +68,30 @@ Util :: [].{
 			Err(_) => trimmed
 		}
 		base.drop_suffix(".roc")
+	}
+	## `count` ports that are free now. The operating system picks them, so a
+	## test run never collides with another server on this machine. Every
+	## probe stays open until all are picked, so no two ports are the same.
+	free_ports! : U64 => Try(List(U64), [NoFreePort(Str)])
+	free_ports! = |count| {
+		var $probes = []
+		var $ports = []
+		while $ports.len() < count {
+			probe = Tcp.listen!("127.0.0.1", 0, Duration.seconds(5)) ? |e| NoFreePort(Str.inspect(e))
+			port = probe.local_port!() ? |e| NoFreePort(Str.inspect(e))
+			$probes = $probes.append(probe)
+			$ports = $ports.append(port.to_u64())
+		}
+		for probe in $probes {
+			probe.close!() ? |e| NoFreePort(Str.inspect(e))
+		}
+		Ok($ports)
+	}
+
+	## One port that is free now, picked by the operating system.
+	free_port! : {} => Try(U64, [NoFreePort(Str)])
+	free_port! = |{}| {
+		ports = free_ports!(1)?
+		ports.first().map_err(|_| NoFreePort("the operating system gave no port"))
 	}
 }

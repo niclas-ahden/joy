@@ -16,7 +16,9 @@
 # what only a real browser can prove (event dispatch and bubbling, <dialog>,
 # History, WebCrypto, fetch, timers, real keyboard/mouse input).
 #
-# Set the environment variable `E2E_PORT` to change the port (default 8787).
+# The server listens on a port the operating system picks, so the run never
+# collides with another server. Set the environment variable `E2E_PORT` to
+# choose the port yourself.
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.31.0/Ff3fkK1TjYTVxMj9V21FP24ojTJXYk314Fbo1whBZ6Yf.tar.zst",
 	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.7.0/BGjQKbG9U3V8cH6mRbypUAFVqFoVEu6n9bsA3QmFL1f4.tar.zst",
@@ -34,7 +36,7 @@ import spec.Wait
 import weaver.Cli
 import weaver.Opt
 import Args
-import Util exposing [fail!, run!, run_env!]
+import Util exposing [fail!, free_port!, run!, run_env!]
 
 main! = |args| {
 	{ opt: opt_arg, browser } = Args.parse!(parser, args, "--opt=speed")?
@@ -62,7 +64,11 @@ main! = |args| {
 
 	run_env!("roc", ["tests/e2e/compile.roc"], "JOY_OPT", opt)?
 
-	port = Env.var_str!("E2E_PORT") ?? "8787"
+	port =
+		match Env.var_str!("E2E_PORT") {
+			Ok(chosen) => chosen
+			Err(_) => free_port!({})?.to_str()
+		}
 	url = "http://127.0.0.1:${port}"
 
 	# Spawned leashed, so the platform kills the server (and anything it

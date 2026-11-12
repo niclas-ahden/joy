@@ -12,6 +12,7 @@ app [main!] {
 
 import http.Request
 import pf.Cmd
+import pf.Duration
 import pf.Env
 import pf.Http
 import pf.OsStr
@@ -19,6 +20,7 @@ import pf.Path
 import pf.Sleep
 import pf.Stderr
 import pf.Stdout
+import pf.Tcp
 import pf.Utc
 import spec.Spec
 import spec.TestEnvironment
@@ -39,19 +41,17 @@ hooks = {
 	sleep!: Sleep.millis!,
 }
 
-# ./watch.roc serves on 8000, so the test servers start above it and a dev
-# server can keep running while the suite does. The server hooks below take
-# U16 worker indexes and worker_envs takes U64, so the base appears once per
-# width.
-base_port : U16
-base_port = 9000
+## The port of worker `index`. `ports` holds one per worker, so the lookup
+## always finds it.
+port_of : List(U64), U64 -> U64
+port_of = |ports, index| ports.get(index) ?? 0
 
 ## Environment for each test process: its own server's URL, in the same
 ## variable Joy's own e2e runner sets, so these tests run unchanged under
 ## either runner.
-worker_envs : U64 -> List((Str, Str))
-worker_envs = |index| [
-	("E2E_URL", "http://localhost:${(9000 + index).to_str()}"),
+worker_env : U64 -> List((Str, Str))
+worker_env = |port| [
+	("E2E_URL", "http://localhost:${port.to_str()}"),
 ]
 
 max_workers! : {} => U16
@@ -105,9 +105,8 @@ warm_package_cache! = |test_dir|
 ## Start one static file server for the given worker index. The same
 ## Caddyfile that ./watch.roc uses, so the tests serve www/ exactly like
 ## the dev server does.
-spawn_worker! : U16 => Try(Cmd.Child, _)
-spawn_worker! = |index| {
-	port = base_port + index
+spawn_worker! : U16, U64 => Try(Cmd.Child, _)
+spawn_worker! = |index, port| {
 	Cmd.new(OsStr.from_str("caddy"))
 		.args(["run", "--config", "Caddyfile", "--adapter", "caddyfile"].map(OsStr.from_str))
 		.env(OsStr.from_str("JOY_WATCH_PORT"), OsStr.from_str(port.to_str()))
@@ -119,7 +118,7 @@ spawn_worker! = |index| {
 
 ## One readiness probe against a worker's server: any HTTP response means it
 ## is up
-check_worker! : U16 => Bool
+check_worker! : U64 => Bool
 check_worker! = |port| {
 	request = Request.from_method(GET).with_uri("http://localhost:${port.to_str()}")
 	Http.send!(request, {}).is_ok()
@@ -130,6 +129,9 @@ main! = |os_args| {
 	args = os_args.map(|a| OsStr.display(a))
 	{ pattern, fail_fast } = parse_args(args)
 	workers = max_workers!({})
+	# Each test server gets a port the operating system picks, so the suite
+	# runs beside a dev server or anything else listening on this machine.
+	ports = free_ports!(workers.to_u64())?
 
 	warm_package_cache!("tests")?
 
@@ -139,8 +141,8 @@ main! = |os_args| {
 	# runner), then poll them all until every one answers (up to ~30s).
 	servers = TestEnvironment.start!(hooks, {
 		count: workers,
-		spawn!: spawn_worker!,
-		ready!: |index| check_worker!(base_port + index),
+		spawn!: |index| spawn_worker!(index, port_of(ports, index.to_u64())),
+		ready!: |index| check_worker!(port_of(ports, index.to_u64())),
 		max_attempts: 150,
 		delay_ms: 200,
 	})?
@@ -150,7 +152,7 @@ main! = |os_args| {
 	results = Spec.run_filtered!(hooks, "tests", {
 		test_command: ["roc", "--opt=speed"],
 		max_workers: workers,
-		worker_envs,
+		worker_envs: |index| worker_env(port_of(ports, index)),
 		before_each!: |_index| Ok({}),
 		per_test_timeout_ms: 120_000,
 		quiet: Bool.True,
@@ -180,4 +182,23 @@ main! = |os_args| {
 	} else {
 		Err(TestsFailed)
 	}
+}
+
+## `count` ports that are free now. The operating system picks them, so the
+## suite never collides with another server on this machine. Every probe
+## stays open until all are picked, so no two ports are the same.
+free_ports! : U64 => Try(List(U64), [NoFreePort(Str)])
+free_ports! = |count| {
+	var $probes = []
+	var $ports = []
+	while $ports.len() < count {
+		probe = Tcp.listen!("127.0.0.1", 0, Duration.seconds(5)) ? |e| NoFreePort(Str.inspect(e))
+		port = probe.local_port!() ? |e| NoFreePort(Str.inspect(e))
+		$probes = $probes.append(probe)
+		$ports = $ports.append(port.to_u64())
+	}
+	for probe in $probes {
+		probe.close!() ? |e| NoFreePort(Str.inspect(e))
+	}
+	Ok($ports)
 }

@@ -28,6 +28,7 @@ import pf.OsStr
 import pf.Sleep
 import pf.Stderr
 import pf.Stdout
+import pf.Tcp
 
 main! : List(OsStr) => Try({}, _)
 main! = |forwarded| {
@@ -102,11 +103,10 @@ exit_code = |status|
 # browser test against it proves the whole chain (caddy, the build it runs,
 # runtime.js, the /spa-todomvc/ alias). It does not edit app.roc, so the
 # rebuild-on-change half of the loop is roc's own --watch to keep honest.
-# Clear of the worker servers at 9000+ and the dev default 8000.
-smoke_port = "8123"
-
 smoke_watch! : {} => Try({}, _)
 smoke_watch! = |{}| {
+	ports = free_ports!(1)?
+	smoke_port = (ports.first() ? |_| NoFreePort("the operating system gave no port")).to_str()
 	Stdout.line!("Smoke testing ./watch.roc on port ${smoke_port}...")?
 
 	watch = Cmd.new(OsStr.from_str("roc")).args([OsStr.from_str("./watch.roc")])
@@ -173,4 +173,23 @@ wait_for_server! = |url, attempts_left| {
 		Sleep.millis!(200)?
 		wait_for_server!(url, attempts_left - 1)
 	}
+}
+
+## `count` ports that are free now. The operating system picks them, so the
+## suite never collides with another server on this machine. Every probe
+## stays open until all are picked, so no two ports are the same.
+free_ports! : U64 => Try(List(U64), [NoFreePort(Str)])
+free_ports! = |count| {
+	var $probes = []
+	var $ports = []
+	while $ports.len() < count {
+		probe = Tcp.listen!("127.0.0.1", 0, Duration.seconds(5)) ? |e| NoFreePort(Str.inspect(e))
+		port = probe.local_port!() ? |e| NoFreePort(Str.inspect(e))
+		$probes = $probes.append(probe)
+		$ports = $ports.append(port.to_u64())
+	}
+	for probe in $probes {
+		probe.close!() ? |e| NoFreePort(Str.inspect(e))
+	}
+	Ok($ports)
 }
