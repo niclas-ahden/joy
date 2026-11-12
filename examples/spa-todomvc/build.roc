@@ -18,7 +18,7 @@
 # checkout's wasm host must exist: run ./build.roc at the repo root once).
 # Either way there is nothing to compile but the app itself.
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.31.0/Ff3fkK1TjYTVxMj9V21FP24ojTJXYk314Fbo1whBZ6Yf.tar.zst",
 	joy_runtime: "../../tools/runtime/main.roc",
 }
 

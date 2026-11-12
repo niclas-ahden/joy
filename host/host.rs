@@ -3234,7 +3234,7 @@ pub extern "C" fn dispatch(msg_box: usize) -> u32 {
 
 // The erased-callable ABI comes from the generated bindings: a boxed callable
 // is a refcounted allocation whose data starts with `RocErasedCallablePayload
-// { callable_fn_ptr, on_drop }`; the closure's capture bytes live inline at
+// { callable_fn_ptr, on_drop, on_copy, capture_size }`; the closure's capture bytes live inline at
 // the generated `ROC_ERASED_CALLABLE_CAPTURE_OFFSET`. The function pointer has
 // the uniform shape `fn(host, ret, args, capture, reuse, out_desc)`. Compiled
 // Roc code carries no host context under the symbol ABI and passes null, so
