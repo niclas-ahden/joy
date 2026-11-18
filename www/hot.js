@@ -1020,7 +1020,7 @@ function instrument(rt) {
     for (const e of plan.done) plain.endCall(e.cb);
     if (held.again) {
       if (held.title) plain.runEffect(held.title);
-      if (held.url !== null) dom.replaceUrl(held.url);
+      if (held.url !== null) dom.restoreUrl(held.url);
       for (const e of held.ports) plain.runEffect(e);
       if (held.focus) plain.runEffect(held.focus);
       if (held.scroll) plain.runEffect(held.scroll);

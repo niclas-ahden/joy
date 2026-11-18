@@ -41,10 +41,16 @@ defineEffect('joy/dom/push_url', (args, host) => host.dom.pushUrl(args.str()));
 defineEffect('joy/dom/replace_url', (args, host) => host.dom.replaceUrl(args.str()));
 
 //// subscription joy/dom/url_changed
-// The new path (path, query and fragment) each time the back or forward
-// buttons change the URL.
+// The page's whole address each time the URL changes: by Back
+// and Forward, and by a push_url or replace_url of any app on the page.
 defineSubscription('joy/dom/url_changed', (args, host, emit) =>
   host.dom.onUrlChange(() => emit(new WireWriter().str(host.dom.currentUrl()))));
+
+//// subscription joy/dom/link_clicks
+// The whole address of a link of this site clicked inside the
+// app, which the app then answers for (see onLinkClick).
+defineSubscription('joy/dom/link_clicks', (args, host, emit) =>
+  host.dom.onLinkClick(host.root(), (url) => emit(new WireWriter().str(url))));
 
 //// subscription joy/dom/document_clicks
 // The attribute's value on the clicked element, or on its nearest ancestor

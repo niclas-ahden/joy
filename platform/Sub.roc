@@ -63,6 +63,11 @@ Sub(msg) := { id : Str, args : List(U8), on_event : Box((List(U8) -> Box(msg))) 
 			),
 		})
 
+	## Re-target every subscription of a list, as a page's subscriptions
+	## become the app's: `Sub.map_all(subs, |m| PageMsg(m))`.
+	map_all : List(Sub(a)), (a -> b) -> List(Sub(b))
+	map_all = |subs, f| subs.map(|sub| sub.map(f))
+
 	## The id of a subscription's JavaScript, `joy/keyboard/keys` say. Like
 	## `Effect.Id` it is written as a string and only as one, so a build reads
 	## the subscriptions an app uses out of its wasm.
@@ -104,6 +109,13 @@ Sub(msg) := { id : Str, args : List(U8), on_event : Box((List(U8) -> Box(msg))) 
 expect {
 	sub = Sub.listen("joy/media/levels", [1, 2], |b| "level:${b.len().to_str()}").map(|m| "outer:${m}")
 	sub.identity() == { id: "joy/media/levels", args: [1, 2] } and sub.deliver([7]) == "outer:level:1"
+}
+
+# `map_all` re-targets each subscription of the list and keeps their order.
+expect {
+	subs = [Sub.listen("my_app/first", [], |b| b.len()), Sub.listen("my_app/second", [], |b| b.len() * 10)]
+	mapped = Sub.map_all(subs, |n| n + 1)
+	mapped.map(|sub| sub.identity().id) == ["my_app/first", "my_app/second"] and mapped.map(|sub| sub.deliver([7, 7])) == [3, 21]
 }
 
 ## An id without its mark, see `plain` in Effect.

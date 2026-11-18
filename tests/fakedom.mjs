@@ -232,11 +232,29 @@ export const fakeDom = {
     return () => { listener.active = false; };
   },
   navigate: (url) => { navigations.push({ kind: 'navigate', url }); },
-  pushUrl: (url) => { navigations.push({ kind: 'push', url }); fakeLocation.url = url; },
-  replaceUrl: (url) => { navigations.push({ kind: 'replace', url }); fakeLocation.url = url; },
+  // As the browser's: the URL already showing is left alone, and every
+  // other change is told to the apps that listen.
+  pushUrl: (url) => {
+    if (url === fakeLocation.url) return;
+    navigations.push({ kind: 'push', url });
+    fakeLocation.url = url;
+    for (const l of activeUrlListeners()) l.fn();
+  },
+  replaceUrl: (url) => {
+    if (url === fakeLocation.url) return;
+    navigations.push({ kind: 'replace', url });
+    fakeLocation.url = url;
+    for (const l of activeUrlListeners()) l.fn();
+  },
+  restoreUrl: (url) => { fakeLocation.url = url; },
   onUrlChange: (fn) => {
     const listener = { fn, active: true };
     urlListeners.push(listener);
+    return () => { listener.active = false; };
+  },
+  onLinkClick: (root, fn) => {
+    const listener = { root, fn, active: true };
+    linkListeners.push(listener);
     return () => { listener.active = false; };
   },
   currentUrl: () => fakeLocation.url,
@@ -435,6 +453,12 @@ export const others = {
 export const fakeLocation = { url: '/' };
 export const urlListeners = [];
 export const activeUrlListeners = () => urlListeners.filter((l) => l.active);
+// A click on a link of this site inside `root`, as the browser hands it to
+// the apps that took their links over.
+export const linkListeners = [];
+export function linkClick(root, url) {
+  for (const l of linkListeners) if (l.active && l.root === root) l.fn(url);
+}
 export function popstate(url) {
   fakeLocation.url = url;
   for (const l of activeUrlListeners()) l.fn();

@@ -23,10 +23,10 @@ main! = |_args| {
 	page.find("#search").fill!("hats on")?
 	assert!(page.url_contains("?q=hats%20on"))?
 
-	# push_url changes the URL and keeps the model: the rendered query
-	# survives the push.
+	# push_url changes the URL, and the app hears of it. The query goes
+	# along in the URL, so the rendered query survives the push.
 	page.find("#push").click!()?
-	assert!(page.url_contains("?demo=push"))?
+	assert!(page.url_contains("?q=hats%20on&demo=push"))?
 	assert!(page.find(query).has_text("Current query: hats on"))?
 
 	# Replace on top of the pushed entry, so Back has something visible to

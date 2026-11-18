@@ -1,8 +1,8 @@
 ## Browser navigation, focus, native dialogs, the page title and scrolling.
 ## These are one-way effects with no response: return them from `init` or
 ## `update` (e.g. `(model, [DOM.push_url("?q=1")])`) and the host performs
-## them after the paint. Reacting to the user's Back/Forward buttons, and to
-## clicks anywhere on the page, are subscriptions.
+## them after the paint. An app hears every change of the URL, and the clicks on
+## its links, through the subscriptions `on_url_change` and `on_link_click`.
 ##
 ## The effects addressed by a CSS selector (`focus`, `show_modal`,
 ## `close_modal`) do nothing when the selector matches no element. That is
@@ -69,24 +69,40 @@ DOM := [].{
 	navigate = |url| Effect.send("joy/dom/navigate", Wire.writer({}).str(url).done())
 
 	## Change the URL without reloading and add a history entry, so Back
-	## returns to the previous URL. Pair with `on_url_change` so the view
-	## reacts when the user steps back through those entries.
+	## returns to the previous URL. The page is then shown from the top, or
+	## from the element the URL's fragment names, as a page the browser
+	## loads is. The app hears of the new URL through `on_url_change`,
+	## as it does of Back and Forward, so opening the page a URL names is
+	## written once. The URL already showing is left alone: no history
+	## entry, and nothing to hear.
 	push_url : Str -> Effect(msg)
 	push_url = |url| Effect.send("joy/dom/push_url", Wire.writer({}).str(url).done())
 
-	## Rewrite the URL in place: no reload and no history entry. Built for
-	## things like keeping "?q=..." in sync with a search box, where Back
-	## should not step through every keystroke.
+	## Rewrite the URL in place: no reload, no history entry, and the page
+	## stays where it is scrolled to. Built for things like keeping
+	## "?q=..." in sync with a search box, where Back should not step
+	## through every keystroke. The app hears of it through
+	## `on_url_change`, unless the URL is the one already showing.
 	replace_url : Str -> Effect(msg)
 	replace_url = |url| Effect.send("joy/dom/replace_url", Wire.writer({}).str(url).done())
 
-	## Fire a message when the browser's back/forward buttons change the URL
-	## (the `popstate` event), with the new path (path + query + fragment).
-	## Programmatic changes (`push_url`, `replace_url`) do not fire it
-	## because the app already knows about those.
+	## A message each time the page's URL changes: by Back and Forward, and
+	## by `push_url` and `replace_url`. It carries the whole address as text,
+	## like `https://example.com/notes/3?sort=new#top`. An app with pages
+	## opens the page an address names here, and nowhere else.
 	on_url_change : (Str -> msg) -> Sub(msg)
 	on_url_change = |on_change|
 		Sub.listen("joy/dom/url_changed", [], |event| on_change(Wire.reader(event).str().map_ok(|(url, _)| url) ?? ""))
+
+	## A message each time the user clicks a link of this site inside the
+	## app, with the link's whole address as text. The app then answers for
+	## the click, and `push_url` with that address goes there without loading
+	## a page. A click with a modifier key, a link that opens in another tab
+	## or downloads, and a link to another site stay the browser's. Without
+	## this subscription, every link loads its page as links do.
+	on_link_click : (Str -> msg) -> Sub(msg)
+	on_link_click = |on_click|
+		Sub.listen("joy/dom/link_clicks", [], |event| on_click(Wire.reader(event).str().map_ok(|(url, _)| url) ?? ""))
 
 	## Fire a message when the user clicks an element carrying this
 	## attribute, or anything inside one, with the attribute's value. The
@@ -120,15 +136,20 @@ expect sent(DOM.set_title("Inbox")) == Ok(("joy/dom/set_title", "Inbox"))
 # x before y, so a scroll down never lands sideways.
 expect DOM.scroll_to({ x: 3, y: 40 }).identity() == { id: "joy/dom/scroll_to", args: Wire.writer({}).u64(3).u64(40).done() }
 
-expect {
-	sub = DOM.on_url_change(|url| "nav:${url}")
-	sub.identity().id == "joy/dom/url_changed" and sub.deliver(Wire.writer({}).str("/diary?q=1").done()) == "nav:/diary?q=1"
-}
-
 # The attribute is the subscription's identity, so two attributes are two
 # listeners.
 expect {
 	sub = DOM.on_document_click("data-copy", |value| "copy:${value}")
 	identity = sub.identity()
 	identity.id == "joy/dom/document_clicks" and identity.args == Wire.writer({}).str("data-copy").done() and sub.deliver(Wire.writer({}).str("code-1f").done()) == "copy:code-1f"
+}
+
+expect {
+	sub = DOM.on_url_change(|url| "now:${url}")
+	sub.identity().id == "joy/dom/url_changed" and sub.deliver(Wire.writer({}).str("https://example.com/diary?q=1").done()) == "now:https://example.com/diary?q=1"
+}
+
+expect {
+	sub = DOM.on_link_click(|url| "clicked:${url}")
+	sub.identity().id == "joy/dom/link_clicks" and sub.deliver(Wire.writer({}).str("https://example.com/about").done()) == "clicked:https://example.com/about"
 }

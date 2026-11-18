@@ -55,6 +55,11 @@ Effect(msg) := [
 			Send(id, args) => Send(id, args)
 		}
 
+	## Re-target every effect of a list, as a page's effects become the
+	## app's: `Effect.map_all(effects, |m| PageMsg(m))`.
+	map_all : List(Effect(a)), (a -> b) -> List(Effect(b))
+	map_all = |effects, f| effects.map(|effect| effect.map(f))
+
 	## The id of an effect, `joy/media/record` say: what its Roc and its
 	## JavaScript share. It is written as a string, `"my_app/share_link"`,
 	## and only as one: the compiler makes an `Id` of a string literal and of
@@ -177,3 +182,22 @@ expect Effect.reply([0, 104, 105]) == Ok([104, 105])
 expect Effect.reply([1, 110, 111]) == Err(EffectFailed({ name: "Error", message: "no" }))
 expect Effect.reply([1].concat(Str.to_utf8("NotAllowedError: Permission denied: now"))) == Err(EffectFailed({ name: "NotAllowedError", message: "Permission denied: now" }))
 expect Effect.reply([]) == Err(EffectFailed({ name: "Error", message: "no reply" }))
+
+# `map_all` re-targets each effect of the list and keeps their order.
+expect {
+	effects : List(Effect(U64))
+	effects = [Effect.send("my_app/first", [1]), Effect.call("my_app/second", [2], |reply| reply.len())]
+	mapped = Effect.map_all(effects, |n| n + 1)
+	fired =
+		match mapped {
+			[_, Call(_, _, cb)] => Box.unbox(Box.unbox(cb)([0, 0, 0]))
+			_ => 0
+		}
+	mapped.map(|effect| effect.identity().id) == ["my_app/first", "my_app/second"] and fired == 4
+}
+
+expect {
+	none : List(Effect(U64))
+	none = []
+	Effect.map_all(none, |n| n + 1).len() == 0
+}

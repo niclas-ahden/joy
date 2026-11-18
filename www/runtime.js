@@ -1904,7 +1904,7 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
   // Boot the app: the flags string is the only thing the pure `init`
   // receives, so the embedder writes any boot data the app needs (time,
   // url, whatever) into it. After boot the app gets its times from timer
-  // messages and URL changes from its subscriptions.
+  // messages and URL changes through its `on_url_change`.
   function start(flags = '') {
     const [fp, fl] = writeString(flags);
     enter(() => {
@@ -2365,6 +2365,34 @@ function pristineValue(input) {
   return twin.value;
 }
 
+// Who hears of a URL change the page makes itself (see pushUrl): every app
+// on the page that listens, since the URL is the page's.
+const urlListeners = new Set();
+let warnedNoUrlListener = false;
+
+function urlChanged() {
+  for (const fn of [...urlListeners]) fn();
+}
+
+// Whether `url` is the URL already showing.
+function showsUrl(url) {
+  try {
+    return new URL(url, location.href).href === location.href;
+  } catch {
+    return false;
+  }
+}
+
+// Where a page the browser loads would start: at the element its fragment
+// names, or at the top.
+function scrollToFragment() {
+  let id = location.hash.slice(1);
+  try { id = decodeURIComponent(id); } catch {}
+  const el = id === '' ? null : document.getElementById(id) ?? document.getElementsByName(id)[0] ?? null;
+  if (el) el.scrollIntoView();
+  else window.scrollTo(0, 0);
+}
+
 export const browserDom = {
   createElement: (tag, ns) =>
     ns === 'svg' || ns === 'math'
@@ -2483,15 +2511,61 @@ export const browserDom = {
     return () => document.removeEventListener(event, fn);
   },
   navigate: (url) => location.assign(url),
-  pushUrl: (url) => history.pushState(null, '', url),
-  replaceUrl: (url) => history.replaceState(null, '', url),
-  // popstate fires on window (it does not reach document listeners) and only
-  // for user history navigation, not for pushState/replaceState above.
-  onUrlChange: (fn) => {
-    window.addEventListener('popstate', fn);
-    return () => window.removeEventListener('popstate', fn);
+  // A new history entry, shown from its fragment's element or from the top
+  // as a page the browser loads is. The URL already showing is left alone.
+  pushUrl: (url) => {
+    if (showsUrl(url)) return;
+    history.pushState(null, '', url);
+    urlChanged();
+    // The apps that heard of it have painted by then.
+    queueMicrotask(scrollToFragment);
   },
-  currentUrl: () => location.pathname + location.search + location.hash,
+  // The URL rewritten in place, with the page where it is scrolled to.
+  replaceUrl: (url) => {
+    if (showsUrl(url)) return;
+    history.replaceState(null, '', url);
+    urlChanged();
+  },
+  // The URL rewritten in place without a word to the apps, for a replay
+  // that ends where the session was.
+  restoreUrl: (url) => history.replaceState(null, '', url),
+  // Every change of the URL: Back and Forward, which fire popstate on
+  // window (it does not reach document listeners), and pushUrl and
+  // replaceUrl above, by any app on the page.
+  onUrlChange: (fn) => {
+    urlListeners.add(fn);
+    window.addEventListener('popstate', fn);
+    return () => {
+      urlListeners.delete(fn);
+      window.removeEventListener('popstate', fn);
+    };
+  },
+  // The clicks on links inside `root` that would load a page of this site
+  // in this tab, taken from the browser and handed to `fn` as the link's
+  // whole address. A click a handler of the app's own has
+  // prevented, one with a modifier key or another button, and a link that
+  // opens elsewhere, downloads or leaves the site are the browser's.
+  onLinkClick: (root, fn) => {
+    const heard = (e) => {
+      if (e.defaultPrevented || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+      const link = e.target instanceof Element ? e.target.closest('a[href]') : null;
+      if (link === null || !root.contains(link)) return;
+      const target = link.getAttribute('target');
+      if ((target !== null && target !== '' && target !== '_self') || link.hasAttribute('download')) return;
+      let url;
+      try { url = new URL(link.getAttribute('href'), document.baseURI); } catch { return; }
+      if (url.origin !== location.origin) return;
+      e.preventDefault();
+      if (urlListeners.size === 0 && !warnedNoUrlListener) {
+        warnedNoUrlListener = true;
+        console.warn('Joy: the app takes over its links with on_link_click, but nothing hears the URL change. Subscribe to DOM.on_url_change too.');
+      }
+      fn(url.href);
+    };
+    root.addEventListener('click', heard);
+    return () => root.removeEventListener('click', heard);
+  },
+  currentUrl: () => location.href,
   setTitle: (title) => { document.title = title; },
   scrollTo: (x, y) => window.scrollTo(x, y),
   clickedAttr: (e, name) => {

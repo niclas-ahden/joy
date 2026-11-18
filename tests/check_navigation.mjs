@@ -2,7 +2,7 @@
 // in place, the buttons push and navigate.
 // Run from the repo root: node tests/check_navigation.mjs
 import { readFileSync } from 'node:fs';
-import { El, fakeDom, find, findTag, htmlBare, navigations, popstate, activeUrlListeners } from './fakedom.mjs';
+import { El, fakeDom, find, findTag, htmlBare, linkClick, navigations, popstate, activeUrlListeners } from './fakedom.mjs';
 import { appRuntime, expect, wasmPath } from './harness.mjs';
 
 const { mount } = await appRuntime('navigation');
@@ -21,12 +21,21 @@ expect('replace_url! called with encoding', navigations.some((n) => n.kind === '
 
 // The two buttons.
 find(root, 'Push ?demo=push').listeners.click();
-expect('push_url! called', navigations.some((n) => n.kind === 'push' && n.url === '?demo=push'), true);
+expect('push_url! called', navigations.some((n) => n.kind === 'push' && n.url === '?q=hats%20off&demo=push'), true);
 find(root, 'Reload with ?reloaded=1').listeners.click();
 expect('navigate! called', navigations.some((n) => n.kind === 'navigate' && n.url === '?reloaded=1'), true);
 
-// Effects with no model change must not repaint (both buttons return none).
+// The push is told to the app, which reads the query back from the URL.
 expect('query survives the buttons', htmlBare(root).includes('Current query: hats off'), true);
+
+// DOM.on_link_click: a click on a link of the app's is handed to it, and its
+// push_url is heard like any other change of the URL.
+linkClick(root, 'http://localhost/diary?q=linked');
+expect('a link click reached update, which pushed its URL', navigations.some((n) => n.kind === 'push' && n.url === 'http://localhost/diary?q=linked'), true);
+expect('the pushed URL was told to the app', htmlBare(root).includes('Current query: linked'), true);
+const pushes = navigations.filter((n) => n.kind === 'push').length;
+linkClick(root, 'http://localhost/diary?q=linked');
+expect('the URL already showing adds no history', navigations.filter((n) => n.kind === 'push').length, pushes);
 
 // DOM.on_url_change: Back/Forward (popstate) delivers the new URL to the
 // subscription, whose decoder re-derives the query for update.
