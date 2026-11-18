@@ -9,6 +9,12 @@ Release :: [].{
 
 	current = Unreleased
 
+	## What ./joy --version prints: the release's tag, which bundle-cli.roc
+	## writes here, or "unreleased" in a checkout. A string rather than a
+	## match on `current`, which roc would warn is known at compile time.
+	version : Str
+	version = "unreleased"
+
 	## Where init takes the platform from: the Joy checkout `checkout`
 	## names, else this CLI's release. Matching on `current` itself would
 	## make roc warn that the match is known at compile time.

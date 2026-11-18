@@ -9,7 +9,7 @@ Reference :: [].{
 	## outside the client folder, is Elsewhere.
 	resolve : Str, Str, Str -> Try(Str, [Elsewhere])
 	resolve = |file, raw, client_url| {
-		path = path_of(raw)
+		path = Reference.path_of(raw)
 		scheme =
 			match path.split_first("/") {
 				Ok({ before, .. }) => before.contains(":")
@@ -46,7 +46,7 @@ Reference :: [].{
 	## still leads there.
 	renamed : Str, Str -> Str
 	renamed = |raw, hashed| {
-		path = path_of(raw)
+		path = Reference.path_of(raw)
 		rest = raw.drop_prefix(path)
 		new_name = last_part(hashed)
 		match path.split_last("/") {
@@ -91,18 +91,19 @@ Reference :: [].{
 	}
 
 	Edit : { start : U64, end : U64, text : Str }
-}
 
-path_of : Str -> Str
-path_of = |raw| {
-	before_query =
-		match raw.split_first("?") {
+	## `raw` without its query and fragment.
+	path_of : Str -> Str
+	path_of = |raw| {
+		before_query =
+			match raw.split_first("?") {
+				Ok({ before, .. }) => before
+				Err(_) => raw
+			}
+		match before_query.split_first("#") {
 			Ok({ before, .. }) => before
-			Err(_) => raw
+			Err(_) => before_query
 		}
-	match before_query.split_first("#") {
-		Ok({ before, .. }) => before
-		Err(_) => before_query
 	}
 }
 

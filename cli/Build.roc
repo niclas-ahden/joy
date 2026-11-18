@@ -12,6 +12,7 @@ import weaver.Cli
 import weaver.Opt
 import weaver.SubCmd
 import Args
+import CustomEffects
 import Compile
 import Generated
 import HtmlPage
@@ -74,6 +75,9 @@ Build :: [].{
 		if bundles.is_empty() and server == None {
 			return fail!("There are no bundles under client/ and no server/main.roc, so there is nothing to build.")
 		}
+		# Before the output directory is emptied, so a build that cannot start
+		# leaves the last one as it was.
+		need_roc!()?
 		check_releases!(bundles)?
 		ensure_hosts!(bundles)?
 		run_before!(options.before)?
@@ -128,7 +132,13 @@ Build :: [].{
 			},
 		)?
 		count = (server_jobs.len() + bundle_jobs.len()).to_str()
-		Stdout.line!("Building ${count} at --opt=${opt}${if (server == None) "" else ", the server at --opt=${server_opt}"}${Compile.at_a_time(jobs)}")?
+		building =
+			if bundles.is_empty() {
+				"the server at --opt=${server_opt}"
+			} else {
+				"${count} at --opt=${opt}${if (server == None) "" else ", the server at --opt=${server_opt}"}"
+			}
+		Stdout.line!("Building ${building}${Compile.at_a_time(jobs)}")?
 		# The server starts first, since it is usually the longest build.
 		results = Compile.run_all!(server_jobs.concat(bundle_jobs), jobs, |result, _done| report!(result))?
 		failed = results.keep_if(|result| result.outcome == Failed)
@@ -137,19 +147,9 @@ Build :: [].{
 		}
 
 		names = name_bundles!(out, bundles)?
-		wasms = names.map_try!(|(_, name)| Path.utf8("${out}/client/${name}").read_bytes!())?
-		runtime = runtime!(bundles, if (debug) Full else Used(wasms))?
-		# The runtime has to match the wasm, so joy.js imports it by a hashed
-		# name, which no cache keeps past a deploy. runtime.js stays beside it
-		# for pages that mount by hand.
-		runtime_name = "runtime.${short_hash(Crypt.hash!(Str.to_utf8(runtime), Sha256))}.js"
-		Path.utf8("${out}/client/runtime.js").write_utf8!(runtime)?
-		Path.utf8("${out}/client/${runtime_name}").write_utf8!(runtime)?
-		loader = shipped_loader!(bundles, debug)?.replace_each("'./runtime.js'", "'./${runtime_name}'").replace_each("\"./runtime.js\"", "\"./${runtime_name}\"")
-		joy_name = "joy.${short_hash(Crypt.hash!(Str.to_utf8(loader), Sha256))}.js"
-		Path.utf8("${out}/client/${joy_name}").write_utf8!(loader)?
+		{ joy_name, runtime_name, effects_names } = write_joy_files!(out, bundles, names, debug)?
 
-		reserved = ["joy.js", "runtime.js", runtime_name, joy_name].concat(bundles.map(|bundle| "${bundle.id}/"))
+		reserved = ["joy.js", "runtime.js", runtime_name, joy_name].concat(effects_names).concat(bundles.map(|bundle| "${bundle.id}/"))
 		copy_assets!(out, reserved, assets, sheets)?
 		public = copy_public!(out, public_dir, reserved.concat(assets.map(|(_, hashed)| hashed)), assets.map(|(plain, _)| plain), client_url, [("joy.js", joy_name)].concat(assets), names)?
 		write_assets_json!(out, joy_name, runtime_name, names, assets, public)?
@@ -157,7 +157,13 @@ Build :: [].{
 
 		warn_about_paths!(assets.map(|(plain, _)| plain), public_dir, public_files, client_url)
 		took = Monotonic.since(Monotonic.now!(), started)
-		Stdout.line!("Built ${bundles.len().to_str()} bundle${plural(bundles.len())}${if (server == None) "" else " and the server"} into ${out}/ in ${seconds(took)}")
+		built =
+			if bundles.is_empty() {
+				"the server"
+			} else {
+				"${bundles.len().to_str()} bundle${plural(bundles.len())}${if (server == None) "" else " and the server"}"
+			}
+		Stdout.line!("Built ${built} into ${out}/ in ${seconds(took)}")
 	}
 
 	## Every file below `root`, by its path from `root`, links skipped.
@@ -216,8 +222,9 @@ Build :: [].{
 	}
 
 	## runtime.js: Joy's core with every feature, or with the features the
-	## given wasm modules call.
-	runtime! : List(Project.Bundle), [Full, Used(List(List(U8)))] => Try(Str, _)
+	## given wasm modules call. And `custom`, the module of the JavaScript the
+	## project and its packages bring, empty when there is none.
+	runtime! : List(Project.Bundle), [Full, Used(List(List(U8)))] => Try({ runtime : Str, custom : Str }, _)
 	runtime! = |bundles, which| {
 		written = www_of!(bundles)?
 		www =
@@ -226,32 +233,55 @@ Build :: [].{
 				Used(_) => minified_or!(written)
 			}
 		core = Path.utf8("${www}/runtime.js").read_utf8!() ? |_| NoRuntime(www)
-		features =
-			(Path.utf8("${www}/features").list!() ?? [])
-				.keep_if(|entry| Path.display(entry).ends_with(".js"))
-				.map_try!(|entry| entry.read_utf8!())?
+		# Joy's own features, then those of the project and its packages. A
+		# module that brings a browser feature has its JavaScript beside it,
+		# in the format of Joy's own.
+		joys = (Path.utf8("${www}/features").list!() ?? []).map(Path.display).keep_if(|file| file.ends_with(".js"))
+		brought = Project.feature_files!(bundles)
+		files = joys.concat(brought)
+		features = files.map_try!(|file| Path.utf8(file).read_utf8!())?
+		# The file with a section whose `////` line has these words in it.
+		holder = |words|
+			files
+				.map_with_index(|file, index| (file, features.get(index) ?? ""))
+				.find_first(|(_, source)| "\n${source}".split_on("\n//// ").drop_first(1).any(|section| "${section.split_on("\n").first() ?? ""} ".contains("${words} ")))
+				.map_ok(|(file, _)| file)
+				?? "one of the JavaScript files"
+		own = features.take_first(joys.len())
+		custom = features.drop_first(joys.len())
 		made =
 			match which {
-				Full => JoyRuntime.full({ core, features })
-				Used(wasms) => JoyRuntime.generate_all({ core, features, wasms })
+				Full =>
+					match (JoyRuntime.full({ core, features: own }), JoyRuntime.custom_module(custom, Every)) {
+						(Ok(runtime), Ok(theirs)) => Ok({ runtime, custom: theirs })
+						(Err(problem), _) => Err(problem)
+						(_, Err(problem)) => Err(problem)
+					}
+
+				Used(wasms) => JoyRuntime.generate_all({ core, features: own, custom, wasms })
 			}
 		match made {
-			Ok(js) => Ok(js)
-			Err(problem) => fail!("Could not put runtime.js together from ${www}: ${Str.inspect(problem)}")
+			Ok(both) => Ok(both)
+			Err(BadSection(header)) => fail!("The line `//// ${header}` in ${holder(header)} does not start a section. A section starts with `//// effect <id>`, `//// subscription <id>` or `//// helper <name>`, and can end with `needs <helper> ...`.")
+			Err(MissingHelper(name)) => fail!("A section of JavaScript needs the helper ${name}, and no section starts with `//// helper ${name}`. The files read are ${Str.join_with(files, ", ")}.")
+			Err(problem) => fail!("Could not put runtime.js together from ${Str.join_with(files, ", ")}: ${Str.inspect(problem)}")
 		}
 	}
 
 	## The runtime.js ./joy dev serves: every feature, with hot reloading's additions
 	## and, in a block of its own, its code and the port of the dev server.
-	dev_runtime! : List(Project.Bundle), U16 => Try(Str, _)
+	dev_runtime! : List(Project.Bundle), U16 => Try({ runtime : Str, custom : Str }, _)
 	dev_runtime! = |bundles, port| {
 		www = www_of!(bundles)?
-		runtime = runtime!(bundles, Full)?
+		{ runtime, custom } = runtime!(bundles, Full)?
 		missing = |_| NoRuntime("There is no hot reloading in ${www}. This Joy release is older than ./joy's.")
 		seams = Path.utf8("${www}/hot-seams.js").read_utf8!() ? missing
 		hot = Path.utf8("${www}/hot.js").read_utf8!() ? missing
 		match JoyRuntime.hot({ runtime, seams }) {
-			Ok(js) => Ok("${js}\n{\nconst JOY_DEV_PORT = ${port.to_str()};\n${hot}\n}\n")
+			Ok(js) => {
+				with_hot = "${js}\n{\nconst JOY_DEV_PORT = ${port.to_str()};\n${hot}\n}\n"
+				Ok({ runtime: if (custom == "") with_hot else JoyRuntime.with_custom(with_hot, "effects.js"), custom })
+			}
 			Err(problem) => fail!("Could not add hot reloading to runtime.js from ${www}: ${Str.inspect(problem)}")
 		}
 	}
@@ -306,6 +336,14 @@ Build :: [].{
 		Stderr.line!(message) ?? {}
 		Err(Exit(1))
 	}
+
+	## Stop, and say so, when there is no roc to build with.
+	need_roc! : () => Try({}, [Exit(I32)])
+	need_roc! = ||
+		match Cmd.new(OsStr.from_str("roc")).args([OsStr.from_str("version")]).run!() {
+			Ok(_) => Ok({})
+			Err(_) => fail!("./joy builds with roc, and there is no roc on the PATH.")
+		}
 
 	## Where the app serves client/: `given`, or $JOY_CLIENT_URL, or /, with a
 	## slash at each end.
@@ -380,6 +418,44 @@ release_of! = |bundle| {
 		Ok(real) => Path.display(real)
 		Err(_) => bundle.joy
 	}
+}
+
+## Write the loader and the runtime of a build, and say what they are called.
+## A project without bundles gets neither: its pages are its server's own, and
+## assets.json keeps the plain names, which nothing asks for.
+write_joy_files! : Str, List(Project.Bundle), List((Str, Str)), Bool => Try({ joy_name : Str, runtime_name : Str, effects_names : List(Str) }, _)
+write_joy_files! = |out, bundles, names, debug| {
+	if bundles.is_empty() {
+		return Ok({ joy_name: "joy.js", runtime_name: "runtime.js", effects_names: [] })
+	}
+	wasms = names.map_try!(|(_, name)| Path.utf8("${out}/client/${name}").read_bytes!())?
+	match CustomEffects.check!(bundles, wasms) {
+		Ok({}) => {}
+		Err(Problems(what)) => return Build.fail!("${what}\n\nThe custom effects do not check out, so ${out}/ is incomplete.")
+	}
+	match CustomEffects.brought!(bundles) {
+		[] => {}
+		files => Stdout.line!("  with custom effects from ${Str.join_with(files, ", ")}")?
+	}
+	made = Build.runtime!(bundles, if (debug) Full else Used(wasms))?
+	# The custom effects are a module of their own, which the runtime loads
+	# by a hashed name, as joy.js loads the runtime.
+	effects_name = if (made.custom == "") "" else "effects.${short_hash(Crypt.hash!(Str.to_utf8(made.custom), Sha256))}.js"
+	runtime = if (made.custom == "") made.runtime else JoyRuntime.with_custom(made.runtime, effects_name)
+	if made.custom != "" {
+		Path.utf8("${out}/client/effects.js").write_utf8!(made.custom)?
+		Path.utf8("${out}/client/${effects_name}").write_utf8!(made.custom)?
+	}
+	# The runtime has to match the wasm, so joy.js imports it by a hashed
+	# name, which no cache keeps past a deploy. runtime.js stays beside it
+	# for pages that mount by hand.
+	runtime_name = "runtime.${short_hash(Crypt.hash!(Str.to_utf8(runtime), Sha256))}.js"
+	Path.utf8("${out}/client/runtime.js").write_utf8!(runtime)?
+	Path.utf8("${out}/client/${runtime_name}").write_utf8!(runtime)?
+	loader = Build.shipped_loader!(bundles, debug)?.replace_each("'./runtime.js'", "'./${runtime_name}'").replace_each("\"./runtime.js\"", "\"./${runtime_name}\"")
+	joy_name = "joy.${short_hash(Crypt.hash!(Str.to_utf8(loader), Sha256))}.js"
+	Path.utf8("${out}/client/${joy_name}").write_utf8!(loader)?
+	Ok({ joy_name, runtime_name, effects_names: if (made.custom == "") [] else ["effects.js", effects_name] })
 }
 
 ## The minified copies of `www` a release ships. A checkout has none, and gets
@@ -541,13 +617,15 @@ generated_package! = |bundles, assets, public, client_url|
 	match Generated.files(bundles, assets, public, client_url) {
 		Ok(files) => Ok(files)
 		Err(SameTag(one, other)) => Build.fail!("The bundles ${one} and ${other} would both be ${Project.tag_of(one)} in generated/Bundle.roc. Rename one of them.")
+		Err(NotATag(bundle)) => Build.fail!(Generated.not_a_tag(bundle))
 	}
 
-## Warn about paths in scripts and stylesheets that will 404 from a build. An
-## import between hashed files works in ./joy dev, which serves plain names, as
-## a build leaves it as written. Only a stylesheet in assets/ has its paths
-## rewritten. Files that are not UTF-8 are read as far as they can be, and one
-## that cannot be read at all has already failed the build.
+## Warn about paths in scripts, stylesheets and pages that will 404 from a
+## build. An import between hashed files works in ./joy dev, which serves
+## plain names, as a build leaves it as written. Only a stylesheet in assets/
+## has its paths rewritten, and in a page only what HtmlPage reads. Files that
+## are not UTF-8 are read as far as they can be, and one that cannot be read
+## at all has already failed the build.
 warn_about_paths! : List(Str), Str, List(Str), Str => {}
 warn_about_paths! = |assets, public_dir, public_files, client_url| {
 	kept = public_files.append("runtime.js")
@@ -555,11 +633,14 @@ warn_about_paths! = |assets, public_dir, public_files, client_url| {
 	for (dir, files) in [("assets", assets), (public_dir, public_files)] {
 		for file in files {
 			script = file.ends_with(".js") or file.ends_with(".mjs")
-			if script or file.ends_with(".css") {
+			page = dir != "assets" and (file.ends_with(".html") or file.ends_with(".htm"))
+			if script or page or file.ends_with(".css") {
 				text = Str.from_utf8_lossy(Path.utf8("${dir}/${file}").read_bytes!() ?? [])
 				broken =
 					if script {
 						Reference.broken(Script.relative_imported(text), file, client_url, { kept, hashed: assets })
+					} else if page {
+						HtmlPage.unrewritten(text, file, client_url, assets.append("joy.js").map(|plain| (plain, plain))).map(|name| (name, InPage))
 					} else if dir == "assets" {
 						Reference.broken(Stylesheet.named(text), file, client_url, { kept: kept.concat(assets), hashed: [] })
 					} else {
@@ -575,11 +656,13 @@ warn_about_paths! = |assets, public_dir, public_files, client_url| {
 			|(line, why)|
 				match why {
 					Hashed => "${line}, which a build gives a hashed name"
+					InPage => "${line} where a build does not look, and gives the file a hashed name"
 					Missing => "${line}, which is in neither assets/ nor ${public_dir}/"
 				},
 		)
-		advice = if ($found.any(|(_, why)| why == Hashed)) ["Bundle the script into one file, or keep all of its modules in ${public_dir}/, which keeps its names."] else []
-		Stderr.line!(Str.join_with(["Warning: these paths will 404 from a build:"].concat(lines).concat(advice), "\n")) ?? {}
+		for_scripts = if ($found.any(|(_, why)| why == Hashed)) ["Bundle the script into one file, or keep all of its modules in ${public_dir}/, which keeps its names."] else []
+		for_pages = if ($found.any(|(_, why)| why == InPage)) ["A build renames the paths in a page's src, href, srcset, poster and styles. Keep a file a script names in ${public_dir}/, which keeps its name."] else []
+		Stderr.line!(Str.join_with(["Warning: these paths will 404 from a build:"].concat(lines).concat(for_scripts).concat(for_pages), "\n")) ?? {}
 	}
 }
 

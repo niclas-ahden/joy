@@ -19,10 +19,13 @@ Generated :: [].{
 
 	## The package's files, by name, with `assets` giving each file in
 	## assets/ its path: its own name while you work, a hashed one in a build.
-	files : List(Project.Bundle), List((Str, Str)), List(Str), Str -> Try(List((Str, Str)), [SameTag(Str, Str)])
+	files : List(Project.Bundle), List((Str, Str)), List(Str), Str -> Try(List((Str, Str)), [SameTag(Str, Str), NotATag(Project.Bundle)])
 	files = |bundles, assets, public, client_url| {
 		tags = bundles.map(|bundle| bundle.tag)
 		for bundle in bundles {
+			if !Project.valid_tag(bundle.tag) {
+				return Err(NotATag(bundle))
+			}
 			match bundles.find_first(|other| other.tag == bundle.tag and other.id != bundle.id) {
 				Ok(other) => return Err(SameTag(bundle.id, other.id))
 				Err(_) => {}
@@ -36,6 +39,11 @@ Generated :: [].{
 			("Names.roc", names_template.replace_each("client_url = \"/\"", "client_url = ${quoted(client_url)}")),
 		])
 	}
+
+	## What to say about a bundle whose name gives no tag, see [files].
+	not_a_tag : Project.Bundle -> Str
+	not_a_tag = |bundle|
+		"${bundle.file} would be ${bundle.tag} in generated/Bundle.roc, and a tag is a capital letter followed by letters and digits. Rename the file."
 
 	## Whether the app or package in `file` depends on the package, itself or
 	## through a package it names by path. roc refuses to replace a package a

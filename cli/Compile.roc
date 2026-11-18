@@ -172,6 +172,58 @@ Compile :: [].{
 	## that leads out of it or into roc's package cache.
 	is_own : Str -> Bool
 	is_own = |file| !file.starts_with("/") and !file.starts_with("..") and !file.contains(":\\")
+
+	## What ./joy adds below a report of roc's that leaves out the way on:
+	## a module that is not in its package's list, and an id of a custom
+	## effect that is not a string literal. `header` is the text of `file`,
+	## the app that was built, which says where its packages are.
+	hints : Str, Str, Str -> Str
+	hints = |log, header, file| {
+		plain = strip_ansi(log).replace_each("\n", " ")
+		unlisted =
+			match plain.split_first("The package import `") {
+				Ok({ after, .. }) =>
+					match (after.split_first("`"), plain.contains("does not name a public module")) {
+						(Ok({ before, .. }), True) =>
+							match before.split_first(".") {
+								Ok({ before: shorthand, after: wanted }) => {
+									folder =
+										match file.split_last("/") {
+											Ok(parts) => "${parts.before}/"
+											Err(_) => ""
+										}
+									list =
+										match header.split_first("${shorthand}: \"") {
+											Ok(parts) => "${folder}${parts.after.split_on("\"").first() ?? "its main.roc"}"
+											Err(_) => "the package's main.roc"
+										}
+									[
+										"Hint from ./joy: ${wanted} is not in the list of the modules of the package ${shorthand}.",
+										"Add it to the list at the top of ${list}:",
+										"",
+										"    package [..., ${wanted}] {",
+									]
+								}
+								Err(_) => []
+							}
+						_ => []
+					}
+				Err(_) => []
+			}
+		ids =
+			if plain.contains("Effect.Id") or plain.contains("Sub.Id") {
+				[
+					"Hint from ./joy: Effect.Id and Sub.Id are the ids of effects. An id is written",
+					"as a string, \"my_app/share_link\", right where it is used or as a value with",
+					"one of those types. One put together while the app runs cannot be an id,",
+					"as a build reads the ids an app uses out of what roc compiled.",
+				]
+			} else {
+				[]
+			}
+		found = if (unlisted.is_empty() or ids.is_empty()) unlisted.concat(ids) else unlisted.concat([""]).concat(ids)
+		if (found.is_empty()) "" else "\n${Str.join_with(found, "\n")}\n"
+	}
 }
 
 finish! : Compile.Job, Str => Compile.Result
@@ -190,7 +242,7 @@ finish! = |job, log| {
 		_ = Path.utf8(job.output).delete!()
 		{}
 	}
-	{ job, outcome, log, warnings }
+	{ job, outcome, log: if (outcome == Failed) Str.concat(log, Compile.hints(log, Path.utf8(job.file).read_utf8!() ?? "", job.file)) else log, warnings }
 }
 
 ## `N error(s) and M warning(s)` anywhere in a line.
@@ -248,3 +300,12 @@ expect Compile.has_room(AtMost(2), 1)
 expect !Compile.has_room(AtMost(2), 2)
 expect Compile.at_a_time(All) == ""
 expect Compile.at_a_time(AtMost(3)) == ", 3 at a time"
+
+expect Compile.hints("0 errors and 0 warnings found", "", "client/main.roc") == ""
+expect {
+	log = "── ✗ package module is private ──\n\nThe package import `effects.Network` does not name a public module declared by\nthat package.\n"
+	header = "app [Model] {\n\tpf: platform \"x\",\n\teffects: \"effects/main.roc\",\n}\n"
+	Compile.hints(log, header, "client/main.roc")
+	== "\nHint from ./joy: Network is not in the list of the modules of the package effects.\nAdd it to the list at the top of client/effects/main.roc:\n\n    package [..., Network] {\n"
+}
+expect Compile.hints("But the function needs the first argument to be:\n\n    Effect.Id\n", "", "client/main.roc").starts_with("\nHint from ./joy: Effect.Id and Sub.Id are the ids of effects.")

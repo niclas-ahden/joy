@@ -22,6 +22,7 @@ import Args
 import Build
 import Compile
 import Generated
+import CustomEffects
 import JsonText
 import Project
 
@@ -123,6 +124,13 @@ Dev :: [].{
 		if bundles.is_empty() and servers.is_empty() {
 			return Build.fail!("There are no bundles under client/ and no server, so there is nothing to run.")
 		}
+		host = setting!(Args.given(options.host), "JOY_HOST") ?? "localhost"
+		match already_running!(root, host, Args.given(options.events_port)) {
+			Running("") => return Build.fail!("./joy dev is already running in this project. Use that one, or stop it first.")
+			Running(pages) => return Build.fail!("./joy dev is already running in this project, on ${pages}. Use that one, or stop it first.")
+			NotRunning => {}
+		}
+		Build.need_roc!()?
 		Build.check_releases!(bundles)?
 		Build.ensure_hosts!(bundles)?
 		Build.fetch_release!(bundles)?
@@ -135,7 +143,6 @@ Dev :: [].{
 		bundle_roc = specialize!(options.specialize, "JOY_SPECIALIZE").concat(if (options.no_hot) [] else hot_platform!(bundles, root)?).concat(roc)
 		server_roc = specialize!(options.server_specialize, "JOY_SERVER_SPECIALIZE").concat(roc)
 
-		host = setting!(Args.given(options.host), "JOY_HOST") ?? "localhost"
 		events = Events.new!({})
 		session = Utc.to_millis_since_epoch(Utc.now!()).to_str()
 		events.set_greeting!([hello(session, 0)])
@@ -185,7 +192,14 @@ Dev :: [].{
 		# events.
 		no_server = options.no_server
 		front_door = (servers.is_empty() and !no_server) or !proxies.is_empty() or !mounts.is_empty()
-		site = { client_url, public_dir, roots, proxies, mounts, server_url, fallback: servers.is_empty() and !no_server }
+		# Without the front door the pages are the project's server's, on $PORT
+		# when that is set.
+		own_pages =
+			match given_port {
+				Some(port) if !front_door => "http://${host}:${port.to_str()}/"
+				_ => ""
+			}
+		site = { root, pages: own_pages, client_url, public_dir, roots, proxies, mounts, server_url, fallback: servers.is_empty() and !no_server }
 		dev_server = start_dev_server!(options, host, events, site, front_door)?
 		dev_port = dev_server.port()
 		# A browser opens 6 connections to a port, and every open page holds one
@@ -193,7 +207,7 @@ Dev :: [].{
 		# page being opened waiting for a connection.
 		events_port =
 			if front_door {
-				events_site = { ..site, roots: [], proxies: [], mounts: [], server_url: None, fallback: False }
+				events_site = { ..site, pages: "http://${host}:${dev_port.to_str()}/", roots: [], proxies: [], mounts: [], server_url: None, fallback: False }
 				start_dev_server!(options, host, events, events_site, False)?.port()
 			} else {
 				dev_port
@@ -231,12 +245,20 @@ Dev :: [].{
 			server_jobs.concat(bundle_jobs),
 			jobs,
 			|result, done| {
-				_ = handle_result!(result, events, session, 0)?
+				_ = handle_result!(with_custom_effects!(bundles, result), events, session, 0)?
 				write_status!("Building: ${done.to_str()} of ${total} done")
 			},
-		)?
+		)?.map_try!(|result| Ok(with_custom_effects!(bundles, result)))?
 		failed = results.keep_if(|result| result.outcome == Failed).map(|result| { name: result.job.name, log: result.log })
-		greet!(events, session, 0, failed)
+		# The first builds are build 1. A page that opened while they ran heard
+		# build 0 and found no wasm to mount, so it hears of build 1 and loads
+		# again. The greeting goes first, so a page that connects in between
+		# still hears of a failure, if twice.
+		greet!(events, session, 1, failed)
+		_ = events.publish!(hello(session, 1))
+		for broken in failed {
+			_ = events.publish!(report(broken.name, broken.log))
+		}
 		var $children = []
 		for name in names {
 			if failed.any(|broken| broken.name == name) {
@@ -251,6 +273,10 @@ Dev :: [].{
 				Some(port) if !front_door => "http://${host}:${port.to_str()}/"
 				_ => "http://${host}:${dev_port.to_str()}/"
 			}
+		# The folders the builds read are watched before the pages are said to
+		# be ready, so that a save right after that line is not lost.
+		watched = watch_config!(root, bundles, servers, public_dir, options.poll)?
+		watch.set!({ folders: watched.folders, trees: watched.trees, skip: watched.skip, poll: watched.poll })?
 		# A server's pages are ready once it answers, see check_server!. Without
 		# one they are ready now.
 		if names.is_empty() and front_door {
@@ -261,8 +287,6 @@ Dev :: [].{
 				Some(port) if port != 0 and !names.is_empty() => if ($children.is_empty()) Waiting(port) else Pending({ port, since: Monotonic.now!() })
 				_ => Done
 			}
-		watched = watch_config!(root, bundles, servers, public_dir, options.poll)?
-		watch.set!({ folders: watched.folders, trees: watched.trees, skip: watched.skip, poll: watched.poll })?
 		outcome = loop!({
 			root,
 			bundles,
@@ -271,9 +295,11 @@ Dev :: [].{
 			public_dir,
 			events,
 			session,
-			build: 0,
+			build: 1,
 			failed,
 			landed: [],
+			scripts: Same,
+			events_port,
 			queued: [],
 			compile: { queue: [], running: [], done: [] },
 			children: $children,
@@ -314,6 +340,11 @@ DevState : {
 	## The builds that finished clean since open pages last heard, see
 	## tell_pages!.
 	landed : List(Str),
+
+	## Whether the JavaScript beside a module changed since open pages last
+	## loaded, see react!.
+	scripts : [Same, Changed],
+	events_port : U16,
 	queued : List(Str),
 	compile : Compile.State,
 	children : List(Started),
@@ -408,9 +439,38 @@ react! = |state, changes| {
 			}
 		}
 	}
-	reached = $state.bundles.map(|bundle| bundle.id).concat($state.names).keep_if_try!(|name| Ok(inputs_reach!(name, paths)))?
-	queued = reached.keep_if(|name| !$state.queued.contains(name))
-	Ok({ ..$state, queued: $state.queued.concat(queued) })
+	# A bundle that failed builds again on any save under client/: roc may
+	# have stopped before it read the file that was wrong.
+	in_client = paths.any(|path| path.starts_with("${state.root}/client/"))
+	reached = $state.bundles.map(|bundle| bundle.id).concat($state.names).keep_if_try!(
+		|name| Ok(inputs_reach!(name, paths) or (in_client and $state.failed.any(|broken| broken.name == name) and $state.bundles.any(|bundle| bundle.id == name))),
+	)?
+	# The JavaScript beside a module, for the custom effects it calls, is part of
+	# runtime.js. roc reads none of it, so no build's inputs name it. Every
+	# bundle builds again, as the change can give an effect its JavaScript
+	# or take it away, and the pages start over on the new runtime.js.
+	scripts = paths.keep_if_try!(|path| Ok(path.ends_with(".js") and (Path.utf8("${path.drop_suffix(".js")}.roc").is_file!() ?? False)))?
+	every = if (scripts.is_empty()) reached else $state.bundles.map(|bundle| bundle.id).concat(reached)
+	if !scripts.is_empty() {
+		for path in scripts {
+			Stdout.line!("${path.drop_prefix("${state.root}/")} changed")?
+		}
+		match Build.dev_runtime!($state.bundles, state.events_port) {
+			Ok(made) => {
+				write_runtime!(made)?
+				$state = { ..$state, scripts: Changed }
+			}
+			# Said already, and the next save tries again.
+			Err(_) => {}
+		}
+	}
+	var $queued = $state.queued
+	for name in every {
+		if !$queued.contains(name) {
+			$queued = $queued.append(name)
+		}
+	}
+	Ok({ ..$state, queued: $queued })
 }
 
 ## Find the bundles again, build the new ones and forget the removed ones.
@@ -435,18 +495,24 @@ rediscover! = |state| {
 step_builds! : DevState => Try(DevState, _)
 step_builds! = |state| {
 	running_names = state.compile.running.map(|running| running.job.name)
-	ready = state.queued.keep_if(|name| !running_names.contains(name))
+	# A build that waits for its turn reads the files when it starts, so a
+	# change that reaches it meanwhile needs no build of its own. Two builds
+	# of one name at once would write the same file.
+	waiting_names = state.compile.queue.map(|job| job.name)
+	ready = state.queued.keep_if(|name| !running_names.contains(name) and !waiting_names.contains(name))
 	waiting = state.queued.keep_if(|name| running_names.contains(name))
 	jobs = ready.keep_oks(|name| job_for(state, name))
 	compile = Compile.step!({ ..state.compile, queue: state.compile.queue.concat(jobs), done: [] }, state.jobs)?
 	var $state = { ..state, compile, queued: waiting }
-	for result in compile.done {
+	for built in compile.done {
+		result = with_custom_effects!($state.bundles, built)
 		build = $state.build + 1
 		outcome = handle_result!(result, $state.events, $state.session, build)?
 		was_failing = $state.failed.any(|broken| broken.name == result.job.name)
 		match outcome {
 			Built => {
-				$state = { ..$state, build, failed: $state.failed.drop_if(|broken| broken.name == result.job.name), landed: $state.landed.append(result.job.name) }
+				landed = if ($state.landed.contains(result.job.name)) $state.landed else $state.landed.append(result.job.name)
+				$state = { ..$state, build, failed: $state.failed.drop_if(|broken| broken.name == result.job.name), landed }
 				if $state.names.contains(result.job.name) {
 					$state = restart_server!($state, result.job.name)?
 				}
@@ -463,6 +529,8 @@ step_builds! = |state| {
 					write_status!(did_not_build)?
 				}
 				greet!($state.events, $state.session, $state.build, failed)
+				_ = $state.events.publish!(report(result.job.name, result.log))
+				{}
 			}
 		}
 	}
@@ -483,12 +551,32 @@ step_builds! = |state| {
 ## landed with it needs no event of its own.
 tell_pages! : DevState => DevState
 tell_pages! = |state| {
-	servers = state.landed.keep_if(|name| state.names.contains(name))
-	for name in if (servers.is_empty()) state.landed else servers {
-		event = if (servers.is_empty()) "reload" else "server"
-		_ = state.events.publish!(Sse.Event.named(event, [name]))
-	}
-	{ ..state, landed: [] }
+	# A bundle whose newest build failed keeps the build its pages run. An
+	# older build of it that landed meanwhile would take roc's report off the
+	# page for code that is not what the file says.
+	landed = state.landed.drop_if(|name| state.failed.any(|broken| broken.name == name))
+	servers = landed.keep_if(|name| state.names.contains(name))
+	# With the build the page is at once it has taken this, as `hello` names
+	# it, so a page that reconnects knows whether it missed one.
+	now = "${state.session}-${state.build.to_str()}"
+	# A page reads runtime.js when it loads, so it takes a new one by loading
+	# again. It starts over there: what it was told so far came from the
+	# JavaScript before.
+	told =
+		match landed {
+			[name, ..] if state.scripts == Changed => {
+				_ = state.events.publish!(Sse.Event.named("runtime", [name, now]))
+				Told
+			}
+			_ => {
+				for name in if (servers.is_empty()) landed else servers {
+					event = if (servers.is_empty()) "reload" else "server"
+					_ = state.events.publish!(Sse.Event.named(event, [name, now]))
+				}
+				if (servers.is_empty()) Untold else Told
+			}
+		}
+	{ ..state, landed: [], scripts: if (told == Told) Same else state.scripts }
 }
 
 job_for : DevState, Str -> Try(Compile.Job, [Gone])
@@ -502,9 +590,28 @@ job_for = |state, name|
 			}
 	}
 
+## A bundle's build, failed after all when it calls an effect that has no
+## JavaScript (see CustomEffects), with that as its report.
+## roc cannot tell, and the page would find out one call at a time.
+with_custom_effects! : List(Project.Bundle), Compile.Result => Compile.Result
+with_custom_effects! = |bundles, result|
+	if result.outcome != Built or !bundles.any(|bundle| bundle.id == result.job.name) {
+		result
+	} else {
+		match Path.utf8(result.job.output).read_bytes!() {
+			Ok(wasm) =>
+				match CustomEffects.check!(bundles, [wasm]) {
+					Ok({}) => result
+					Err(Problems(what)) => { ..result, outcome: Failed, log: what }
+				}
+
+			Err(_) => result
+		}
+	}
+
 ## Put a clean build in place and report either outcome.
 handle_result! : Compile.Result, Events, Str, U64 => Try([Built, Failed], _)
-handle_result! = |result, events, _session, _build|
+handle_result! = |result, _events, _session, _build|
 	match result.outcome {
 		Built => {
 			served = served_path(result.job)
@@ -513,6 +620,11 @@ handle_result! = |result, events, _session, _build|
 				Err(_) => {}
 			}
 			Path.utf8(result.job.output).rename!(Path.utf8(served))?
+			# What this build read stays known while a later one fails.
+			match Path.utf8(result.job.inputs).read_bytes!() {
+				Ok(inputs) => Path.utf8("${result.job.inputs}.kept").write_bytes!(inputs) ?? {}
+				Err(_) => {}
+			}
 			if result.warnings.is_empty() {
 				Stdout.line!("  built ${result.job.name}")?
 			} else {
@@ -524,7 +636,6 @@ handle_result! = |result, events, _session, _build|
 		}
 		Failed => {
 			Stderr.line!("  ${result.job.name} failed:\n${result.log}")?
-			_ = events.publish!(report(result.job.name, result.log))
 			Ok(Failed)
 		}
 	}
@@ -568,11 +679,20 @@ server_name = |file|
 safe_name : Str -> Str
 safe_name = |name| "${name.replace_each("/", "__")}.inputs"
 
-## The files a build read, from roc's --watch-inputs-file: a magic line,
-## then a path and its state, each ended by a zero byte.
+## The files a build read, and the ones its last clean build read. A build
+## that fails early, on a package that does not load, has read few of its
+## files, and the one to put right is among those of the build before.
 inputs_of! : Str => List(Str)
-inputs_of! = |name|
-	match Path.utf8(".joy/dev/inputs/${safe_name(name)}").read_bytes!() {
+inputs_of! = |name| {
+	file = ".joy/dev/inputs/${safe_name(name)}"
+	inputs_in!(file).concat(inputs_in!("${file}.kept"))
+}
+
+## The paths in a file roc wrote for --watch-inputs-file: a magic line, then
+## a path and its state, each ended by a zero byte.
+inputs_in! : Str => List(Str)
+inputs_in! = |file|
+	match Path.utf8(file).read_bytes!() {
 		Ok(bytes) =>
 			bytes
 				.split_on(0)
@@ -627,6 +747,10 @@ folder_of = |file|
 ## project's server when one sits behind the dev server, which then answers
 ## for it while it is not up, see server_down!.
 Site : {
+	## The project's folder and where its pages are, for a second ./joy dev
+	## that asks who is running, see already_running!.
+	root : Str,
+	pages : Str,
 	client_url : Str,
 	public_dir : Str,
 	roots : List(Str),
@@ -663,6 +787,30 @@ start_dev_server! = |options, host, events, site, front_door| {
 	}
 }
 
+## Whether a ./joy dev is running in this project already, and where its
+## pages are when it says. Two would build into the same .joy/dev, and each
+## would serve the other's runtime. The one that runs answers on its events
+## port, which it wrote to .joy/events-port, so nothing is left to clean up
+## when it stops, however it stops.
+already_running! : Str, Str, [Some(Str), None] => [Running(Str), NotRunning]
+already_running! = |root, host, given| {
+	remembered = (Path.utf8(".joy/events-port").read_utf8!() ?? "").trim()
+	asked = setting!(given, "JOY_EVENTS_PORT") ?? ""
+	address = if (host == "localhost" or host == "0.0.0.0") "127.0.0.1" else host
+	for port in [remembered, asked].keep_if(|port| !port.is_empty() and port != "0") {
+		request = Request.from_method(GET).with_uri("http://${address}:${port}/.joy/dev").with_timeout(TimeoutMilliseconds(500))
+		match Http.send!(request, {}) {
+			Ok(response) if Response.status(response) == 200 =>
+				match Str.from_utf8_lossy(Response.body(response)).split_first("\n") {
+					Ok({ before, after }) if before == root => return Running(after.trim())
+					_ => {}
+				}
+			_ => {}
+		}
+	}
+	NotRunning
+}
+
 ## Bind `port`, or the next free one, up to `tries` more.
 bind_from! : Str, U16, U16, Events, Site => Try(Server, _)
 bind_from! = |host, port, tries, events, site| {
@@ -685,10 +833,10 @@ file_routes = |site| {
 	built.concat(site.mounts.map(|mount| { path: mount.prefix, roots: [mount.root], miss: NotFound, download: mount.download }))
 }
 
-## A forwarded request holds its handler until the backend answers, even when
-## the browser has given up on it. So the dev server is never narrower than
-## basic-webserver's default of 32 behind it, or clicking through slow pages
-## holds up the next one.
+## A forwarded request holds its handler until the backend answers or the
+## browser gives up on it. So the dev server is never narrower than
+## basic-webserver's default of 32 behind it, or slow pages hold up the next
+## one.
 front_door_handlers : U16
 front_door_handlers = 32
 
@@ -709,6 +857,9 @@ route! = |events, site, request| {
 		}
 	if path == "/.joy/events" {
 		return Ok(Server.stream(events, [{ name: "Access-Control-Allow-Origin", value: "*" }]))
+	}
+	if path == "/.joy/dev" {
+		return Ok(Server.respond(Response.from_status(200).with_body(Str.to_utf8("${site.root}\n${site.pages}"))))
 	}
 	# The host has answered every file by now, see file_routes, all but a
 	# folder's index.
@@ -756,6 +907,11 @@ hop_by_hop = ["connection", "keep-alive", "proxy-connection", "transfer-encoding
 forward! : Site, Str, Request.Request => Try(Server.Reply, _)
 forward! = |site, target, request| {
 	base = target.drop_suffix("/")
+	# A stream never ends, so the page that asked would wait for all of it and
+	# hear nothing. It is told why instead.
+	if Request.headers(request).any(|header| header.name.caseless_ascii_equals("accept") and header.value.contains("text/event-stream")) {
+		return Ok(Server.respond(Response.from_status(501).with_body(Str.to_utf8("./joy dev does not pass an event stream through: it reads a backend's whole answer before it passes it on. Open the stream on ${base} itself while you develop.\n"))))
+	}
 	local = ["http://localhost", "http://127.0.0.1", "http://[::1]"].any(|start| base.starts_with(start))
 	headers = Request.headers(request).drop_if(|header| hop_by_hop.contains(header.name.with_ascii_lowercased()) or (!local and header.name.caseless_ascii_equals("host")))
 	outgoing = request.with_uri("${base}${Request.uri(request)}").with_headers(headers)
@@ -869,6 +1025,19 @@ hot_platform! = |bundles, root| {
 	Ok(["--replace-dep", declared, "${root}/${copy}/main.roc"])
 }
 
+## The runtime.js ./joy dev serves, and beside it the module of the project's
+## custom effects, when it has any.
+write_runtime! : { runtime : Str, custom : Str } => Try({}, _)
+write_runtime! = |made| {
+	Path.utf8(".joy/dev/client/runtime.js").write_utf8!(made.runtime)?
+	if made.custom == "" {
+		_ = Path.utf8(".joy/dev/client/effects.js").delete!()
+		Ok({})
+	} else {
+		Path.utf8(".joy/dev/client/effects.js").write_utf8!(made.custom)
+	}
+}
+
 ## The development joy.js and runtime.js, the latter with every feature and
 ## the hot reloading that listens for the dev server's events, and
 ## .joy/dev/assets.json, with every name plain and the folders the files live
@@ -876,7 +1045,7 @@ hot_platform! = |bundles, root| {
 write_dev_files! : List(Project.Bundle), U16, Str, Str => Try({}, _)
 write_dev_files! = |bundles, dev_port, public_dir, client_url| {
 	if dev_port != 0 and !bundles.is_empty() {
-		Path.utf8(".joy/dev/client/runtime.js").write_utf8!(Build.dev_runtime!(bundles, dev_port)?)?
+		write_runtime!(Build.dev_runtime!(bundles, dev_port)?)?
 		Path.utf8(".joy/dev/client/joy.js").write_utf8!(Build.loader!(bundles)?)?
 	}
 	assets = Build.list_files!("assets")?
@@ -900,6 +1069,7 @@ write_dev_files! = |bundles, dev_port, public_dir, client_url| {
 				}
 			}
 			Err(SameTag(one, other)) => Stderr.line!("The bundles ${one} and ${other} would both be ${Project.tag_of(one)} in generated/Bundle.roc. Rename one of them.")?
+			Err(NotATag(bundle)) => Stderr.line!(Generated.not_a_tag(bundle))?
 		}
 	}
 	Ok({})

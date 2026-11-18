@@ -4,7 +4,7 @@
 app [main!] {
 	http: "https://github.com/roc-lang/http/releases/download/1.0.0/6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst",
 	joy_runtime: "../tools/runtime/main.roc",
-	pf: platform "https://github.com/growthagent/joy-cli-platform/releases/download/0.1.0-rc2/GRtP7M2SpyV7QhXgN5kHKsP7qw5hpghZ1ymQKB8z45ca.tar.zst",
+	pf: platform "../../joy-cli-platform/platform/main.roc",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
 }
 
@@ -19,6 +19,7 @@ import Dev
 import Init
 import JsonText
 import Project
+import Release
 
 ## What the command line asks for.
 Command : [BuildCommand(Build.Options), DevCommand(Dev.Options), BundlesCommand({ json : Bool }), InitCommand(Init.Options)]
@@ -42,7 +43,7 @@ parser = Cli.assert_valid(
 		]),
 		{
 			name: "joy",
-			version: "",
+			version: Release.version,
 			authors: [],
 			description: "The command line of a Joy project. Run ./joy help <command>, or ./joy <command> --help, for a command's options.",
 			text_style: Plain,

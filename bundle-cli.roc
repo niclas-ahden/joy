@@ -31,13 +31,19 @@ main! = |args| {
 
 	run!("rm", ["-rf", out])?
 	run!("mkdir", ["-p", "${stage}/runtime"])?
-	run!("bash", ["-c", "cp cli/*.roc '${stage}/' && rm '${stage}/tests.roc' && cp -r cli/generated cli/templates '${stage}/' && cp tools/runtime/*.roc '${stage}/runtime/'"])?
+	# Only the files Template.roc builds into ./joy. A template that was run
+	# where it is holds a ./joy, builds and a database beside them.
+	template_files = "sed -n 's|^import \\\"\\(templates/[^\\\"]*\\)\\\" as .*|\\1|p' cli/Template.roc | while read -r file; do mkdir -p \"${stage}/$(dirname \"$file\")\" && cp \"cli/$file\" \"${stage}/$file\" || exit 1; done"
+	run!("bash", ["-c", "cp cli/*.roc '${stage}/' && rm '${stage}/tests.roc' && cp -r cli/generated '${stage}/' && cp tools/runtime/*.roc '${stage}/runtime/' && ${template_files}"])?
 
 	main_path = Path.utf8("${stage}/main.roc")
 	main_source = main_path.read_utf8!() ?? fail!("could not read ${stage}/main.roc")?
 	in_checkout = "joy_runtime: \"../tools/runtime/main.roc\""
 	if !main_source.contains(in_checkout) {
 		fail!("cli/main.roc no longer names ${in_checkout}, so the bundle would miss the runtime package")?
+	}
+	if main_source.contains("pf: platform \".") {
+		fail!("cli/main.roc names its platform by a path, which only works beside a joy-cli-platform checkout. A release needs that platform's release URL there")?
 	}
 	main_path.write_utf8!(main_source.replace_each(in_checkout, "joy_runtime: \"runtime/main.roc\""))?
 
@@ -48,7 +54,11 @@ main! = |args| {
 		fail!("cli/Release.roc no longer says ${in_checkout_release}, so the bundle would not know its release")?
 	}
 	named = "current = Published({ tag: \"${config.tag}\", platform_url: \"${config.platform_url}\", notes_url: \"${config.notes_url}\" })"
-	release.write_utf8!(release_source.replace_first(in_checkout_release, named))?
+	in_checkout_version = "version = \"unreleased\""
+	if !release_source.contains(in_checkout_version) {
+		fail!("cli/Release.roc no longer says ${in_checkout_version}, so ./joy --version would not name its release")?
+	}
+	release.write_utf8!(release_source.replace_first(in_checkout_release, named).replace_first(in_checkout_version, "version = \"${config.tag}\""))?
 
 	archive = bundle!("cd '${stage}' && roc bundle $(find . -type f | sed 's|^\\./||' | sort) --output-dir ..")?
 	run!("rm", ["-rf", stage])?

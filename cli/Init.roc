@@ -1,3 +1,4 @@
+import pf.Cmd
 import pf.Env
 import pf.OsStr
 import pf.Path
@@ -17,7 +18,7 @@ import Template
 ## `./joy init`: start a project from a template and install ./joy in it, or
 ## give a project that has an app already its ./joy.
 Init :: [].{
-	Options : { template : Try(Str, [NoValue]), no_input : Bool, joy_checkout : Try(Str, [NoValue]), dir : Try(Str, [NoValue]) }
+	Options : { template : Try(Str, [NoValue]), no_input : Bool, non_empty : Bool, joy_checkout : Try(Str, [NoValue]), dir : Try(Str, [NoValue]) }
 
 	## `./joy init` as a weaver subcommand, which also writes its --help.
 	command : (Init.Options -> command) -> SubCmd.SubcommandParserConfig(command)
@@ -26,6 +27,7 @@ Init :: [].{
 			{
 				template: Opt.maybe_str({ short: "", long: "template", help: "The template to start from, without asking: ${names}." }),
 				no_input: Opt.flag({ short: "", long: "no-input", help: "Never ask. Fail instead, and say which flag answers." }),
+				non_empty: Opt.flag({ short: "", long: "non-empty", help: "Start in a folder that has files in it, without asking. Init never writes over them." }),
 				joy_checkout: Opt.maybe_str({ short: "", long: "joy-checkout", help: "The Joy checkout the bundles build against. ($JOY_CHECKOUT)" }),
 				dir: Param.maybe_str({ name: "dir", help: "Where to start the project, the current folder by default." }),
 			}.Cli,
@@ -41,7 +43,7 @@ Init :: [].{
 		# The checkout is found before moving into the project, since a path
 		# to it is given from where init runs.
 		named_checkout = checkout!(Args.given(options.joy_checkout))?
-		exe = own_program!()?
+		own = own_program!()?
 		dir =
 			match Args.given(options.dir) {
 				Some(given) => given.drop_suffix("/")
@@ -59,13 +61,14 @@ Init :: [].{
 					None => False
 				}
 			if !bundles.is_empty() or has_server {
-				ignore!()?
-				install!(exe)?
+				ignore!([])?
+				install!(own)?
 				return Stdout.line!("This folder has a Joy app already, so init only installed ./joy.")
 			}
-			taken = (Path.utf8(".").list!() ?? []).map(|entry| Path.display(entry).drop_prefix("./")).drop_if(|name| name.starts_with("."))
+			# A Roc download is often unpacked where the project starts.
+			taken = (Path.utf8(".").list!() ?? []).map(|entry| Path.display(entry).drop_prefix("./")).drop_if(|name| name.starts_with(".") or name.starts_with("roc_nightly"))
 			if !taken.is_empty() {
-				return Build.fail!("${dir} has files in it already: ${Str.join_with(taken, ", ")}. Start in an empty folder, or name a new one: init my-app")
+				start_beside!(dir, taken, options)?
 			}
 		}
 
@@ -78,6 +81,17 @@ Init :: [].{
 				Unreleased => return Build.fail!("This CLI is not from a Joy release, so init needs a Joy checkout: --joy-checkout <dir>, or JOY_CHECKOUT.")
 			}
 		template = template!(options)?
+		if existed {
+			var $clashes = []
+			for (file, _) in template.files {
+				if Path.utf8(file).is_file!() ?? False {
+					$clashes = $clashes.append(file)
+				}
+			}
+			if !$clashes.is_empty() {
+				return Build.fail!("${folder_name(dir)} has its own ${Str.join_with($clashes, ", ")}, which the ${template.name} template would write over. Move them aside, or start in a new folder: init my-app")
+			}
+		}
 		if !existed {
 			if Path.utf8(dir).create_all!().is_err() {
 				return Build.fail!("Could not make the folder ${dir}.")
@@ -87,8 +101,8 @@ Init :: [].{
 		here = Path.display(Env.cwd!()?)
 		install_command =
 			match source {
-				Checkout(checkout) => "roc run --opt=speed ${relative(here, "${checkout}/cli/main.roc")} init"
-				OnRelease(release) => "roc run --opt=speed <cli url> init\n\nTake `<cli url>` from the notes of [Joy ${release.tag}](${release.notes_url})."
+				Checkout(checkout) => "roc run ${relative(here, "${checkout}/cli/main.roc")} init"
+				OnRelease(release) => "roc run <cli url> init\n\nTake `<cli url>` from the notes of [Joy ${release.tag}](${release.notes_url})."
 			}
 		for (file, content) in template.files {
 			folder = folder_of(file)
@@ -105,8 +119,8 @@ Init :: [].{
 				return Build.fail!("Could not write ${file}.")
 			}
 		}
-		ignore!()?
-		install!(exe)?
+		ignore!(template.ignored)?
+		install!(own)?
 
 		Stdout.line!("Started a project from the ${template.name} template, with ./joy to work on it.")?
 		match source {
@@ -172,6 +186,46 @@ template! = |options| {
 	}
 }
 
+## Whether to start the project in `dir`, which has the files `taken` in it.
+## --non-empty answers yes. Without it, the person is asked, and where init
+## never asks it refuses.
+start_beside! : Str, List(Str), Init.Options => Try({}, _)
+start_beside! = |dir, taken, options| {
+	if options.non_empty {
+		return Ok({})
+	}
+	found = described(folder_name(dir), taken)
+	if !asks!(options.no_input) {
+		return Build.fail!("${found}\nStart in an empty folder, name a new one (init my-app), or start here anyway with --non-empty.")
+	}
+	Stdout.line!(found)?
+	choices = [
+		{ name: "No", description: "Leave the folder as it is" },
+		{ name: "Yes", description: "Start the project here, beside those files" },
+	]
+	match Prompt.choose!("Start the project here anyway?", choices) {
+		Ok(choice) if choice.name == "Yes" => Ok({})
+		Ok(_) => Err(Exit(1))
+		Err(_) => Err(Exit(130))
+	}
+}
+
+## What is in a folder that is not empty. A few files are listed one per
+## line, more are not listed at all.
+described : Str, List(Str) -> Str
+described = |folder, taken|
+	if taken.len() <= 5 {
+		"${folder} has files in it already:\n${Str.join_with(taken.map(|name| "  ${name}"), "\n")}"
+	} else {
+		"${folder} has files in it already."
+	}
+
+folder_name : Str -> Str
+folder_name = |dir| if (dir == ".") "This folder" else dir
+
+expect described("busy", ["a", "b"]) == "busy has files in it already:\n  a\n  b"
+expect described("busy", ["a", "b", "c", "d", "e", "f"]) == "busy has files in it already."
+
 asks! : Bool => Bool
 asks! = |no_input| {
 	in_ci =
@@ -182,13 +236,14 @@ asks! = |no_input| {
 	!no_input and !in_ci and Tty.is_tty!()
 }
 
-## Keep ./joy, .joy/ and dist/ out of git, adding what .gitignore lacks.
-ignore! : () => Try({}, _)
-ignore! = || {
+## Keep ./joy, .joy/ and dist/ out of git, and `more`, what the template's
+## own project leaves behind, adding what .gitignore lacks.
+ignore! : List(Str) => Try({}, _)
+ignore! = |more| {
 	path = Path.utf8(".gitignore")
 	current = path.read_utf8!() ?? ""
 	present = current.split_on("\n").map(|line| line.trim())
-	missing = ["/joy", "/.joy/", "/dist/"].drop_if(|entry| present.contains(entry))
+	missing = ["/joy", "/.joy/", "/dist/"].concat(more).drop_if(|entry| present.contains(entry))
 	if missing.is_empty() {
 		return Ok({})
 	}
@@ -199,40 +254,71 @@ ignore! = || {
 	Ok({})
 }
 
-## This program's own file, to copy to ./joy. Without --opt, roc runs the CLI
-## through a stand-in named after main.roc that only works where roc put it,
-## so there is nothing to copy.
-own_program! : () => Try(Path.Path, _)
+## Where ./joy comes from: this program's own file, or its source. With
+## `roc run`, roc interprets the CLI through a stand-in that only works where
+## roc put it, and names the source file as the program. With an --opt, roc
+## builds the program it runs.
+Own : [Program(Path.Path), Source(Str)]
+
+own_program! : () => Try(Own, _)
 own_program! = || {
-	exe =
-		match Env.exe_path!() {
-			Ok(path) => path
-			Err(_) => return Build.fail!("Could not find this program's own file to copy to ./joy.")
+	name =
+		match Env.program_name!() {
+			Ok(given) => OsStr.display(given)
+			Err(_) => ""
 		}
-	if Path.display(exe).ends_with(".roc") {
-		return Build.fail!("roc is running this without building it, so there is no program to copy to ./joy. Run it with roc run --opt=speed.")
+	if name.ends_with(".roc") {
+		# A path from where init runs, kept whole before init moves into the
+		# project.
+		source = if (name.starts_with("/")) name else "${Path.display(Env.cwd!()?)}/${name}"
+		return Ok(Source(source))
 	}
-	Ok(exe)
+	match Env.exe_path!() {
+		Ok(path) => Ok(Program(path))
+		Err(_) => Build.fail!("Could not find this program's own file to copy to ./joy.")
+	}
 }
 
-## Copy `exe` to ./joy, unless it is ./joy already. The copy is renamed
-## into place, which works while the old ./joy runs.
-install! : Path.Path => Try({}, _)
-install! = |exe| {
+## Put ./joy in place: a copy of the program, unless it is ./joy already, or
+## a build of the source. --opt=dev builds in about a second, and ./joy
+## spends its time waiting for roc's builds of the app either way. It is
+## renamed into place, which works while the old ./joy runs.
+install! : Own => Try({}, _)
+install! = |own| {
 	target = Path.utf8("joy")
-	same =
-		match (exe.canonicalize!(), target.canonicalize!()) {
-			(Ok(a), Ok(b)) => Path.display(a) == Path.display(b)
-			_ => False
-		}
-	if same {
-		return Ok({})
-	}
 	staged = Path.utf8(".joy.new")
-	if exe.copy!(staged).is_err() or staged.rename!(target).is_err() {
-		return Build.fail!("Could not copy ${Path.display(exe)} to ./joy.")
+	match own {
+		Program(exe) => {
+			same =
+				match (exe.canonicalize!(), target.canonicalize!()) {
+					(Ok(a), Ok(b)) => Path.display(a) == Path.display(b)
+					_ => False
+				}
+			if same {
+				return Ok({})
+			}
+			if exe.copy!(staged).is_err() or staged.rename!(target).is_err() {
+				return Build.fail!("Could not copy ${Path.display(exe)} to ./joy.")
+			}
+			Ok({})
+		}
+		Source(source) => {
+			_ = staged.delete!()
+			built = Cmd.new(OsStr.from_str("roc")).args(["build", "--opt=dev", "--output=.joy.new", source].map(OsStr.from_str)).run!()
+			if !(staged.is_file!() ?? False) {
+				said =
+					match built {
+						Ok(output) => Str.from_utf8_lossy(output.stdout_bytes.concat(output.stderr_bytes))
+						Err(err) => Str.inspect(err)
+					}
+				return Build.fail!("Could not build ./joy from ${source} with roc build --opt=dev:\n${said}")
+			}
+			if staged.rename!(target).is_err() {
+				return Build.fail!("Could not move the built program to ./joy.")
+			}
+			Ok({})
+		}
 	}
-	Ok({})
 }
 
 move_into! : Str => Try({}, _)
