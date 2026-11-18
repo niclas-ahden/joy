@@ -33,6 +33,29 @@ HotDev :: [].{
 		Ok({})
 	}
 
+	## Start a project from `template` at `dir`, a folder of build/<opt>/, on this
+	## checkout's platform, as ./joy init does for someone new.
+	init! = |dir, template| {
+		_ = shell("rm -rf ${dir} && mkdir -p ${dir} && cd ${dir} && ../joy-cli init --template ${template} --joy-checkout ../../.. --no-input").stdout(Null).stderr(Null).run!()?
+		if Path.utf8("${dir}/client").is_dir!() ?? False {
+			Ok({})
+		} else {
+			Err(InitWroteNoProject(dir))
+		}
+	}
+
+	## A copy at `dir`, a folder of build/<opt>/, of a template init does not
+	## offer yet, without what a run in its own folder left there. The template
+	## is as deep in this checkout as `dir`, so its bundles find the platform.
+	copy! = |dir, template| {
+		_ = shell("rm -rf ${dir} && cp -r cli/templates/${template} ${dir} && rm -rf ${dir}/joy ${dir}/.joy ${dir}/dist").run!()?
+		if Path.utf8("${dir}/client").is_dir!() ?? False {
+			Ok({})
+		} else {
+			Err(NoTemplateToCopy(template))
+		}
+	}
+
 	## Run ./joy dev with `args` on the project at `dir`, a folder of build/<opt>/, and
 	## open a browser.
 	run! = |dir, args, port| {
@@ -41,6 +64,15 @@ HotDev :: [].{
 		Ok({ dir, dev, browser, page, url: "http://localhost:${port}" })
 	}
 
+
+	## Run ./joy dev on the project at `dir` and open a browser, for a project whose
+	## own server serves its pages: the server listens on `port`, and `env` is the
+	## rest of its environment, as `NAME=value` words.
+	serve! = |dir, port, env| {
+		dev = shell("cd ${dir} && PORT=${port} ${env} exec ../joy-cli dev").stdout(Null).stderr(Null).spawn_leashed!()?
+		{ browser, page } = Browser.launch!()?
+		Ok({ dir, dev, browser, page, url: "http://127.0.0.1:${port}" })
+	}
 	## Close the browser and ./joy dev.
 	stop! = |started| {
 		started.browser.close!()?

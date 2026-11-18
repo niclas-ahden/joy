@@ -19,7 +19,7 @@ const timeouts = [];
 const intervals = [];
 let cleared = 0;
 let now = 0;
-// A Time operation answers through a promise, a microtask after its timer.
+// A Time effect answers through a promise, a microtask after its timer.
 const settled = () => new Promise((r) => setImmediate(r));
 globalThis.Date.now = () => now;
 globalThis.setTimeout = (fn, ms) => { timeouts.push({ fn, ms }); return timeouts.length; };

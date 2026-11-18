@@ -53,16 +53,17 @@ Util :: [].{
 	}
 
 	## The app name in `examples/counter.roc`, `counter.roc` or `counter`,
-	## and for directory examples in `examples/spa-todomvc`, `examples/spa-todomvc/`
-	## or `examples/spa-todomvc/app.roc`: the last path segment that is not
-	## `app.roc`, without the `.roc`. build.roc and watch.roc both take an
-	## app in any of those forms, and build.roc looks the name up in each of
-	## its source directories.
+	## and for directory examples in `examples/pages`, `examples/pages/` or
+	## `examples/pages/app.roc`: the last path segment that is not `app.roc`,
+	## without the `.roc`. An example that is a ./joy project keeps its app in
+	## client/, so `examples/spa-todomvc/client/app.roc` is `spa-todomvc`.
+	## build.roc and watch.roc both take an app in any of those forms, and
+	## build.roc looks the name up in each of its source directories.
 	example_name : Str -> Str
 	example_name = |arg| {
 		# A Windows path listing separates with backslashes. The name is the
 		# same either way.
-		trimmed = arg.replace_each("\\", "/").drop_suffix("/").drop_suffix("/app.roc")
+		trimmed = arg.replace_each("\\", "/").drop_suffix("/").drop_suffix("/app.roc").drop_suffix("/client")
 		base = match trimmed.split_last("/") {
 			Ok(split) => split.after
 			Err(_) => trimmed

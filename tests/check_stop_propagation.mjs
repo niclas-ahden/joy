@@ -2,7 +2,9 @@
 // stopPropagation() for a flagged handler and leave it alone for a plain one.
 // The fake DOM has no bubble phase, so the harness plays browser: it fires the
 // button's listener with an event that records stopPropagation calls, then
-// forwards to the outer div's listener unless the event was stopped.
+// forwards to the outer div's listener unless the event was stopped. The event
+// bubbles, as a click does, so the runtime takes both handlers when the click
+// reaches the first, and on the div only stops it or lets it go on.
 // Run from the repo root: node tests/check_stop_propagation.mjs
 import { readFileSync } from 'node:fs';
 import { El, fakeDom, find, htmlBare } from './fakedom.mjs';
@@ -22,7 +24,7 @@ expect('outer div listens for click', outer.listenerCount('click'), 1);
 
 // One bubbled click: the button first, then the div, like a browser would.
 const clickThrough = (label) => {
-  const ev = { stopped: false, stopPropagation() { this.stopped = true; } };
+  const ev = { bubbles: true, stopped: false, stopPropagation() { this.stopped = true; } };
   find(root, label).listeners.click(ev);
   if (!ev.stopped) outer.listeners.click(ev);
   return ev;

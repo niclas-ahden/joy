@@ -7,9 +7,10 @@ import html.Html exposing [div, p, button, text]
 import html.Attribute exposing [on_click]
 import pf.Effect
 import pf.Sub
+import pf.Wire
 
 # Fixture for check_features.mjs: Effect.call's reply, done and failed, an
-# operation the runtime.js lacks, and Sub.listen's events, which run exactly
+# effect the runtime.js lacks, and Sub.listen's events, which run exactly
 # while the subscription is listed.
 
 Model : { echo : Str, broken : Str, absent : Str, listening : Bool, events : List(Str) }
@@ -19,9 +20,9 @@ Msg : [
 	UserClickedBroken,
 	UserClickedSend,
 	UserClickedAbsent,
-	GotEcho(Try(List(U8), [FeatureFailed(Str)])),
-	GotBroken(Try(List(U8), [FeatureFailed(Str)])),
-	GotAbsent(Try(List(U8), [FeatureFailed(Str)])),
+	GotEcho(Try(List(U8), [EffectFailed({ name : Str, message : Str })])),
+	GotBroken(Try(List(U8), [EffectFailed({ name : Str, message : Str })])),
+	GotAbsent(Try(List(U8), [EffectFailed({ name : Str, message : Str })])),
 	UserToggledListening,
 	GotEvent(Str),
 ]
@@ -32,16 +33,16 @@ init = |_| ({ echo: "", broken: "", absent: "", listening: Bool.False, events: [
 subscriptions : Model -> List(Sub(Msg))
 subscriptions = |model|
 	if model.listening {
-		[Sub.listen("joy/test/ticks", [5], |event| GotEvent(Str.from_utf8_lossy(event)))]
+		[Sub.listen("joy/test/ticks", Wire.writer({}).u8(5).done(), |event| GotEvent(Str.from_utf8_lossy(event)))]
 	} else {
 		[]
 	}
 
-show : Try(List(U8), [FeatureFailed(Str)]) -> Str
+show : Try(List(U8), [EffectFailed({ name : Str, message : Str })]) -> Str
 show = |reply|
 	match reply {
 		Ok(answer) => "ok ${Str.from_utf8_lossy(answer)}"
-		Err(FeatureFailed(reason)) => "failed ${reason}"
+		Err(EffectFailed({ name, message })) => "failed ${name}: ${message}"
 	}
 
 update : Model, Msg -> (Model, List(Effect(Msg)))

@@ -53,15 +53,11 @@ expect('page content type', res.headers.get('content-type'), 'text/html');
 expect('watch loops need no-store', res.headers.get('cache-control'), 'no-store');
 expect('the page is the plain shell', (await res.text()).includes('./runtime.js'), true);
 
-// The per-app page override: spa-todomvc commits its own page and styles and
-// gets them by name, every other app keeps the shell and 404s the css it
-// never links.
-res = await get(prefixPort, '/spa-todomvc/');
+// The per-app page override: pages commits a page of its own and gets it by
+// name. Every other app keeps the shell, and none has styles of its own.
+res = await get(prefixPort, '/pages/');
 expect('per-app page served', res.status, 200);
-expect('per-app page links its styles', (await res.text()).includes('./style.css'), true);
-res = await get(prefixPort, '/spa-todomvc/style.css');
-expect('per-app styles served', res.status, 200);
-expect('styles content type', res.headers.get('content-type'), 'text/css');
+expect('per-app page is its own', (await res.text()).includes('<title>Joy pages</title>'), true);
 expect('apps without styles 404 them', (await get(prefixPort, '/counter/style.css')).status, 404);
 
 res = await get(prefixPort, '/counter/runtime.js');

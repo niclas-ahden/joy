@@ -3,6 +3,7 @@
 #
 #   ./build.roc --opt=speed                       every app, what tests.roc and CI want
 #   ./build.roc --opt=speed examples/counter.roc  just that one, what watch.roc wants
+#   ./build.roc --opt=speed counter,todomvc       just those, named with commas between
 #
 # To build the Rust host and link each app into `build/<opt>/<name>.wasm`.
 # Run from the repo root.
@@ -53,12 +54,12 @@ main! = |args| {
 	# two dozen modules for an edit that touches a single app costs seconds on
 	# every save. tests.roc and CI name none and get all.
 	sources = match config.app_name {
-		Ok(name) => [find_source!(example_name(name))?]
+		Ok(names) => names.split_on(",").map_try!(|name| find_source!(example_name(name)))?
 		Err(NoValue) => list_sources!()?
 	}
 
 	# roc can exit 0 without writing anything, so drop each module up front and
-	# check that it came back in build_example!. A stale wasm must never reach
+	# check that it came back in finish_build!. A stale wasm must never reach
 	# the tests, or the page watch.roc serves. Only the sources are dropped, so
 	# working on one example leaves an earlier full build intact.
 	_ = sources.map_try!(
@@ -72,7 +73,15 @@ main! = |args| {
 		},
 	)?
 
-	_ = sources.map_try!(|src| build_example!(src, opt, hot))?
+	# Several at once: each build is a roc process of its own, and with
+	# --no-cache they share nothing.
+	var $start = 0
+	while $start < sources.len() {
+		batch = sources.sublist({ start: $start, len: at_a_time })
+		running = batch.map_try!(|src| Ok((src, start_build!(src, opt, hot)?)))?
+		_ = running.map_try!(|(src, child)| finish_build!(src, opt, hot, child))?
+		$start = $start + at_a_time
+	}
 
 	# A hot build is only for the hot reload harnesses, which mount it on the
 	# runtime.js with every feature.
@@ -128,10 +137,11 @@ app_dirs = ["examples", "tests/apps"]
 # `examples/counter.roc`, `tests/apps/vdom.roc` and `examples/spa-todomvc` all
 # work: the argument's directory is dropped and only the name is looked up,
 # so watch.roc can pass whatever the user typed. A flat app is
-# <dir>/<name>.roc, a directory app is <dir>/<name>/app.roc.
+# <dir>/<name>.roc, a directory app is <dir>/<name>/app.roc, and one that is
+# a ./joy project keeps its app in client/, <dir>/<name>/client/app.roc.
 find_source! = |name| {
 	found = app_dirs
-		.map(|dir| [Path.utf8("${dir}/${name}.roc"), Path.utf8("${dir}/${name}/app.roc")])
+		.map(|dir| [Path.utf8("${dir}/${name}.roc"), Path.utf8("${dir}/${name}/app.roc"), Path.utf8("${dir}/${name}/client/app.roc")])
 		.join()
 		.map_try!(|path| path.is_file!().map_ok(|exists| { path, exists }))?
 		.keep_if(|candidate| candidate.exists)
@@ -144,7 +154,8 @@ find_source! = |name| {
 
 # Every app in every source directory. A flat app is one <dir>/<name>.roc
 # file; an app that brings a page, styles or tests of its own is a directory,
-# <dir>/<name>/, built from its app.roc (see examples/spa-todomvc/).
+# <dir>/<name>/, built from its app.roc (see examples/pages/), or from its
+# client/app.roc when it is a ./joy project (see examples/spa-todomvc/).
 list_sources! = ||
 	app_dirs
 		.map_try!(|dir| sources_in!(dir))
@@ -159,8 +170,8 @@ sources_in! = |dir| {
 				if display.ends_with(".roc") {
 					Ok([entry])
 				} else {
-					nested = Path.utf8("${display}/app.roc")
-					nested.is_file!().map_ok(|exists| if exists [nested] else [])
+					nested = [Path.utf8("${display}/app.roc"), Path.utf8("${display}/client/app.roc")]
+					nested.keep_if_try!(|path| path.is_file!())
 				}
 			},
 		)
@@ -240,16 +251,11 @@ prepare_hot_platform! = || {
 	Ok({})
 }
 
-# roc exits 2 when it emits warnings but 0 even when it reports errors, so the
-# summary line decides, not the exit code. One warning is expected:
-# examples/logging.roc keeps a `dbg` on purpose to demonstrate the console.debug
-# stream, and `dbg` in an optimized build warns by design. Any other warning, an
-# error, or a module that never got written fails the build.
-#
-# The expected warning is recognised by its title, matched with the case folded
-# away: roc titled its diagnostics in capitals until 2026-08, and a compiler
-# from either side of that change must build this repo.
-build_example! = |path, opt, hot| {
+# How many apps build at once. A build is mostly one thread of roc and LLVM.
+at_a_time = 12
+
+# Start roc on one app, for finish_build! to wait for.
+start_build! = |path, opt, hot| {
 	src = Path.display(path)
 	out = wasm_path(path, opt, hot)
 	here = Path.display(Env.cwd!()?)
@@ -275,10 +281,34 @@ build_example! = |path, opt, hot| {
 	#
 	# The engine's native call stack is a separate limit, and in optimized
 	# builds it usually binds first.
-	output = capture!(
-		Cmd.new(OsStr.from_str("roc"))
-			.args(["build", "--opt=${opt}", "--target=wasm32", "--wasm-memory=0", "--wasm-stack-size=1048576", "--no-cache"].concat(swap_platform).concat(["--output=${out}", src]).map(OsStr.from_str)),
-	)?
+	Cmd.new(OsStr.from_str("roc"))
+		.args(["build", "--opt=${opt}", "--target=wasm32", "--wasm-memory=0", "--wasm-stack-size=1048576", "--no-cache"].concat(swap_platform).concat(["--output=${out}", src]).map(OsStr.from_str))
+		.stdout(Capture)
+		.stderr(Capture)
+		.spawn_leashed!()
+}
+
+# Wait for a build that start_build! started, and stop unless it is clean.
+#
+# roc spreads its diagnostics across stdout and stderr, and a run that reports
+# errors can exit 0, so both streams are read whatever the exit code was.
+#
+# roc exits 2 when it emits warnings but 0 even when it reports errors, so the
+# summary line decides, not the exit code. One warning is expected:
+# examples/logging.roc keeps a `dbg` on purpose to demonstrate the console.debug
+# stream, and `dbg` in an optimized build warns by design. Any other warning, an
+# error, or a module that never got written fails the build.
+#
+# The expected warning is recognised by its title, matched with the case folded
+# away: roc titled its diagnostics in capitals until 2026-08, and a compiler
+# from either side of that change must build this repo.
+finish_build! = |path, opt, hot, child| {
+	src = Path.display(path)
+	out = wasm_path(path, opt, hot)
+	output = match child.wait!() {
+		Ok(ended) => Str.from_utf8_lossy(ended.stdout_bytes.concat(ended.stderr_bytes))
+		Err(_) => return fail!("could not run roc build for ${src}")
+	}
 	lines = output.split_on("\n")
 	clean = match lines.keep_oks(summary_counts).last() {
 		Ok(counts) =>
@@ -319,7 +349,7 @@ parser = Cli.assert_valid(
 			opt: Args.opt_option,
 			app_name: Param.maybe_str({
 				name: "app",
-				help: "Build only this app, e.g. counter or examples/counter.roc. Builds every app when omitted.",
+				help: "Build only this app, e.g. counter or examples/counter.roc, or these, with commas between. Builds every app when omitted.",
 			}),
 		}.Cli,
 		{
@@ -344,11 +374,3 @@ summary_counts = |line| {
 	Ok({ errors, warnings })
 }
 
-# roc spreads its diagnostics across stdout and stderr, and a run that reports
-# errors can exit 0, so gather both streams whatever the exit code was.
-capture! = |cmd| {
-	match cmd.run!() {
-		Ok(output) => Ok(Str.from_utf8_lossy(output.stdout_bytes.concat(output.stderr_bytes)))
-		Err(_) => fail!("could not run ${cmd.to_str()}")
-	}
-}

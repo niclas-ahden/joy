@@ -11,18 +11,16 @@ import pf.Stderr
 import pf.Stdout
 import Compiled
 
-# A compile takes about 600 MB and 10 s, and nothing else runs meanwhile.
-at_a_time = 6
+# The tests only drive a browser, so roc's own backend does: it compiles one
+# in a fraction of a second, where an optimized build takes about 8 s.
+at_a_time = 8
 
 main! = |_args| {
 	folder = Compiled.folder!({})
 	# Nothing from an earlier run may stand in for a test that no longer compiles.
 	Path.utf8(folder).delete_all!() ?? {}
 	Path.utf8(folder).create_all!()?
-	per_example = Path.utf8("examples").list!()?
-		.map_try!(|entry| Ok(Path.utf8("${Path.display(entry)}/tests").list!() ?? []))?
 	tests = Path.utf8("tests/e2e").list!()?
-		.concat(per_example.join())
 		.map(Path.display)
 		.keep_if(|file| file.ends_with("_test.roc"))
 	sources = tests.append(Compiled.launcher_source)
@@ -50,7 +48,7 @@ main! = |_args| {
 }
 
 spawn_compile! = |source| {
-	args = ["build", "--opt=speed", "--output=${Compiled.binary!(source)}", source]
+	args = ["build", "--opt=dev", "--output=${Compiled.binary!(source)}", source]
 	child = Cmd.new(OsStr.from_str("roc")).args(args.map(OsStr.from_str)).stdout(Capture).stderr(Capture).spawn_leashed!()?
 	Ok((source, child))
 }

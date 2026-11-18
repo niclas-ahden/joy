@@ -6,6 +6,7 @@ app [main!] {
 	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.14.0/83Dw68fzvXTQMbcZXupMDB3YiEP6pS6YgKxuTDjuMSAw.tar.zst",
 }
 
+import pf.Sleep
 import playwright.Playwright exposing [assert!]
 import HotDev
 
@@ -32,6 +33,14 @@ main! = |_args| {
 	HotDev.shows!(page, "#other-label", "other two")?
 	HotDev.same_page!(page)?
 	assert!(page.find("#other-count").has_text("1"))?
+	assert!(page.find("#cart-count").has_text("2"))?
+
+	# A page the browser kept for Back and Forward listens again when it comes
+	# back, and hears where the builds are. This one took both builds in place,
+	# so it missed nothing and stays as it is.
+	_ = page.evaluate!("(window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })), window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })), 'back')")?
+	Sleep.millis!(1_000)?
+	HotDev.same_page!(page)?
 	assert!(page.find("#cart-count").has_text("2"))?
 
 	# Two broken bundles: a tab for each, on the newest, until both are fixed.

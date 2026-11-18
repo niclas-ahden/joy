@@ -12,7 +12,7 @@ const { mount } = await appRuntime('composed');
 // Captured timers (the boot Effect uses setTimeout, the tick Sub setInterval).
 const timeouts = [];
 const intervals = [];
-// A Time operation answers through a promise, a microtask after its timer.
+// A Time effect answers through a promise, a microtask after its timer.
 const settled = () => new Promise((r) => setImmediate(r));
 globalThis.setTimeout = (fn, ms) => { timeouts.push({ fn, ms }); return timeouts.length; };
 globalThis.setInterval = (fn, ms) => { intervals.push({ fn, ms }); return intervals.length; };

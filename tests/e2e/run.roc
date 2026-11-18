@@ -26,19 +26,7 @@ hooks = {
 	kill!: Cmd.Child.kill!,
 	close!: Cmd.Child.close!,
 	path: Path.utf8,
-	# tests/e2e/ itself, plus each directory example's own tests/
-	# (examples/spa-todomvc/tests/): a directory example keeps its browser tests
-	# next to its app, and this runner spawns them all the same way.
-	list!: |dir| {
-		base = Path.list!(dir)?
-		if Path.display(dir) == "tests/e2e" {
-			per_example = Path.utf8("examples").list!()?
-				.map_try!(|entry| Ok(Path.utf8("${Path.display(entry)}/tests").list!() ?? []))?
-			Ok(base.concat(per_example.join()))
-		} else {
-			Ok(base)
-		}
-	},
+	list!: Path.list!,
 	print!: Stdout.line!,
 	now!: Utc.now!,
 	sleep!: Sleep.millis!,
@@ -50,8 +38,8 @@ main! = |_args| {
 		"tests/e2e",
 		{
 			test_command: [Compiled.binary!(Compiled.launcher_source)],
-			# Each test runs its own browser; two in flight keeps memory sane.
-			max_workers: 2,
+			# Each test runs its own browser, on a port and in a folder of its own.
+			max_workers: 6,
 			worker_envs: |_index| [],
 			before_each!: |_index| Ok({}),
 			per_test_timeout_ms: 120_000,

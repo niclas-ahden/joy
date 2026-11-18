@@ -1,6 +1,7 @@
 # Real-browser E2E: a file in public/ changing through ./joy dev. A stylesheet the
-# page links is swapped in place. Another file the page loaded reloads it, and the
-# replay brings back the state and the URL it had moved to.
+# page links is swapped in place. Another file the page loaded reloads it, and so
+# does the page's own HTML. The replay brings back the state and the URL it had
+# moved to.
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.31.0/Ff3fkK1TjYTVxMj9V21FP24ojTJXYk314Fbo1whBZ6Yf.tar.zst",
 	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.14.0/83Dw68fzvXTQMbcZXupMDB3YiEP6pS6YgKxuTDjuMSAw.tar.zst",
@@ -30,6 +31,14 @@ main! = |_args| {
 	HotDev.reloaded!(page)?
 	HotDev.shows!(page, "#other-count", "2")?
 	HotDev.same!(page.evaluate!("location.pathname")?, "/moved")?
+
+	# The page's own HTML is not among the files it loaded, and the page has
+	# moved to another URL than the one that file is served under.
+	HotDev.mark!(page)?
+	HotDev.edit!("${dir}/public/index.html", "<title>hot pages</title>", "<title>hot pages, edited</title>")?
+	HotDev.reloaded!(page)?
+	HotDev.same!(page.evaluate!("document.title")?, "hot pages, edited")?
+	HotDev.shows!(page, "#other-count", "2")?
 
 	HotDev.stop!(started)
 }

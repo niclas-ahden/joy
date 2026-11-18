@@ -1,7 +1,9 @@
 // Node harness for the guide. Each Roc sample must appear, its lines in order and
 // ignoring indentation and blank lines, in one file that the suite compiles: an
-// example, or a file in guide/samples/, which exists for this. A sample that cannot
-// compile, like two rival definitions shown side by side, says so with Doc.sketch.
+// example, a template of ./joy init, or a file in guide/samples/, which exists for
+// this. A sample that cannot compile, like two rival definitions shown side by
+// side, says so with Doc.sketch. A walk-through's lines and excerpts (see
+// guide/Walk.roc) are samples too.
 // The in-page links of the built guide must lead somewhere too.
 // Run from the repo root, after guide/build.roc: node tests/check_guide.mjs
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
@@ -13,14 +15,17 @@ const samplesOf = (topic) => {
   const lines = readFileSync(`guide/Topic/${topic}.roc`, 'utf8').split('\n');
   const found = [];
   lines.forEach((line, at) => {
-    const call = /Doc\.(code|sketch)\(\s*$/.exec(line);
+    const call = /(Doc\.code|Doc\.sketch|Walk\.lines|Walk\.excerpt)\(\s*$/.exec(line);
     if (!call) return;
     let next = at + 1;
     while (!/^\s*\\\\/.test(lines[next])) next++;
-    const [lang, file] = lines.slice(at + 1, next).map((l) => l.trim().replace(/,$/, ''));
+    const before = lines.slice(at + 1, next).map((l) => l.trim().replace(/,$/, ''));
+    // Walk.lines takes the steps it is lit in, and is always Roc. Only a Doc block names a file.
+    const lang = call[1] === 'Walk.lines' ? 'Roc' : before[0];
+    const file = call[1].startsWith('Doc.') ? before[1] : '';
     const text = [];
     for (; /^\s*\\\\/.test(lines[next]); next++) text.push(lines[next].replace(/^\s*\\\\ ?/, '').replaceAll('\\$', '$'));
-    found.push({ where: `${topic}:${at + 1}`, kind: call[1], lang, file: file.replaceAll('"', ''), text });
+    found.push({ where: `${topic}:${at + 1}`, kind: call[1] === 'Doc.sketch' ? 'sketch' : 'code', lang, file: file.replaceAll('"', ''), text });
   });
   return found;
 };
@@ -28,7 +33,7 @@ const topics = readdirSync('guide/Topic').map((name) => name.replace(/\.roc$/, '
 const samples = topics.flatMap(samplesOf);
 
 // So a change to how the topics write samples cannot leave this checking nothing.
-const inTopics = topics.map((t) => readFileSync(`guide/Topic/${t}.roc`, 'utf8').split(/Doc\.(?:code|sketch)\(/).length - 1).reduce((a, b) => a + b, 0);
+const inTopics = topics.map((t) => readFileSync(`guide/Topic/${t}.roc`, 'utf8').split(/(?:Doc\.code|Doc\.sketch|Walk\.lines|Walk\.excerpt)\(/).length - 1).reduce((a, b) => a + b, 0);
 expect('guide: every sample was found', samples.length, inTopics);
 expect('guide: there are samples', samples.length > 50, true);
 
@@ -41,7 +46,7 @@ const rocFiles = (dir) => readdirSync(dir).flatMap((name) => {
 const significant = (lines) => lines.map((l) => l.trim()).filter((l) => l !== '');
 // A release's URL is not known here, so the line naming it stands for any platform.
 const anyPlatform = (line) => line.startsWith('pf: platform "');
-const corpus = [...rocFiles('examples'), ...rocFiles('guide/samples')].map((path) => ({ path, lines: significant(readFileSync(path, 'utf8').split('\n')) }));
+const corpus = [...rocFiles('examples'), ...rocFiles('cli/templates'), ...rocFiles('guide/samples')].map((path) => ({ path, lines: significant(readFileSync(path, 'utf8').split('\n')) }));
 
 // The lines of `sample` that `file` lacks, in order, once those before them matched.
 const missing = (sample, file) => {

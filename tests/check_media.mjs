@@ -5,7 +5,7 @@
 // file, a refused microphone and a page that is not secure arrive as typed
 // problems, and playback reaches the <audio> element by its selector. It
 // runs the example's own generated runtime.js, so it covers the media
-// operations as an app ships them. The real browser APIs are covered by
+// effects as an app ships them. The real browser APIs are covered by
 // tests/e2e/voice_memo_test.roc.
 // Run from the repo root: node tests/check_media.mjs
 import { readFileSync } from 'node:fs';

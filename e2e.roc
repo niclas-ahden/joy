@@ -1,8 +1,8 @@
 #!/usr/bin/env roc
 # Run:
 #
-#   ./e2e.roc --opt=speed
-#   ./e2e.roc --opt=dev
+#   ./e2e.roc              at --opt=dev, the quick one for while you work
+#   ./e2e.roc --opt=speed  what an app ships with, which CI runs as well
 #
 # To build the examples at that optimization level (flags need roc's `--`
 # separator in front of them, otherwise roc claims --opt instead of passing
@@ -39,7 +39,7 @@ import Args
 import Util exposing [fail!, free_port!, run!, run_env!]
 
 main! = |args| {
-	{ opt: opt_arg, browser } = Args.parse!(parser, args, "--opt=speed")?
+	{ opt: opt_arg, browser } = Args.parse!(parser, args, "--opt=dev")?
 	opt = Args.check_opt!(opt_arg)?
 	browsers = match browser {
 		"all" => ["chromium", "firefox", "webkit"]
@@ -59,7 +59,7 @@ main! = |args| {
 	match System.target!().os() {
 		Windows(_) => {}
 		MacOS(_) => {}
-		_ => run!("roc", ["build", "--opt=speed", "--output=build/${opt}/joy-cli", "cli/main.roc"])?
+		_ => run!("roc", ["build", "--opt=dev", "--output=build/${opt}/joy-cli", "cli/main.roc"])?
 	}
 
 	run_env!("roc", ["tests/e2e/compile.roc"], "JOY_OPT", opt)?
@@ -167,7 +167,7 @@ parser : Cli.CliParser({ opt : Str, browser : Str })
 parser = Cli.assert_valid(
 	Cli.finish(
 		{
-			opt: Args.opt_option,
+			opt: Args.opt_option_with_default("dev"),
 			browser: Opt.str({
 				short: "",
 				long: "browser",

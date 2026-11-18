@@ -1,13 +1,13 @@
 #!/usr/bin/env roc
 # Run:
 #
-#   ./tests.roc --opt=speed
-#   ./tests.roc --opt=dev
+#   ./tests.roc              at --opt=dev, the quick one for while you work
+#   ./tests.roc --opt=speed  what an app ships with, which CI runs as well
 #
 # To build everything at that optimization level (see build.roc) and run the
-# node harness checks against it. `--opt` is required and is handed explicitly
-# to build.roc and, as JOY_OPT, to the harnesses, so every stage of one run
-# agrees on the build/<opt>/ tree. Run from the repo root.
+# node harness checks against it. The level is handed explicitly to build.roc
+# and, as JOY_OPT, to the harnesses, so every stage of one run agrees on the
+# build/<opt>/ tree. Run from the repo root.
 #
 # Flags need roc's `--` separator in front of them. Without it roc claims
 # --opt and --help for itself instead of passing them on.
@@ -30,7 +30,7 @@ import Args
 import Util exposing [run!, run_env!]
 
 main! = |args| {
-	opt = Args.check_opt!(Args.parse!(parser, args, "--opt=speed")?)?
+	opt = Args.check_opt!(Args.parse!(parser, args, "--opt=dev")?)?
 
 	# Roc-level unit tests: top-level `expect`s in the platform modules (pure
 	# code: the Cmd/Sub/Attribute/Html `map` plumbing, WebCrypto.to_hex, ...).
@@ -62,7 +62,7 @@ main! = |args| {
 	# The hot reload harnesses (tests/check_hot*.mjs) reload between builds of
 	# one app, which need hot reload compiled in, so those are built again
 	# with JOY_HOT, and so is TodoMVC, for the differential harness.
-	_ = hot_apps.map_try!(|name| run_env!("roc", ["./build.roc", "--opt=${opt}", name], "JOY_HOT", "1"))?
+	run_env!("roc", ["./build.roc", "--opt=${opt}", Str.join_with(hot_apps, ",")], "JOY_HOT", "1")?
 
 	# node:test runs each harness in its own child process (concurrently) and
 	# keeps going past a failing file, so one broken harness can't hide the
@@ -112,6 +112,11 @@ hot_apps = [
 	"hot_page_v1",
 	"hot_page_v2",
 	"hot_page_v3",
+	"rows",
+	"port_answer",
+	"hot_told_v1",
+	"hot_told_v2",
+	"jsbench_keyed",
 	"spa-todomvc",
 ]
 
@@ -120,7 +125,7 @@ is_harness = |name| name.starts_with("check_") and name.ends_with(".mjs")
 parser : Cli.CliParser(Str)
 parser = Cli.assert_valid(
 	Cli.finish(
-		Args.opt_option,
+		Args.opt_option_with_default("dev"),
 		{
 			name: "tests",
 			version: "",
