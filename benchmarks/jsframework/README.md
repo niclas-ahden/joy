@@ -123,6 +123,130 @@ Before trusting a run:
 
 Memory and bundle size are stable run to run and can be compared outright.
 
+## Comparing with an earlier version
+
+`run.roc` measures this checkout against whatever the clone's released entries hold.
+`compare.roc` puts any earlier version of Joy there for the length of the comparison:
+
+```sh
+benchmarks/jsframework/compare.roc 0.34.0                 # three runs, about an hour and a half
+RUNS=1 benchmarks/jsframework/compare.roc 0.34.0          # one run, about half an hour
+FAST=1 RUNS=1 benchmarks/jsframework/compare.roc 0.34.0   # the quick subset, to try the setup
+```
+
+The version is a tag or any commit that has `tests/apps/jsbench_keyed.roc`. The script:
+
+1. Unpacks that version into `build/compare/<commit>/src` and builds its two benchmark
+   apps there with `nix develop` of that tree, so with the compiler that version pins.
+   Each side is then what its version ships. This step needs nix.
+2. Prepares them exactly like the local entry (`wasm-opt -Oz`, the runtime through
+   uglify) into `build/compare/<commit>/entries/`.
+3. Copies them over the released entries in the clone (`frameworks/keyed/joy` and
+   `frameworks/non-keyed/joy`) under the version's name, and keeps what was there in
+   `build/compare/keep/`.
+4. Runs `run.roc` once for each of `RUNS`. Every run is a normal run with its own
+   report and its own row in the history.
+5. Puts the released entries back, also when a run fails, and stops the benchmark
+   server if it was the one to start it. A comparison that was killed leaves the entries
+   swapped. The next `compare.roc` puts them back before it does anything else.
+6. Pools the rounds of all the runs into one report,
+   `runs/<timestamp>_vs_<version>/report.md`, and prints its comparison.
+
+Before you start:
+
+- Pin the governor (see above). The script checks it before it touches anything.
+- Leave the machine alone for the whole time. No builds, no test suites, no second
+  benchmark. Browser windows open and close on the display throughout.
+- Three runs is the default because one is not enough to call a 2% change. The three
+  runs of 2026-11-14 gave +2.6%, +2.5% and +1.9% for the same two builds.
+
+Reading the result:
+
+- Read the pooled table. A row says `slower` or `faster` only when its interval leaves
+  out zero and every round moved the same way. Everything else is `noise`.
+- The geomean repeats to about half a percent between runs. A single benchmark does
+  not, least of all the ones the runner slows down (update, select, swap, clear).
+- The instruction counts, the memory numbers and the bundle size are exact. A
+  difference there is real whatever its size.
+- When the two versions pin different compilers, the difference is the version's as a
+  whole: its platform, its runtime and its compiler together.
+
+## Finding where a difference comes from
+
+The benchmark gives one number for a click. These say what is in it, the cheapest first.
+
+**The instruction counts in the report.** Fewer wasm instructions and a longer time
+means the time is not in Joy's hot code. Look at the browser next.
+
+**The runner's own traces.** The runner keeps a Chrome trace of every measured click in
+`webdriver-ts/traces/` of the clone, until the same entry and version is measured
+again. `profile.mjs` splits them, with no browser:
+
+```sh
+node benchmarks/jsframework/profile.mjs traces $JS_FRAMEWORK_BENCHMARK_DIR/webdriver-ts/traces \
+  04_select1k joy-dev-vd99a981.dirty-keyed joy-v0.34.0-keyed
+```
+
+**A profile of both builds in one session.** The traces of two entries can be half an
+hour apart. `profile.mjs` measures the builds side by side instead, taking turns, the
+way the runner measures: one browser for all the clicks of a build, a fresh page for
+each click, the runner's warmups, a forced GC and its CPU slowdown. `compare.roc`
+prints the command with the two entry folders filled in.
+
+```sh
+cd $JS_FRAMEWORK_BENCHMARK_DIR
+direnv exec . node /path/to/joy/benchmarks/jsframework/profile.mjs \
+  dev=frameworks/keyed/joy-dev earlier=/path/to/joy/build/compare/<commit>/entries/keyed
+```
+
+Without a dev shell in the clone, leave out `direnv exec .`. The columns:
+
+| column | what it is |
+|---|---|
+| `total` | from the click to the end of the last commit, which is what the benchmark reports |
+| `handler` | Joy's own share: the wasm and `runtime.js` the click ran |
+| `UpdateLayoutTree`, `Layout`, `PrePaint`, `Paint`, `Layerize`, `Commit` | the browser's share, by stage |
+| `forced` | style or layout inside the handler, which reading from the page forces |
+| `styled` | how many elements the browser restyled |
+
+If `styled` and the browser's stages are the same for both builds, the DOM work is the
+same and the difference is in `handler`. Then these narrow it down:
+
+- `--mode cpu` turns on V8's sampling profiler and lists the functions the handler was
+  in, split into wasm, `runtime.js` and the browser. It slows every click a little, so
+  take the totals from a run without it. The entries ship a minified runtime, so the
+  names are short ones. For real names, copy an entry folder and put that version's
+  `www/runtime.js` over its `dist/runtime.js`.
+- `--benches selectwarm` measures the select click after forty other selects. A
+  difference that is gone there was code running for the first time, not slower code.
+- `--js-flags "--liftoff-only"` and `--js-flags "--no-liftoff"` pin the wasm to V8's
+  baseline or its optimizing compiler, to see whether a difference is about which of
+  the two the click happened to run on.
+- `--benches` takes `create`, `update`, `select`, `selectwarm`, `swap`, `remove` and
+  `clear`, and `--clicks` how many measured clicks each build gets (20).
+
+What to keep in mind when reading any of it:
+
+- Select row measures the second select the page ever makes, which is the first time
+  the path that unselects a row runs. More code on that path costs there even when the
+  same code is as fast once it is warm. On 2026-11-14 select row was 8 to 10% slower
+  than 0.34.0 in the benchmark. The profile put it in the handler (1.19 ms against
+  1.41 ms at the runner's slowdown) with the same 11 elements restyled, and after
+  forty selects most of it was gone (0.63 ms against 0.69 ms).
+- The browser keeps what it compiled of a page between loads, and the runner loads a
+  page fifteen times or more in one browser. A profile that starts a new browser for
+  every click measures something else: swap rows was 6.7% slower than 0.34.0 in the
+  benchmark, level with a browser per click, and 4.5% slower once the profile kept its
+  browsers open as the runner does. That is why `profile.mjs` keeps them open.
+- Not every difference ends in a cause. Of that swap rows difference, about a third
+  was in the handler and the rest in the browser's layout, for the same 1017 elements
+  restyled and the same number laid out.
+- The DOM calls in the report count a read like `parentOf` the same as a write, so a
+  large change there can be cheap.
+- The fake DOM in `tests/` checks itself after every paint (`checkNodes`), which a
+  browser does not do and which takes most of a click's time there. Leave it out of
+  the adapter before timing anything on the fake DOM.
+
 ## Prerequisites
 
 `$JS_FRAMEWORK_BENCHMARK_DIR` must be set to a clone of `js-framework-benchmark`.

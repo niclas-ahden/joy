@@ -6,7 +6,11 @@
 //   node render.mjs --results <webdriver-ts/results dir> --label "<iso datetime>" \
 //        --commit <joy-git-short-sha> --subject "<joy commit subject>" \
 //        --chromium "<version>" --out <runs/<slug> dir> [--note "<caveat>"] \
-//        [--rounds <runs/<slug>/rounds dir>] [--icount <runs/<slug>/icount dir>]
+//        [--rounds <runs/<slug>/rounds dir>] [--icount <runs/<slug>/icount dir>] \
+//        [--history no]
+//
+// With `--history no` the report is written and the history is left alone, for a
+// report that pools runs the history already has.
 //
 // With --rounds, every result found under that directory is pooled with the
 // other copies of the same result, so one median covers every round, and the
@@ -367,6 +371,13 @@ md += `**bundle ${fmt(sizeC[JOY_KEYED], 1)} KB** compressed.\n`;
 
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(path.join(OUT, "report.md"), md);
+
+// A report that pools the rounds of several runs is no run of its own: those
+// runs are in the history already (`--history no`, see compare.roc).
+if (args.history === "no") {
+  console.log(`Wrote ${path.join(OUT, "report.md")}`);
+  process.exit(0);
+}
 
 // ---- history.jsonl (append) + HISTORY.md (regenerate) ----
 function round(x, d = 2) {
