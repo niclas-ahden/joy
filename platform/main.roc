@@ -5,7 +5,7 @@ platform ""
 		view : Model -> Html(Msg),
 		subscriptions : Model -> List(Sub(Msg))
 	}
-	exposes [Effect, Sub, Http, Time, Keyboard, Console, DOM, Clipboard, Port, WebCrypto, Media]
+	exposes [Effect, Sub, Wire, Http, Time, Keyboard, Console, DOM, Clipboard, Port, WebCrypto, Media]
 	packages {
 		# The Html/Attribute tree types live in the joy-html package so
 		# apps and view packages (e.g. joy-carousel) see the same nominal
@@ -51,6 +51,8 @@ platform ""
 				"dispatch_sub_bytes",
 				"drop_call_cb",
 				"dispatch_value",
+				"hold_render",
+				"release_render",
 				"cmd_ptr",
 				"cmd_len",
 				"effects_ptr",
@@ -59,6 +61,8 @@ platform ""
 				"log_ptr",
 				"log_len",
 				"log_clear",
+				"crash_ptr",
+				"crash_len",
 				"js_alloc",
 				"heap_used",
 				"dealloc_miss",

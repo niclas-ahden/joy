@@ -150,7 +150,7 @@ opened = |event| {
 }
 
 ## A reply's answer, read with `read`, or the reason it failed.
-answer : List(U8), (Wire.Reader -> Try(a, [WireEnded])) -> Try(a, Media.Problem)
+answer : List(U8), (Wire.Reader -> Try(a, Wire.Problem)) -> Try(a, Media.Problem)
 answer = |reply, read| {
 	bytes = Effect.reply(reply).map_err(problem)?
 	read(Wire.reader(bytes)).map_err(|_| Other("unreadable answer"))
@@ -159,7 +159,7 @@ answer = |reply, read| {
 done : List(U8) -> Try({}, Media.Problem)
 done = |reply| Effect.reply(reply).map_ok(|_| {}).map_err(problem)
 
-file_info : Wire.Reader -> Try(Attribute.FileInfo, [WireEnded])
+file_info : Wire.Reader -> Try(Attribute.FileInfo, Wire.Problem)
 file_info = |r| {
 	(id, r1) = r.u32()?
 	(name, r2) = r1.str()?
@@ -168,17 +168,17 @@ file_info = |r| {
 	Ok({ id, name, mime, size })
 }
 
-summary : Wire.Reader -> Try({ duration_ms : I64, peaks : List(U16) }, [WireEnded])
+summary : Wire.Reader -> Try({ duration_ms : I64, peaks : List(U16) }, Wire.Problem)
 summary = |r| {
 	(duration_ms, r1) = r.i64()?
 	(peaks, _) = r1.u16s()?
 	Ok({ duration_ms, peaks })
 }
 
-## A failed reply's reason starts with the browser's error name, the way the
-## media feature reports it: "NotAllowedError: Permission denied".
-problem : [FeatureFailed(Str)] -> Media.Problem
-problem = |FeatureFailed(reason)| problem_named(reason.split_first(":").map_ok(|parts| parts.before) ?? reason)
+## A failed reply has the browser's error name, the way the media's
+## JavaScript reports it: NotAllowedError when permission is denied.
+problem : [EffectFailed({ name : Str, message : Str })] -> Media.Problem
+problem = |EffectFailed({ name, .. })| problem_named(name)
 
 problem_named : Str -> Media.Problem
 problem_named = |name|
@@ -193,7 +193,7 @@ problem_named = |name|
 
 expect opened(Wire.writer({}).u8(0).u32(3).done()) == Ok({ stream_id: 3 })
 expect opened(Wire.writer({}).u8(1).str("NotAllowedError").done()) == Err(NotAllowed)
-expect problem(FeatureFailed("NotSupportedError: no such container")) == Unsupported
+expect problem(EffectFailed({ name: "NotSupportedError", message: "no such container" })) == Unsupported
 expect problem_named("NotFoundError") == NotFound
-expect answer([0].concat(Wire.writer({}).i64(1500).u32(3).u16(0).u16(500).u16(1000).done()), summary) == Ok({ duration_ms: 1500, peaks: [0, 500, 1000] })
+expect answer([0].concat(Wire.writer({}).i64(1500).u16s([0, 500, 1000]).done()), summary) == Ok({ duration_ms: 1500, peaks: [0, 500, 1000] })
 expect answer([1].concat(Str.to_utf8("NotAllowedError: no")), file_info) == Err(NotAllowed)

@@ -5,8 +5,9 @@
 ## function, boxed so the host can store and call it without knowing the app's
 ## Msg layout.
 ##
-## A subscription is a browser feature's events (see Features in the
-## runtime): its id and its arguments (see Wire) are its identity. A model
+## A subscription is the events of JavaScript the runtime has under an id
+## (see Features in the runtime), Joy's own or a custom effect's: its id and
+## its arguments (see Wire) are its identity. A model
 ## change that alters the arguments stops the old source and starts a fresh
 ## one; re-declaring the same identity keeps the running source and only
 ## swaps in the new callbacks (which may capture new model state). Two
@@ -62,15 +63,35 @@ Sub(msg) := { id : Str, args : List(U8), on_event : Box((List(U8) -> Box(msg))) 
 			),
 		})
 
-	## A browser feature's events by its id, at least 12 bytes like
-	## `Effect.call`'s.
-	listen : Str, List(U8), (List(U8) -> msg) -> Sub(msg)
-	listen = |id, args, on_event| Sub.({ id: id, args: args, on_event: Box.box(|bytes| Box.box(on_event(bytes))) })
+	## The id of a subscription's JavaScript, `joy/keyboard/keys` say. Like
+	## `Effect.Id` it is written as a string and only as one, so a build reads
+	## the subscriptions an app uses out of its wasm.
+	Id :: Str.{
+		from_quote : Str -> Try(Id, [BadQuotedBytes(Str)])
+		from_quote = |raw|
+			if raw.count_utf8_bytes() > 100 {
+				Err(BadQuotedBytes("The id of a subscription is at most 100 bytes long."))
+			} else if raw.is_empty() {
+				Err(BadQuotedBytes("The id of a subscription cannot be empty. Give it a name, like my_app/network_changes."))
+			} else if !Str.to_utf8(raw).all(in_an_id) {
+				Err(BadQuotedBytes("The id of a subscription is made of letters, digits and _ - . / only, like my_app/network_changes."))
+			} else {
+				Ok(Id.(Str.concat(Str.concat(Str.concat("<joy-", "listen "), raw), ">")))
+			}
 
-	## The feature's id and arguments, for tests that check what an app
+		## The id as it was written.
+		to_str : Id -> Str
+		to_str = |Id.(marked)| plain(marked)
+	}
+
+	## The events of a subscription's JavaScript by its id.
+	listen : Id, List(U8), (List(U8) -> msg) -> Sub(msg)
+	listen = |Id.(marked), args, on_event| Sub.({ id: marked, args: args, on_event: Box.box(|bytes| Box.box(on_event(bytes))) })
+
+	## The id and arguments, for tests that check what an app
 	## subscribes to.
 	identity : Sub(msg) -> { id : Str, args : List(U8) }
-	identity = |Sub.({ id, args, on_event: _ })| { id: id, args: args }
+	identity = |Sub.({ id, args, on_event: _ })| { id: plain(id), args: args }
 
 	## Deliver an event the way the host does, for tests.
 	deliver : Sub(msg), List(U8) -> msg
@@ -84,3 +105,10 @@ expect {
 	sub = Sub.listen("joy/media/levels", [1, 2], |b| "level:${b.len().to_str()}").map(|m| "outer:${m}")
 	sub.identity() == { id: "joy/media/levels", args: [1, 2] } and sub.deliver([7]) == "outer:level:1"
 }
+
+## An id without its mark, see `plain` in Effect.
+plain : Str -> Str
+plain = |marked| marked.drop_prefix("<joy-").drop_prefix("listen ").drop_suffix(">")
+
+in_an_id : U8 -> Bool
+in_an_id = |byte| (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9') or byte == '_' or byte == '-' or byte == '.' or byte == '/'

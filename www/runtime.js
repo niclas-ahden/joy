@@ -478,6 +478,16 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
 
   // The one listener function every binding shares: the node and event name
   // arrive as currentTarget and type, so binding allocates no closure.
+  //
+  // An event that bubbles passes every handler on its way up, and each was
+  // written for the view the event happened in. So when it reaches the first,
+  // the listener takes them all as they are then (`way`), and they run
+  // together before the view is rendered again (see `deliverAll`). Run one at a
+  // time, the first would render a new view before the event reached the
+  // second, whose element would by then hold the handler of whatever that
+  // view shows there, or be gone with its handler freed. On the rest of its
+  // way the event only does what each element said about its propagation.
+  const TAKEN = Symbol('joyTaken'); // domEvent[TAKEN]: the handlers on its way
   const domListener = (domEvent) => {
     // Patching the DOM can itself fire events synchronously: hiding or
     // removing a focused element fires blur before the patch finishes.
@@ -486,44 +496,109 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
     // dropped), corrupting the page. Such events are echoes of the state
     // change being painted, so they are dropped, not deferred.
     if (painting) return;
-    const d = domEvent.currentTarget[EVENTS]?.get(domEvent.type);
+    const node = domEvent.currentTarget;
+    const taken = domEvent[TAKEN];
+    if (taken !== undefined) {
+      for (const passed of taken) {
+        if (passed.node === node) {
+          if (passed.d.stopPropagation) domEvent.stopPropagation?.();
+          break;
+        }
+      }
+      return;
+    }
+    const d = node[EVENTS]?.get(domEvent.type);
     if (!d) return; // handler was removed by a later patch
     // Stopping propagation is about this element swallowing the event, not
     // about which msg it produces, so it runs before any per-kind work and
-    // independently of preventDefault. preventDefault stays per-kind
-    // because a key handler's filter must run first: an unmatched key
-    // passes through with its browser default intact. Every handler kind
-    // carries both flags except file, where they read as undefined.
+    // independently of preventDefault. Every handler kind carries both flags
+    // except file, where they read as undefined.
     if (d.stopPropagation) domEvent.stopPropagation?.();
-    const node = domEvent.currentTarget;
-    // Each dispatch also gets the DOM event, which the runtime itself has no
-    // use for, but Joy's dev module records where it happened (see `ops`).
+    const way = [{ node, d }];
+    if (domEvent.bubbles && !d.stopPropagation) {
+      for (let up = dom.parentOf(node); up != null && up !== root; up = dom.parentOf(up)) {
+        const above = up[EVENTS]?.get(domEvent.type);
+        if (above === undefined || above === null) continue;
+        way.push({ node: up, d: above });
+        if (above.stopPropagation) break;
+      }
+    }
+    domEvent[TAKEN] = way;
+    const fires = [];
+    for (const passed of way) {
+      const fire = prepare(domEvent, passed.node, passed.d);
+      if (fire) fires.push(fire);
+    }
+    if (fires.length === 0) return;
+    // An event that arrives while the host is busy, like the blur and the
+    // focus an effect sets off, waits for the step in progress and runs
+    // straight after it, while the view is still the one it happened in.
+    if (stepping) arrived.push(...fires);
+    else run(() => deliverAll(fires, domEvent));
+  };
+
+  // What one handler takes from an event, read while the event is here, or
+  // null when the handler lets it pass. preventDefault is per kind because a
+  // key handler's filter runs first: an unmatched key passes through with
+  // its browser default intact.
+  function prepare(domEvent, node, d) {
+    const fire = { domEvent, node, d, input: undefined, pin: true };
     if (d.kind === 'msg') {
-      if (d.preventDefault) domEvent.preventDefault?.(); // e.g. on_submit
-      dispatch(d.id, domEvent);
+      // A click on a link with a modifier key or another button asks the
+      // browser for a new tab, a new window or a download. A handler that
+      // takes a link's clicks for itself leaves those to the browser.
+      if (d.preventDefault && domEvent.type === 'click' && node.localName === 'a' && (domEvent.ctrlKey || domEvent.metaKey || domEvent.shiftKey || domEvent.altKey || domEvent.button > 0)) return null;
     } else if (d.kind === 'key') {
-      const info = dom.eventKeyInfo(domEvent);
-      if (!hears(d.keys, info.key)) return;
-      if (d.preventDefault) domEvent.preventDefault?.();
-      dispatchKey(d.id, info, domEvent);
+      fire.input = dom.eventKeyInfo(domEvent);
+      if (!hears(d.keys, fire.input.key)) return null;
     } else if (d.kind === 'pointer') {
-      if (d.preventDefault) domEvent.preventDefault?.();
-      dispatchPointer(d.id, dom.eventPointerInfo(domEvent), domEvent);
+      fire.input = dom.eventPointerInfo(domEvent);
     } else if (d.kind === 'file') {
-      const file = dom.eventFile(domEvent);
-      if (file) dispatchFile(d.id, file, domEvent); // clearing the input is not a pick
-      return; // a file input's value is the pick itself, never pinned
+      fire.input = dom.eventFile(domEvent);
+      if (!fire.input) return null; // clearing the input is not a pick
+      fire.pin = false; // a file input's value is the pick itself, never pinned
     } else {
-      if (d.preventDefault) domEvent.preventDefault?.();
-      dispatchValue(d.id, dom.eventProp(domEvent, d.prop), domEvent);
+      fire.input = dom.eventProp(domEvent, d.prop);
       // Text under IME composition is provisional, and writing the property
       // would end the composition, so a composing input leaves the pin to
       // compositionend (bound next to every on_input, see setHandler).
-      if (domEvent.isComposing) return;
+      if (domEvent.isComposing) fire.pin = false;
     }
-    restoreControl(node);
-    pinTarget(domEvent, node);
-  };
+    if (d.preventDefault) domEvent.preventDefault?.(); // e.g. on_submit
+    return fire;
+  }
+
+  // Hand the host what a handler took. Each dispatch also gets where it came
+  // from, which the runtime itself has no use for, but Joy's dev module
+  // records it (see `ops`).
+  function deliver(fire, from) {
+    const { d, input } = fire;
+    if (d.kind === 'msg') dispatch(d.id, from);
+    else if (d.kind === 'key') dispatchKey(d.id, input, from);
+    else if (d.kind === 'pointer') dispatchPointer(d.id, input, from);
+    else if (d.kind === 'file') dispatchFile(d.id, input, from);
+    else dispatchValue(d.id, input, from);
+  }
+
+  // Run what the handlers of an event took, or of the events that arrived
+  // during one step. One runs as it is. Several run with the render held, so
+  // each update gets the message its handler had in the view the event
+  // happened in, and the view is rendered and painted once after the last.
+  // `here` is the event when this runs inside its own listener.
+  function deliverAll(fires, here) {
+    if (fires.length === 1 && here !== undefined) {
+      deliver(fires[0], here);
+    } else {
+      together(() => {
+        fires.forEach((fire, i) => deliver(fire, { currentTarget: fire.node, type: fire.domEvent.type, together: i > 0 }));
+      });
+    }
+    for (const fire of fires) {
+      if (!fire.pin) continue;
+      restoreControl(fire.node);
+      pinTarget(fire.domEvent, fire.node);
+    }
+  }
   // Whether a key filter lets `key` through: an empty one lets every key.
   const hears = (keys, key) => keys.length === 0 || keys.includes(key);
 
@@ -1430,10 +1505,11 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
         effects.push({ kind, id: w[i++] });
       } else if (kind >= 1 && kind <= 3) {
         const first = kind === 2 ? 0 : w[i++]; // the callback, or the subscription's slot
-        const op = str(w[i++], w[i++]);
+        const sent = str(w[i++], w[i++]);
+        const effect = plainId(sent);
         const argsPtr = w[i++], argsLen = w[i++];
         const args = argsLen > 0 ? new Uint8Array(memory.buffer, argsPtr, argsLen).slice() : new Uint8Array();
-        effects.push({ kind, cb: first, id: first, op, args });
+        effects.push(effect === null ? { kind, cb: first, id: first, effect: sent, args, unmarked: true } : { kind, cb: first, id: first, effect, args });
       } else {
         throw new Error(`unknown effect kind ${kind} at word ${i - 1}`);
       }
@@ -1464,37 +1540,105 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
   // like busyMs, so a driver samples before/after and takes the difference.
   let perf = { enabled: false, busyMs: 0, entries: 0, updateMs: 0, renderMs: 0, diffMs: 0, paintMs: 0 };
 
+  // What a `crash` in Roc code said, which the host keeps for this (see
+  // roc_crashed in host.rs). Empty when the app stopped for another reason.
+  const crashText = () => {
+    try {
+      const len = exports.crash_len();
+      return len > 0 ? str(exports.crash_ptr(), len) : '';
+    } catch {
+      return '';
+    }
+  };
+
   // A wasm trap or a native stack overflow reaches the developer as a bare
-  // engine error that never mentions Joy, so wrap it with the likely causes
-  // and keep the original as the cause. Errors from JS code, like a throwing
-  // port handler, pass through as they are.
-  const crashed = (err) =>
-    err instanceof WebAssembly.RuntimeError || err instanceof RangeError
-      ? new Error('Joy: the app crashed and has stopped. The usual causes are unbounded recursion in update or render, a view nested thousands of levels deep, a `crash` in Roc code, or running out of memory.', { cause: err })
-      : err;
+  // engine error that never mentions Joy, so wrap it with what the app's
+  // `crash` said, or else the likely causes, and keep the original as the
+  // cause. Errors from JS code, like a throwing port handler, pass through as
+  // they are.
+  const crashed = (err) => {
+    if (!(err instanceof WebAssembly.RuntimeError || err instanceof RangeError)) return err;
+    const said = crashText();
+    return said
+      ? new Error(`Joy: the app crashed and has stopped. It said: ${said}`, { cause: err })
+      : new Error('Joy: the app crashed and has stopped. The usual causes are unbounded recursion in update or render, a view nested thousands of levels deep, or running out of memory.', { cause: err });
+  };
 
   // Every call into the host goes through here: call, drain logs, paint if
   // the view changed, then start any queued effects (whose completions
   // re-enter through here as well). The logs drain before the paint, so the
   // DOM is still the one the call's event happened in (Joy's dev module
   // relies on that, see `ops`).
-  function enter(call) {
+  //
+  // The host takes one call at a time: a paint reads its buffers, which a
+  // nested call would write over, and an update's effects start and stop
+  // subscriptions in an order a nested update would break. So what arrives
+  // while a step is in progress waits for it: a port handler that answers at
+  // once, a custom element that calls in while the view is painted. A turn is
+  // one such arrival, usually a single step, and each writes its arguments
+  // into the host's memory only when its turn comes (see the dispatch
+  // functions).
+  let turning = false;
+  let stepping = false;
+  let waiting = [];
+
+  // What the handlers of DOM events took while a step was in progress (see
+  // domListener). They run straight after that step, before anything that
+  // waits, since their handlers belong to the view that step painted.
+  let arrived = [];
+
+  // True while the render is held (see `together`), and the effects asked
+  // for meanwhile, which start after the paint as every effect does.
+  let holding = false;
+  let held = [];
+
+  function run(turn) {
     if (!alive) return;
+    if (stepping) {
+      defer(turn);
+      return;
+    }
+    if (turning) {
+      turn();
+      return;
+    }
+    turning = true;
+    try {
+      turn();
+      while (alive && waiting.length > 0) waiting.shift()();
+    } finally {
+      turning = false;
+      waiting = [];
+    }
+  }
+
+  function defer(turn) {
+    waiting.push(turn);
+  }
+
+  function enter(call) {
+    run(() => step(call));
+  }
+
+  function step(call) {
     const t0 = perf.enabled ? performance.now() : 0;
+    stepping = true;
     try {
       const changed = call();
       drainLog();
       const effects = parseEffects();
-      if (changed) {
+      if (changed && !holding) {
         const p0 = perf.enabled ? performance.now() : 0;
         paint();
         if (perf.enabled) perf.paintMs += performance.now() - p0;
       }
+      if (!holding) for (const e of held.splice(0)) startEffect(e);
       for (const e of effects) runEffect(e);
     } catch (err) {
       alive = false;
       throw crashed(err);
     } finally {
+      stepping = false;
       if (perf.enabled) {
         perf.busyMs += performance.now() - t0;
         perf.entries += 1;
@@ -1505,9 +1649,48 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
         }
       }
     }
+    if (!holding && arrived.length > 0) {
+      const fires = arrived;
+      arrived = [];
+      deliverAll(fires);
+    }
+  }
+
+  // Run `work`, whose calls into the host belong to one moment, with the
+  // render held: every update runs against the view as it is, then the host
+  // renders once and the page is painted once (see hold_render in the host).
+  function together(work) {
+    run(() => {
+      hold(1);
+      try {
+        work();
+      } finally {
+        holding = false;
+      }
+      step(() => exports.release_render());
+    });
+  }
+
+  // The two halves of `together`, for a replay that holds the render across
+  // messages it awaits between (see catchUp in Joy's dev module): 1 holds the
+  // subscriptions too, 2 lets them follow each update.
+  function hold(what) {
+    holding = true;
+    exports.hold_render(what);
+  }
+
+  function release() {
+    if (!holding) return;
+    holding = false;
+    enter(() => exports.release_render());
   }
 
   function runEffect(e) {
+    if (holding) held.push(e);
+    else startEffect(e);
+  }
+
+  function startEffect(e) {
     if (e.kind === 1) {
       callFeature(e);
     } else if (e.kind === 2) {
@@ -1520,9 +1703,9 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
     }
   }
 
-  // A feature's operation (Effect.call): run it and reply with a status
+  // An effect that answers (Effect.call): run it and reply with a status
   // byte, 0 for done and 1 for failed, then the answer (see Wire) or the
-  // reason (see failureReason). An operation that answers NO_REPLY ends
+  // reason (see failureReason). An effect that answers NO_REPLY ends
   // without an answer, and its callback is released.
   function callFeature(e) {
     perform(e).then((reply) => {
@@ -1531,12 +1714,17 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
     });
   }
 
-  // Run a feature's operation, for its reply as the platform reads it, or
+  // Run an effect's JavaScript, for its reply as the platform reads it, or
   // NO_REPLY.
   function perform(e) {
-    return new Promise((resolve) => resolve(runOperation(e.op, e.args))).then(
+    return new Promise((resolve) => resolve(runById(e))).then(
       (answer) => (answer === NO_REPLY ? NO_REPLY : framed(0, answer)),
-      (err) => framed(1, textEncoder.encode(failureReason(err))),
+      (err) => {
+        // The app is told as of any failure, and the console says what an
+        // app cannot know: this is a mistake in what was deployed or built.
+        if (err?.name === 'MissingEffectError' || err?.name === 'UnmarkedIdError') console.error(`Joy: ${err.message}`);
+        return framed(1, textEncoder.encode(failureReason(err)));
+      },
     );
   }
 
@@ -1545,45 +1733,74 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
     if (alive) exports.drop_call_cb(cb);
   }
 
-  // A feature's operation that answers nothing (Effect.send). A failure
+  // An effect that answers nothing (Effect.send). A failure
   // has nowhere to go but the console.
   function sendFeature(e) {
-    new Promise((resolve) => resolve(runOperation(e.op, e.args)))
-      .catch((err) => console.error(`Joy: ${e.op}: ${failureReason(err)}`));
+    new Promise((resolve) => resolve(runById(e)))
+      .catch((err) => console.error(`Joy: ${e.effect}: ${failureReason(err)}`));
   }
 
-  function runOperation(id, args) {
-    const run = operations.get(id);
-    if (run === undefined) throw missing(id);
-    return run(new WireReader(args), featureHost);
+  // Run the JavaScript an effect names. What it left of its arguments is
+  // said once it is done, as its Roc and its JavaScript then disagree on
+  // what is passed.
+  function runById(e) {
+    if (e.unmarked) throw unmarked(e.effect);
+    const run = definedEffects.get(e.effect);
+    if (run === undefined) throw missing(e.effect);
+    const args = new WireReader(e.args);
+    const answer = run(args, featureHost);
+    Promise.resolve(answer).then(() => unread(e.effect, args), () => {});
+    return answer;
+  }
+
+  function unread(id, args) {
+    const left = args.left();
+    if (left > 0) console.warn(`Joy: ${id} left ${left} of the ${args.buf.length} bytes of its arguments unread. Its Roc writes more than its JavaScript reads.`);
   }
 
   // A feature's events (Sub.listen), stopped when the host stops the
   // subscription.
   function listenFeature(e) {
-    const start = eventSources.get(e.op);
+    const start = e.unmarked ? undefined : definedSubscriptions.get(e.effect);
     if (start === undefined) {
-      console.error(`Joy: ${missing(e.op).message}`);
+      console.error(`Joy: ${(e.unmarked ? unmarked(e.effect) : missing(e.effect)).message}`);
       return;
     }
+    // What its JavaScript throws is this subscription's trouble, not the
+    // app's: it is said, and everything else goes on.
+    const failed = (when, err) => console.error(`Joy: the subscription ${e.effect} failed ${when}: ${failureReason(err)}`);
     let stopped = false;
     let stop = null;
     subCleanups.set(e.id, () => {
       stopped = true;
-      stop?.();
+      // An async start gives what stops it later.
+      if (typeof stop === 'function') {
+        try { stop(); } catch (err) { failed('to stop', err); }
+      } else if (typeof stop?.then === 'function') {
+        stop.then((later) => { if (typeof later === 'function') later(); }).catch((err) => failed('to stop', err));
+      }
     });
-    stop = start(new WireReader(e.args), featureHost, (event) => {
-      if (!stopped && alive) dispatchSubBytes(e.id, bytesOf(event), e);
-    }) ?? null;
+    try {
+      const args = new WireReader(e.args);
+      stop = start(args, featureHost, (event) => {
+        if (!stopped && alive) dispatchSubBytes(e.id, bytesOf(event), e);
+      }) ?? null;
+      if (typeof stop?.then === 'function') stop.catch((err) => failed('to start', err));
+      unread(e.effect, args);
+    } catch (err) {
+      failed('to start', err);
+    }
   }
 
   // Deliver a feature event's bytes to its subscription.
   function dispatchSubBytes(id, bytes) {
-    const [ptr, len] = writeBytes(bytes);
-    enter(() => exports.dispatch_sub_bytes(id, ptr, len));
+    enter(() => {
+      const [ptr, len] = writeBytes(bytes);
+      return exports.dispatch_sub_bytes(id, ptr, len);
+    });
   }
 
-  // What an operation may use of the runtime: the browser-held files, to
+  // What an effect's JavaScript may use of the runtime: the browser-held files, to
   // read one the app names by id or to hand the app a new one (a recording,
   // say) as a file input would, the element a selector names, and the DOM
   // adapter. Apps on one page run the same feature code, so what a feature
@@ -1626,9 +1843,11 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
     (i.isComposing ? 32 : 0);
 
   function dispatchKey(handlerId, info) {
-    const [kp, kl] = writeString(info.key);
-    const [cp, cl] = writeString(info.code);
-    enter(() => exports.dispatch_key(handlerId, kp, kl, cp, cl, keyFlags(info)));
+    enter(() => {
+      const [kp, kl] = writeString(info.key);
+      const [cp, cl] = writeString(info.code);
+      return exports.dispatch_key(handlerId, kp, kl, cp, cl, keyFlags(info));
+    });
   }
 
   function dispatchPointer(handlerId, info) {
@@ -1649,16 +1868,19 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
   }
 
   function deliverFile(handlerId, id, file) {
-    const [np, nl] = writeString(file.name ?? '');
-    const [mp, ml] = writeString(file.type ?? '');
-    enter(() => exports.dispatch_file(handlerId, id, np, nl, mp, ml, file.size ?? 0));
+    enter(() => {
+      const [np, nl] = writeString(file.name ?? '');
+      const [mp, ml] = writeString(file.type ?? '');
+      return exports.dispatch_file(handlerId, id, np, nl, mp, ml, file.size ?? 0);
+    });
   }
 
   // Deliver a feature's reply to its call's one-shot callback.
   function dispatchBytes(cb, bytes) {
-    if (!alive) return;
-    const [ptr, len] = writeBytes(bytes);
-    enter(() => exports.dispatch_bytes(cb, ptr, len));
+    enter(() => {
+      const [ptr, len] = writeBytes(bytes);
+      return exports.dispatch_bytes(cb, ptr, len);
+    });
   }
 
   function dispatch(handlerId) {
@@ -1666,8 +1888,10 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
   }
 
   function dispatchValue(handlerId, value) {
-    const [ptr, len] = writeString(value);
-    enter(() => exports.dispatch_value(handlerId, ptr, len));
+    enter(() => {
+      const [ptr, len] = writeString(value);
+      return exports.dispatch_value(handlerId, ptr, len);
+    });
   }
 
 
@@ -1741,7 +1965,7 @@ export function makeRuntime(exports, dom, root, hydrate = false, others = null) 
   // What both unmount and Joy's dev module, retiring the app for a rebuilt
   // one (see www/hot.js), stop: subscriptions, incoming ports, and any
   // in-flight completion. Retiring stops nothing else: outgoing port handlers
-  // and picked files stay for the successor, operations under way keep going
+  // and picked files stay for the successor, effects under way keep going
   // for it to take over, and it calls nothing in the wasm, which may have
   // trapped (a crash is a common reason to reload).
   function stop() {
@@ -1761,53 +1985,83 @@ const MOUNT_OPTIONS = ['wasm', 'root', 'flags', 'dom', 'setup', 'hydrate'];
 // ---------------------------------------------------------------------------
 // Features
 //
-// Browser APIs beyond rendering are operations an app reaches by id,
+// Browser APIs beyond rendering are effects an app reaches by id,
 // `joy/media/record` say, through Effect.call (answers once), Effect.send
-// (answers nothing) and Sub.listen (events while subscribed). Their code
-// lives in www/features/, and a released app's runtime.js is this core plus
-// the operations whose ids its wasm contains (see tools/runtime), so an app
-// ships the code of exactly the platform functions it calls. During
-// development it holds every feature instead.
+// (answers nothing) and Sub.listen (events while subscribed). Joy's own
+// live in www/features/, an app's custom effects beside its Roc modules,
+// and a released app's runtime.js is this core plus the ones whose ids its
+// wasm contains (see tools/runtime), so an app ships the code of exactly
+// the functions it calls. During development it holds all of them instead.
 //
-//   defineOperation(id, (args, host) => answer)    for Effect.call and
+//   defineEffect(id, (args, host) => answer)    for Effect.call and
 //       Effect.send. The answer (a Promise is fine) is a WireWriter, bytes,
 //       nothing, or NO_REPLY to end a call without answering it. A throw
 //       fails the call with the error's name and message.
-//   defineEvents(id, (args, host, emit) => stop)    for Sub.listen. `emit`
+//   defineSubscription(id, (args, host, emit) => stop)    for Sub.listen. `emit`
 //       sends the app an event (a WireWriter or bytes), and `stop` ends
 //       the events.
 //
 // `args` is a WireReader over the arguments the platform module wrote (see
 // platform/Wire.roc for the format) and `host` is what the runtime lends an
-// operation (see featureHost).
+// effect (see featureHost).
 
-const operations = new Map(); // id -> run
-const eventSources = new Map(); // id -> start
-
-export function defineOperation(id, run) {
-  operations.set(id, run);
+// The custom effects of a project and its packages are a module of their
+// own, which a build writes and names in the last line of this file (see
+// tools/runtime). Its code is handed what it may use and sees nothing else of
+// this file, so what is here can change without breaking a package.
+let customEffects = Promise.resolve();
+export function loadCustomEffects(load) {
+  customEffects = load().then((module) => module.default({ defineEffect, defineSubscription, WireWriter }));
+  // A failure is said by the mount it stops.
+  customEffects.catch(() => {});
 }
 
-export function defineEvents(id, start) {
-  eventSources.set(id, start);
-}
+// An id without the mark the platform puts around it for a build to find it
+// in the wasm (see Id in platform/Effect.roc and Sub.roc):
+// `<joy-effect my_app/share_link>` and `<joy-listen my_app/network_changes>`.
+// Anything else was not made by the platform's id types, which a build could
+// not have seen, so it is no id (null).
+const plainId = (text) => (/^<joy-(effect|listen) [^>]+>$/.test(text) ? text.slice(12, -1) : null);
 
-// An operation this runtime.js was built without. It is in the app's wasm,
-// so it would have been found: the runtime.js is older than the app.
-function missing(id) {
-  const err = new Error(`${id} is not in this runtime.js. Build the app's runtime.js again from its wasm.`);
-  err.name = 'NotSupportedError';
+// An id the app made by going around the platform's id types. A build reads
+// the ids out of the wasm, where this one is not, so it would work while
+// developing and fail once built.
+function unmarked(id) {
+  const err = new Error(`"${id}" is not an id as Effect.call, Effect.send and Sub.listen take one. Write the id as a string literal in the call.`);
+  err.name = 'UnmarkedIdError';
   return err;
 }
 
-// Why an operation failed, as "<error name>: <message>". The name is how a
+const definedEffects = new Map(); // id -> run
+const definedSubscriptions = new Map(); // id -> start
+
+export function defineEffect(id, run) {
+  definedEffects.set(id, run);
+}
+
+export function defineSubscription(id, start) {
+  definedSubscriptions.set(id, start);
+}
+
+// An effect this runtime.js has no JavaScript for. A build finds an app's
+// effects in its wasm, so either the runtime.js is older than the app, or
+// nothing defines this id: a module's JavaScript file is missing, or the id
+// is spelled another way in it. The name is the failure's own, so an
+// app never takes it for a browser that lacks the API (NotSupportedError).
+function missing(id) {
+  const err = new Error(`${id} is not in this runtime.js. Build the app's runtime.js again from its wasm, and check that the JavaScript beside the module that calls it defines this id.`);
+  err.name = 'MissingEffectError';
+  return err;
+}
+
+// Why an effect failed, as "<error name>: <message>". The name is how a
 // platform module tells failures apart (a browser's NotAllowedError, say).
 function failureReason(err) {
   if (err && typeof err.name === 'string') return `${err.name}: ${err.message}`;
   return `Error: ${err}`;
 }
 
-// The answer an operation gives to end a call without answering it.
+// The answer an effect gives to end a call without answering it.
 export const NO_REPLY = Symbol('no reply');
 
 // A reply as the platform reads it: the status byte, then the answer.
@@ -1824,10 +2078,10 @@ function bytesOf(value) {
   if (value instanceof WireWriter) return value.done();
   if (value instanceof Uint8Array) return value;
   if (value instanceof ArrayBuffer) return new Uint8Array(value);
-  throw new TypeError('a feature answers with a WireWriter, bytes or nothing');
+  throw new TypeError('an effect answers with a WireWriter, bytes or nothing, and a subscription emits a WireWriter or bytes');
 }
 
-// Arguments as an operation reads them: the fields the platform module
+// Arguments as an effect's JavaScript reads them: the fields the platform module
 // wrote, in its order (see platform/Wire.roc). Bytes come out as views,
 // never copies.
 export class WireReader {
@@ -1835,22 +2089,50 @@ export class WireReader {
     this.buf = bytes;
     this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     this.at = 0;
+    // How many values were read, to say which one is wrong.
+    this.values = 0;
   }
-  u8() { return this.view.getUint8(this.at++); }
-  bool() { return this.u8() !== 0; }
-  u16() { const n = this.view.getUint16(this.at, true); this.at += 2; return n; }
-  u32() { const n = this.view.getUint32(this.at, true); this.at += 4; return n; }
+  // How many bytes are unread.
+  left() { return this.buf.length - this.at; }
+  // Where the next `size` bytes start, and past them.
+  take(size, what) {
+    if (size > this.left()) throw wireError('WireEndedError', `The bytes ended in value ${this.values}, ${what}: ${this.left()} of ${this.buf.length} are left at byte ${this.at}.`);
+    const at = this.at;
+    this.at += size;
+    return at;
+  }
+  // Past the tag of the next value, which has to be `tag`.
+  tagged(tag) {
+    if (this.left() === 0) throw wireError('WireEndedError', `The bytes ended before value ${this.values + 1}, ${WIRE_KINDS[tag]}.`);
+    const found = this.view.getUint8(this.at++);
+    this.values += 1;
+    if (found !== tag) throw wireError('WireMismatchError', `Value ${this.values} is ${WIRE_KINDS[found] ?? 'no value a writer wrote'}, where the JavaScript reads ${WIRE_KINDS[tag]}.`);
+    return WIRE_KINDS[tag];
+  }
+  u8() { return this.view.getUint8(this.take(1, this.tagged(1))); }
+  u16() { return this.view.getUint16(this.take(2, this.tagged(2)), true); }
+  u32() { return this.view.getUint32(this.take(4, this.tagged(3)), true); }
   // A JavaScript number, exact up to 2^53.
-  u64() { const n = this.view.getBigUint64(this.at, true); this.at += 8; return Number(n); }
-  i64() { const n = this.view.getBigInt64(this.at, true); this.at += 8; return Number(n); }
-  bytes() {
-    const len = this.u32();
-    const out = this.buf.subarray(this.at, this.at + len);
-    this.at += len;
-    return out;
+  u64() { return Number(this.view.getBigUint64(this.take(8, this.tagged(4)), true)); }
+  i64() { return Number(this.view.getBigInt64(this.take(8, this.tagged(5)), true)); }
+  f64() { return this.view.getFloat64(this.take(8, this.tagged(6)), true); }
+  bool() { return this.view.getUint8(this.take(1, this.tagged(7))) !== 0; }
+  // The bytes a length is in front of, for a value of kind `what`.
+  sized(what) {
+    const len = this.view.getUint32(this.take(4, what), true);
+    const at = this.take(len, what);
+    return this.buf.subarray(at, at + len);
   }
-  str() { return textDecoder.decode(this.bytes()); }
-  // What is left unread, for an operation that takes raw bytes.
+  bytes() { return this.sized(this.tagged(8)); }
+  str() { return textDecoder.decode(this.sized(this.tagged(9))); }
+  u16s() {
+    const what = this.tagged(10);
+    const count = this.view.getUint32(this.take(4, what), true);
+    const at = this.take(count * 2, what);
+    return Array.from({ length: count }, (_, i) => this.view.getUint16(at + i * 2, true));
+  }
+  // What is left unread, as it is, for an effect that takes raw bytes: what
+  // was not written through a writer has no kinds to read it by.
   remaining() {
     const out = this.buf.subarray(this.at);
     this.at = this.buf.length;
@@ -1858,7 +2140,19 @@ export class WireReader {
   }
 }
 
-// An answer or an event as an operation writes it, for the platform module
+// The byte in front of each value, which says what it is. platform/Wire.roc
+// has the same ones.
+const WIRE_KINDS = [undefined, 'a u8', 'a u16', 'a u32', 'a u64', 'an i64', 'an f64', 'a bool', 'bytes', 'a string', 'a list of u16'];
+
+// A read that found something else than it asked for: the Roc and the
+// JavaScript of an effect disagree. It fails the call by its own name.
+function wireError(name, what) {
+  const err = new Error(`${what} The Roc and the JavaScript disagree on what is passed, or on its order.`);
+  err.name = name;
+  return err;
+}
+
+// An answer or an event as an effect's JavaScript writes it, for the platform module
 // to read in the same order.
 export class WireWriter {
   constructor() {
@@ -1870,28 +2164,40 @@ export class WireWriter {
     this.length += part.length;
     return this;
   }
-  fixed(size, set) {
-    const part = new Uint8Array(size);
-    set(new DataView(part.buffer));
+  // A value's tag, then `size` bytes that `set` fills.
+  tagged(tag, size, set) {
+    const part = new Uint8Array(size + 1);
+    part[0] = tag;
+    set(new DataView(part.buffer, 1));
     return this.push(part);
   }
-  u8(n) { return this.fixed(1, (v) => v.setUint8(0, n)); }
-  bool(b) { return this.u8(b ? 1 : 0); }
-  u16(n) { return this.fixed(2, (v) => v.setUint16(0, n, true)); }
-  u32(n) { return this.fixed(4, (v) => v.setUint32(0, n, true)); }
-  u64(n) { return this.fixed(8, (v) => v.setBigUint64(0, BigInt(Math.max(0, Math.trunc(n))), true)); }
-  i64(n) { return this.fixed(8, (v) => v.setBigInt64(0, BigInt(Math.trunc(n)), true)); }
+  // A whole number from 0 to `most`, with what is after the point dropped.
+  // One that does not fit would wrap into another number, so it is refused.
+  whole(n, most, what) {
+    const whole = Math.trunc(n);
+    if (!(whole >= 0 && whole <= most)) throw new RangeError(`Wire: ${what}(${n}) takes a number from 0 to ${most}`);
+    return whole;
+  }
+  u8(n) { return this.tagged(1, 1, (v) => v.setUint8(0, this.whole(n, 0xff, 'u8'))); }
+  u16(n) { return this.tagged(2, 2, (v) => v.setUint16(0, this.whole(n, 0xffff, 'u16'), true)); }
+  u32(n) { return this.tagged(3, 4, (v) => v.setUint32(0, this.whole(n, 0xffffffff, 'u32'), true)); }
+  u64(n) { return this.tagged(4, 8, (v) => v.setBigUint64(0, BigInt(Math.max(0, Math.trunc(n))), true)); }
+  i64(n) { return this.tagged(5, 8, (v) => v.setBigInt64(0, BigInt(Math.trunc(n)), true)); }
+  f64(n) { return this.tagged(6, 8, (v) => v.setFloat64(0, n, true)); }
+  bool(b) { return this.tagged(7, 1, (v) => v.setUint8(0, b ? 1 : 0)); }
   bytes(b) {
     const bytes = b instanceof Uint8Array ? b : new Uint8Array(b);
-    return this.u32(bytes.length).push(bytes);
+    return this.tagged(8, 4, (v) => v.setUint32(0, bytes.length, true)).push(bytes);
   }
-  str(s) { return this.bytes(textEncoder.encode(s)); }
+  str(s) {
+    const bytes = textEncoder.encode(s);
+    return this.tagged(9, 4, (v) => v.setUint32(0, bytes.length, true)).push(bytes);
+  }
   u16s(list) {
-    this.u32(list.length);
-    const part = new Uint8Array(list.length * 2);
-    const view = new DataView(part.buffer);
-    list.forEach((n, i) => view.setUint16(i * 2, n, true));
-    return this.push(part);
+    return this.tagged(10, 4 + list.length * 2, (v) => {
+      v.setUint32(0, list.length, true);
+      list.forEach((n, i) => v.setUint16(4 + i * 2, n, true));
+    });
   }
   done() {
     const out = new Uint8Array(this.length);
@@ -1957,6 +2263,9 @@ export async function mount(options) {
   const others = hydrate ? dom.watchOthers?.(root) ?? null : null;
   try {
     let instance = await instantiate(wasm);
+    await customEffects.catch((err) => {
+      throw new Error(`Joy: the app's custom effects did not load, so it was not started. ${err?.message ?? err}`, { cause: err });
+    });
     let rt = makeRuntime(instance.exports, dom, root, hydrate, others);
     const app = { instance, dispatch: rt.dispatch, dispatchValue: rt.dispatchValue, sendPort: rt.sendPort, onPort: rt.onPort, unmount: rt.unmount, perf: rt.perf, hydration: rt.hydration };
     setup?.(app);

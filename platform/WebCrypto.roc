@@ -85,12 +85,7 @@ hash = |reply| Effect.reply(reply) ?? []
 expect hash([0, 1, 2]) == [1, 2]
 expect hash([1, 110, 111]) == []
 
-expect {
-	match WebCrypto.digest_file_slice(Sha256, { file: 3, start: 16, len: 8 }, |h| h.len()) {
-		Call(id, args, _) => id == "joy/crypto/digest_file" and args == Wire.writer({}).str("SHA-256").u32(3).u64(16).u64(8).done()
-		_ => Bool.False
-	}
-}
+expect WebCrypto.digest_file_slice(Sha256, { file: 3, start: 16, len: 8 }, |h| h.len()).identity() == { id: "joy/crypto/digest_file", args: Wire.writer({}).str("SHA-256").u32(3).u64(16).u64(8).done() }
 
 expect WebCrypto.to_hex([]) == ""
 expect WebCrypto.to_hex([0x00]) == "00"

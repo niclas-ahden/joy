@@ -46,15 +46,15 @@ function fetchHttp({ method, url, headers }, body, timeoutMs) {
     .finally(() => clearTimeout(timer));
 }
 
-//// op joy/http/send needs fetch_http
-defineOperation('joy/http/send', (args) => {
+//// effect joy/http/send needs fetch_http
+defineEffect('joy/http/send', (args) => {
   const request = readRequest(args);
   const body = args.bytes();
   return fetchHttp(request, body.length > 0 ? body : null, args.u64());
 });
 
-//// op joy/http/send_file needs fetch_http
-defineOperation('joy/http/send_file', (args, host) => {
+//// effect joy/http/send_file needs fetch_http
+defineEffect('joy/http/send_file', (args, host) => {
   const request = readRequest(args);
   const fileId = args.u32();
   const start = args.u64();

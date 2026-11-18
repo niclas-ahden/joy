@@ -45,9 +45,4 @@ expect {
 	sub.identity() == { id: "joy/port/listen", args: Wire.writer({}).str("prices").done() } and sub.deliver(Wire.writer({}).str("42").done()) == "got:42"
 }
 
-expect {
-	match Port.send("level", "9") {
-		Send(id, args) => id == "joy/port/send" and args == Wire.writer({}).str("level").str("9").done()
-		_ => Bool.False
-	}
-}
+expect Port.send("level", "9").identity() == { id: "joy/port/send", args: Wire.writer({}).str("level").str("9").done() }

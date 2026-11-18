@@ -64,7 +64,7 @@ key_event = |bytes| {
 	{ key, code, ctrl: set(1), shift: set(2), alt: set(4), meta: set(8), repeat: set(16), is_composing: set(32) }
 }
 
-read_key : List(U8) -> Try({ key : Str, code : Str, flags : U8 }, [WireEnded])
+read_key : List(U8) -> Try({ key : Str, code : Str, flags : U8 }, Wire.Problem)
 read_key = |bytes| {
 	r = Wire.reader(bytes)
 	(key, r1) = r.str()?

@@ -4,14 +4,14 @@
 //
 // Sections as in media.js: an app's runtime.js holds the ones its wasm uses.
 
-//// op joy/time/after
-defineOperation('joy/time/after', (args) => {
+//// effect joy/time/after
+defineEffect('joy/time/after', (args) => {
   const ms = args.u32();
   return new Promise((resolve) => setTimeout(() => resolve(new WireWriter().i64(Date.now())), ms));
 });
 
-//// events joy/time/every
-defineEvents('joy/time/every', (args, host, emit) => {
+//// subscription joy/time/every
+defineSubscription('joy/time/every', (args, host, emit) => {
   const handle = setInterval(() => emit(new WireWriter().i64(Date.now())), args.u32());
   return () => clearInterval(handle);
 });
@@ -35,8 +35,8 @@ function dropDebounce(debounces, key) {
   pending.resolve(NO_REPLY);
 }
 
-//// op joy/time/debounce needs debounces
-defineOperation('joy/time/debounce', (args, host) => {
+//// effect joy/time/debounce needs debounces
+defineEffect('joy/time/debounce', (args, host) => {
   const key = args.str();
   const ms = args.u32();
   const debounces = debouncesOf(host);
@@ -50,5 +50,5 @@ defineOperation('joy/time/debounce', (args, host) => {
   });
 });
 
-//// op joy/time/cancel needs debounces
-defineOperation('joy/time/cancel', (args, host) => dropDebounce(debouncesOf(host), args.str()));
+//// effect joy/time/cancel needs debounces
+defineEffect('joy/time/cancel', (args, host) => dropDebounce(debouncesOf(host), args.str()));

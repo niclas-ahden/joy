@@ -47,7 +47,7 @@ const OPS = {
 };
 
 // The ops that are not a message's way in, which this module handles apart.
-const OTHER_OPS = new Set(['endCall', 'drainLog', 'runEffect']);
+const OTHER_OPS = new Set(['endCall', 'drainLog', 'runEffect', 'defer']);
 
 // The kinds of effect the host queues (see parseEffects in runtime.js).
 const CALL = 1;
@@ -55,14 +55,21 @@ const SEND = 2;
 const SUB_START = 3;
 const SUB_STOP = 4;
 
-// The operations that need more than what their kind says. Every other call is
+// The effects that need more than what their kind says. Every other call is
 // answered once, every other send is done once it runs, so it never runs again.
-const isRequest = (e) => e.kind === CALL && e.op.startsWith('joy/http/');
-const isDebounce = (e) => e.kind === CALL && e.op === 'joy/time/debounce';
-const isCancel = (e) => e.kind === SEND && e.op === 'joy/time/cancel';
-const isDialog = (e) => e.kind === SEND && (e.op === 'joy/dom/show_modal' || e.op === 'joy/dom/close_modal');
-const isTitle = (e) => e.kind === SEND && e.op === 'joy/dom/set_title';
-const isUrl = (e) => e.kind === SEND && (e.op === 'joy/dom/push_url' || e.op === 'joy/dom/replace_url');
+const isRequest = (e) => e.kind === CALL && e.effect.startsWith('joy/http/');
+const isDebounce = (e) => e.kind === CALL && e.effect === 'joy/time/debounce';
+const isCancel = (e) => e.kind === SEND && e.effect === 'joy/time/cancel';
+const isDialog = (e) => e.kind === SEND && (e.effect === 'joy/dom/show_modal' || e.effect === 'joy/dom/close_modal');
+const isTitle = (e) => e.kind === SEND && e.effect === 'joy/dom/set_title';
+const isUrl = (e) => e.kind === SEND && (e.effect === 'joy/dom/push_url' || e.effect === 'joy/dom/replace_url');
+const isPortSend = (e) => e.kind === SEND && e.effect === 'joy/port/send';
+const isFocus = (e) => e.kind === SEND && e.effect === 'joy/dom/focus';
+const isScroll = (e) => e.kind === SEND && e.effect === 'joy/dom/scroll_to';
+// A call that is the app's own business, which runs again harmlessly: a timer
+// keeps time, a digest is worked out. Any other call does something in the
+// browser, like writing the clipboard or starting a recording.
+const runsAgain = (e) => e.effect.startsWith('joy/time/') || e.effect.startsWith('joy/crypto/');
 
 // Inputs that mean nothing to a page that has reloaded: the files it held, and
 // the streams and recordings of a Media feature that started over.
@@ -223,7 +230,7 @@ function adopt(app, cap) {
         limit = err.replayAt;
         continue;
       }
-      const plan = handover(control.inFlight(), successor.leftovers(), report.restarted);
+      const plan = handover(control.inFlight(), successor.leftovers(), report.restarted, successor.answered());
       // Stopping at a request the old app never sent means replaying only what
       // came before the message that asked for it. Which messages those are is
       // only known once the whole replay has run, since a recorded answer may
@@ -279,7 +286,7 @@ function adopt(app, cap) {
       report(await run);
     } catch (err) {
       console.error(err);
-      overlay.report(bundleOf(cap), `The app crashed while picking up where it was, so it started over.\n\n${describe(err)}`);
+      overlay.reportCrash(bundleOf(cap), `The app crashed while picking up where it was, so it started over.\n\n${describe(err)}`);
       control.letGo();
     }
   };
@@ -305,7 +312,7 @@ function adopt(app, cap) {
 // never comes. So it is up to the replay policy (see `swap`). A request a page
 // reload sent again (`pending`) is under way already. A restarted app replayed
 // nothing, and takes over nothing.
-function handover(waiting, leftovers, restarted) {
+function handover(waiting, leftovers, restarted, answered = []) {
   const free = [...leftovers];
   const pairs = [];
   const ignored = [];
@@ -315,17 +322,29 @@ function handover(waiting, leftovers, restarted) {
     else if (isRequest(old)) ignored.push(old);
   }
   const unsent = free.filter((e) => isRequest(e) && e.from !== null && !e.pending);
-  const fresh = free.filter((e) => !unsent.includes(e));
-  return { pairs, ignored, unsent, fresh };
+  // A call the old app made and had its answer to, whose answer the replay
+  // left out (its message is gone, or the replay stopped before it), is done:
+  // the clipboard was written, the recording started. Running it again would
+  // do it a second time, unasked.
+  const had = [...answered];
+  const done = free.filter((e) => {
+    if (unsent.includes(e) || isRequest(e) || runsAgain(e)) return false;
+    const at = had.findIndex((rec) => rec.via === e.effect && rec.args && sameBytes(rec.args, e.args));
+    if (at < 0) return false;
+    had.splice(at, 1);
+    return true;
+  });
+  const fresh = free.filter((e) => !unsent.includes(e) && !done.includes(e));
+  return { pairs, ignored, unsent, fresh, done };
 }
 
-// Whether two calls are the same call: one operation with the same arguments.
+// Whether two calls are the same call: one effect with the same arguments.
 // So two requests are the same request when their method, URL, headers, body
 // (or file slice) and timeout are: two in flight at once that differ only in a
 // header never answer each other, and a request an edit changed in any way is
 // a new one, since the old one's answer may not be what the new code asks for
 // (a JSON answer to a request that now accepts CSV).
-const sameCall = (a, b) => a.op === b.op && sameBytes(a.args, b.args);
+const sameCall = (a, b) => a.effect === b.effect && sameBytes(a.args, b.args);
 
 const sameBytes = (a, b) => a.length === b.length && a.every((byte, i) => byte === b[i]);
 
@@ -452,6 +471,20 @@ function instrument(rt) {
     plain.endCall(cb);
   };
   ops.drainLog = drain;
+  // A call that waits for the one in progress (see `run` in runtime.js) is
+  // recorded when its turn comes, as the entry it arrived as.
+  ops.defer = (turn) => {
+    const entry = current;
+    if (!entry) return plain.defer(turn);
+    plain.defer(() => {
+      current = entry;
+      try {
+        turn();
+      } finally {
+        current = null;
+      }
+    });
+  };
   // Tracked before it runs, since some complete at once.
   ops.runEffect = (e) => {
     if (replaying) {
@@ -466,12 +499,17 @@ function instrument(rt) {
   // a handler or an observer, its node's position, which a replay offers first,
   // and for a handler the event it took. The node itself stays until `drain`
   // knows whether the message needs its element's signature. For a reply or an
-  // event, the operation and arguments of the effect behind it.
+  // event, the id and arguments of the effect behind it.
   function whereFrom(op, context) {
     if (op.observer) return at(context);
-    if (op.handler) return context?.currentTarget ? { ...at(context.currentTarget), event: context.type } : {};
+    if (op.handler) {
+      if (!context?.currentTarget) return {};
+      // `together` marks a handler that ran with the one before it, with the
+      // render held: both were the view's when their event happened.
+      return { ...at(context.currentTarget), event: context.type, ...(context.together ? { together: true } : {}) };
+    }
     if (context === undefined) return {};
-    return { via: context.op, args: context.args, ...(isRequest(context) ? { request: requestKey(context) } : {}) };
+    return { via: context.effect, args: context.args, ...(isRequest(context) ? { request: requestKey(context) } : {}) };
   }
   const at = (node) => ({ at: rt.hooks.nodes().indexOf(node), node });
 
@@ -577,7 +615,9 @@ function instrument(rt) {
   // message asked. A call's callback stays held until a replayed answer matches
   // it, or a keyed effect ends it, which releases it exactly as running them
   // would. A command already ran, in the old app, and only the last title and
-  // URL matter to a page that has reloaded, as the dialogs do to any page.
+  // URL matter to a page that has reloaded, as the dialogs do to any page. A
+  // reloaded page's own JavaScript starts over too, so it hears every port
+  // message again, in order, and the last focus and scroll are done again.
   //
   // After a page reload the recorded answers of requests are what was just
   // edited, so each request `again` decides (see `askAgain`) is sent.
@@ -600,6 +640,12 @@ function instrument(rt) {
       held.title = e;
     } else if (isUrl(e)) {
       held.url = firstStr(e);
+    } else if (held.again && isPortSend(e)) {
+      held.ports.push(e);
+    } else if (held.again && isFocus(e)) {
+      held.focus = e;
+    } else if (held.again && isScroll(e)) {
+      held.scroll = e;
     }
   }
 
@@ -645,17 +691,17 @@ function instrument(rt) {
 
   // The effects `rec` could have come through, those with its arguments first.
   const likeliest = (effects, rec) => {
-    const same = effects.filter((e) => e.op === rec.via);
+    const same = effects.filter((e) => e.effect === rec.via);
     const exact = (e) => (rec.args && sameBytes(e.args, rec.args) ? 0 : 1);
     return same.map((e, i) => [exact(e), i, e]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(([, , e]) => e);
   };
 
-  // Whether a subscription would hear an event recorded for one of its operation:
+  // Whether a subscription would hear an event recorded for one of its kind:
   // a port by its name, and a key by the event and the key filter, which live in
   // the arguments and run in the feature. An edited interval hears its ticks.
   function stillHears(e, rec) {
-    if (e.op === 'joy/port/listen') return sameBytes(e.args, rec.args);
-    if (e.op !== 'joy/keyboard/keys') return true;
+    if (e.effect === 'joy/port/listen') return sameBytes(e.args, rec.args);
+    if (e.effect !== 'joy/keyboard/keys') return true;
     const args = reader(e.args);
     const event = args.str();
     const keys = [];
@@ -802,6 +848,10 @@ function instrument(rt) {
       stopAfter: null,
       title: null,
       url: null,
+      ports: [],
+      focus: null,
+      scroll: null,
+      answered: [],
     };
     replayingAt = null;
     const replay = past != null && exports.hot_mode?.(HOT_REPLAY) === 1;
@@ -810,8 +860,28 @@ function instrument(rt) {
     const skipped = [];
     let replayed = 0;
     let stopped = null;
+    // A replayed message needs the view rendered only when it comes in through
+    // the view: a handler's or an observer's. An answer or a subscription's
+    // event comes in through what the replay holds, so a run of those holds
+    // the render ('quiet'), and a session of timer ticks renders once at its
+    // end. Handlers that ran together with the render held when they were
+    // recorded (see `together` in whereFrom) replay the same way ('event'),
+    // each from the view their event happened in.
+    let holding = null;
+    const hold = (how) => {
+      if (holding === how) return;
+      if (holding !== null) rt.hooks.release();
+      if (how !== null) rt.hooks.hold(how === 'event' ? 1 : 2);
+      holding = how;
+    };
+    const ran = new Set();
     for (let i = 0; replay && i < past.length && !stopped; i++) {
       const rec = past[i];
+      const fromView = OPS[rec.op].handler || OPS[rec.op].observer;
+      // An event's first handler ran against a rendered view, the one the
+      // event before it left.
+      if (!rec.together && holding === 'event') hold(null);
+      hold(rec.together || past[i + 1]?.together ? 'event' : fromView ? null : 'quiet');
       const left = () => past.slice(i).reduce((n, entry) => n + entry.msgs.length, 0);
       if (sent && rec.unsaved) {
         stopped = { text: rec.msgs[0]?.text ?? '', reason: 'unsaved', dropped: left() };
@@ -853,6 +923,10 @@ function instrument(rt) {
           (outcome === 'ran' ? msgs : skipped).push(outcome === 'ran' ? msg : msg.text);
         }
         if (msgs.length > 0) kept.push({ ...rec, msgs });
+        if (msgs.length === rec.msgs.length) ran.add(i);
+        // Back and Forward change the URL without the app asking, and say so
+        // through this subscription: the URL is the one the event names.
+        if (msgs.length > 0 && rec.via === 'joy/dom/url_changed' && rec.inputs?.[0]) replaying.url = reader(rec.inputs[0]).str();
         replayed += msgs.length;
       }
       if (!stopped && replaying.stopAfter) {
@@ -860,7 +934,9 @@ function instrument(rt) {
         stopped = { text: rec.msgs[0]?.text ?? '', reason: 'asked', request: replaying.stopAfter, dropped: later + 1 };
       }
     }
+    hold(null);
     replayingAt = null;
+    if (replay) replaying.answered = past.filter((rec, i) => OPS[rec.op].answer && !ran.has(i));
     caughtUp = kept;
     return { replayed, skipped, stopped, restarted: !replay };
   }
@@ -870,9 +946,13 @@ function instrument(rt) {
   // Stop this app for its successor (see goLive): the runtime runs nothing from
   // here on, and this only passes on answers its successor took over. Its
   // handlers and visibility observers come off its view, whose elements the
-  // successor reuses. Returns the observers it had, by element.
+  // successor reuses. Returns what the successor needs to know of that view:
+  // the observers it had, by element (`watched`), which nodes on the page are
+  // its own (`nodes`), and which attributes it put on an element (`attrs`).
+  // Everything else under the root is another script's, and stays.
   function retire() {
     rt.hooks.retire();
+    const nodes = new Set(rt.hooks.nodes());
     const watched = new Map();
     const strip = (node) => {
       for (const name of rt.hooks.handlers(node)?.keys() ?? []) {
@@ -887,7 +967,7 @@ function instrument(rt) {
       for (const child of dom.childrenOf(node)) strip(child);
     };
     for (const child of dom.childrenOf(rt.hooks.root())) strip(child);
-    return watched;
+    return { watched, nodes, attrs: rt.hooks.viewAttrs };
   }
 
   // Put a caught-up runtime on the page in place of the app it succeeds,
@@ -896,11 +976,11 @@ function instrument(rt) {
   // says (see `handover`). A call this app takes over keeps going in the old app,
   // which passes its answer on to this one (see `forwards`).
   function goLive(target, plan, predecessor) {
-    const watched = predecessor.retire();
+    const was = predecessor.retire();
     const kept = new Map();
     adopting = true;
     try {
-      morph(target, rt.hooks.root(), watched, kept);
+      morph(target, rt.hooks.root(), was, kept);
     } finally {
       adopting = false;
     }
@@ -932,14 +1012,18 @@ function instrument(rt) {
     // is the page's to keep, as the user may have closed it with Escape since.
     const before = predecessor.dialogs();
     for (const [selector, e] of before) {
-      if (!dialogs.has(selector)) dialogs.set(selector, { ...e, op: 'joy/dom/close_modal' });
+      if (!dialogs.has(selector)) dialogs.set(selector, { ...e, effect: 'joy/dom/close_modal' });
     }
     for (const [selector, e] of dialogs) {
-      if (before.get(selector)?.op !== e.op) plain.runEffect(e);
+      if (before.get(selector)?.effect !== e.effect) plain.runEffect(e);
     }
+    for (const e of plan.done) plain.endCall(e.cb);
     if (held.again) {
       if (held.title) plain.runEffect(held.title);
       if (held.url !== null) dom.replaceUrl(held.url);
+      for (const e of held.ports) plain.runEffect(e);
+      if (held.focus) plain.runEffect(held.focus);
+      if (held.scroll) plain.runEffect(held.scroll);
     }
   }
 
@@ -951,10 +1035,12 @@ function instrument(rt) {
   // app's own node goes in. Nodes pair up in order, as the host's own diff pairs
   // them, except that an element that no longer fits is passed over for a later
   // one that does, so that a new element does not shift every element after it
-  // onto the wrong one. `watched` has the predecessor's visibility observers, and
-  // `kept` collects which node of the page stands for which of this app's.
-  function morph(live, fresh, watched, kept) {
-    const old = [...dom.childrenOf(live)];
+  // onto the wrong one. `was` is what the predecessor's view was (see retire),
+  // and `kept` collects which node of the page stands for which of this app's.
+  // A node another script put among the view's is not the view's to keep or to
+  // take out, so it stays where it is, as it does through any paint.
+  function morph(live, fresh, was, kept) {
+    const old = [...dom.childrenOf(live)].filter((node) => was.nodes.has(node));
     let next = 0;
     for (const node of [...dom.childrenOf(fresh)]) {
       const found = fitAt(old, next, node);
@@ -965,7 +1051,7 @@ function instrument(rt) {
       for (; next < found; next++) dom.remove(old[next]);
       next++;
       kept.set(node, old[found]);
-      keep(old[found], node, watched, kept);
+      keep(old[found], node, was, kept);
     }
     for (; next < old.length; next++) dom.remove(old[next]);
   }
@@ -991,24 +1077,29 @@ function instrument(rt) {
   // An observer that is the same as the predecessor's had (see setVisibility in
   // runtime.js) does not tell this app the element is in view, since the
   // predecessor was told.
-  function keep(liveNode, freshNode, watched, kept) {
+  function keep(liveNode, freshNode, was, kept) {
     if (dom.elementTag(liveNode) === null) {
       const text = dom.textValue(freshNode);
       if (dom.textValue(liveNode) !== text) dom.setText(liveNode, text);
       return;
     }
     const names = dom.attrNames(freshNode);
+    // An attribute the old view put there and this one lacks goes. One that
+    // another script put there stays. An element the old runtime never set an
+    // attribute on, like one it took over from the server, has only the view's.
+    const viewOwn = was.attrs(liveNode);
     for (const name of dom.attrNames(liveNode)) {
-      if (!names.includes(name) && name !== 'open') dom.removeAttr(liveNode, name, true);
+      if (!names.includes(name) && name !== 'open' && (viewOwn === undefined || viewOwn.has(name))) dom.removeAttr(liveNode, name, true);
     }
     for (const name of names) {
       const value = dom.getAttr(freshNode, name, true);
       if (dom.getAttr(liveNode, name, true) !== value) dom.setAttr(liveNode, name, value);
     }
-    const was = watched.get(liveNode);
+    rt.hooks.declare(liveNode, names);
+    const before = was.watched.get(liveNode);
     const now = rt.hooks.visibility(freshNode);
-    rt.hooks.adopt(freshNode, liveNode, Boolean(was && now && was.margin === now.margin && was.key === now.key));
-    morph(liveNode, freshNode, watched, kept);
+    rt.hooks.adopt(freshNode, liveNode, Boolean(before && now && before.margin === now.margin && before.key === now.key));
+    morph(liveNode, freshNode, was, kept);
     rt.hooks.pin(liveNode);
   }
 
@@ -1020,6 +1111,7 @@ function instrument(rt) {
     session: () => history,
     inFlight: () => inFlight,
     leftovers: () => replaying.oneShots,
+    answered: () => replaying.answered ?? [],
     dialogs: () => dialogs,
     forward: (cb, deliver) => forwards.set(cb, [...(forwards.get(cb) ?? []), deliver]),
     catchUp,
@@ -1091,8 +1183,9 @@ const encodeBytes = (_, value) => (value instanceof Uint8Array ? { joyBytes: toB
 const decodeBytes = (_, value) => (value?.joyBytes === undefined ? value : fromBase64(value.joyBytes));
 
 // Save the session of every app on the page, for the page to pick up after it
-// reloads.
+// reloads. Returns whether every one was saved.
 async function saveSessions() {
+  let saved = true;
   for (const app of hot.apps) {
     const session = hot.session(app);
     if (!session || session.length === 0) continue;
@@ -1100,11 +1193,15 @@ async function saveSessions() {
       const text = JSON.stringify(session.map(savable), encodeBytes);
       const stream = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'));
       const zipped = new Uint8Array(await new Response(stream).arrayBuffer());
-      sessionStorage.setItem(sessionKeys.get(app), toBase64(zipped));
+      // With the URL the session starts from, which the page reloads at (see
+      // `leave`): the same bundle on another page has another session.
+      sessionStorage.setItem(sessionKeys.get(app), `${startUrl ?? ''}\n${toBase64(zipped)}`);
     } catch (err) {
+      saved = false;
       console.warn(`Joy: this page's session did not fit in sessionStorage, so it starts over after the reload. ${err}`);
     }
   }
+  return saved;
 }
 
 // The session saved under `key`, read once, or null when there is none.
@@ -1112,9 +1209,17 @@ function takeSession(key) {
   const stored = globalThis.sessionStorage?.getItem(key);
   if (!stored) return null;
   sessionStorage.removeItem(key);
+  const cut = stored.indexOf('\n');
+  if (cut < 0) {
+    console.warn("Joy: this page's saved session could not be read, so it starts over.");
+    return null;
+  }
+  // Saved on another page, which this one is not picking up for.
+  if (stored.slice(0, cut) !== (startUrl ?? '')) return null;
+  const zipped = stored.slice(cut + 1);
   return (async () => {
     try {
-      const stream = new Blob([fromBase64(stored)]).stream().pipeThrough(new DecompressionStream('gzip'));
+      const stream = new Blob([fromBase64(zipped)]).stream().pipeThrough(new DecompressionStream('gzip'));
       return JSON.parse(await new Response(stream).text(), decodeBytes);
     } catch (err) {
       console.warn(`Joy: this page's saved session could not be read, so it starts over. ${err}`);
@@ -1148,11 +1253,19 @@ function connect(port) {
       build = e.data;
     });
 
+    // A reload names the bundle and the build it brings the page to, so a
+    // page that took it in place knows it missed nothing when it reconnects.
     events.addEventListener('reload', (e) => {
-      queue = queue.then(() => reloadBundle(e.data));
+      const [id, now] = e.data.split('\n');
+      if (now) build = now;
+      queue = queue.then(() => reloadBundle(id));
     });
 
     events.addEventListener('server', () => leave());
+
+    // New JavaScript behind the app's effects. A replay would hand the app
+    // the answers the old JavaScript gave, so the page starts over.
+    events.addEventListener('runtime', () => leave({ replay: false }));
 
     events.addEventListener('failed', (e) => {
       const [name, ...log] = e.data.split('\n');
@@ -1170,12 +1283,21 @@ function connect(port) {
           url.searchParams.set('joy', String(Date.now()));
           link.href = url.href;
         }
-      } else if (performance.getEntriesByType('resource').some((entry) => new URL(entry.name).pathname.endsWith(file))) {
+      } else if (isThisPage(file) || performance.getEntriesByType('resource').some((entry) => new URL(entry.name).pathname.endsWith(file))) {
         leave();
       }
     });
   }
   listen();
+
+  // Whether `file`, a path below public/, is the page on screen, which is not
+  // among the resources the page loaded. A folder's index.html is the page of
+  // every path below that folder too, as ./joy dev answers a single-page app.
+  function isThisPage(file) {
+    if (!file.endsWith('.html')) return false;
+    if (location.pathname.endsWith(file)) return true;
+    return file.endsWith('/index.html') && `${location.pathname}/`.includes(file.slice(0, -'index.html'.length));
+  }
 
   // A browser can keep a page it left, for Back and Forward, and the page's
   // stream stays open with it. A browser opens 6 connections to a port, so a few
@@ -1198,7 +1320,9 @@ function connect(port) {
     // No app means the page never got one going, most likely because it opened
     // while the build was broken, or that it does not hold this bundle.
     if (hot.apps.size === 0) return leave();
-    overlay.clear(id);
+    // A report of this page's own, that the last build crashed while starting.
+    // roc's report of a failed build goes when the server says it is fixed.
+    overlay.clearCrash(id);
     for (const app of apps) {
       // A build without hot reloading (./joy dev --no-hot) can only start over.
       if (hot.session(app) === null) return leave();
@@ -1206,7 +1330,7 @@ function connect(port) {
         report(await app.reload(undefined, { replay: hot.replay }));
       } catch (err) {
         console.error(err);
-        overlay.report(id, `The rebuilt app crashed while starting, so the page keeps running the previous build.\n\n${describe(err)}`);
+        overlay.reportCrash(id, `The rebuilt app crashed while starting, so the page keeps running the previous build.\n\n${describe(err)}`);
       }
     }
   }
@@ -1215,7 +1339,7 @@ function connect(port) {
   // moment, then save the sessions and reload. The page reloads at the URL its
   // sessions start from, so its markup is the one they were recorded on, and the
   // replay takes it to where it was.
-  async function leave() {
+  async function leave({ replay = true } = {}) {
     if (leaving) return;
     leaving = true;
     for (let tries = 0; tries < 100; tries++) {
@@ -1225,8 +1349,9 @@ function connect(port) {
       } catch {}
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    await saveSessions();
-    if ([...hot.apps].some((app) => (hot.session(app)?.length ?? 0) > 0) && location.href !== startUrl) {
+    // Without its sessions the page starts over, where it is now.
+    const saved = replay && (await saveSessions());
+    if (saved && [...hot.apps].some((app) => (hot.session(app)?.length ?? 0) > 0) && location.href !== startUrl) {
       history.replaceState(history.state, '', startUrl);
     }
     location.reload();
@@ -1285,12 +1410,25 @@ const overlay = {
   // are several. The newest report is the one on show.
   reports: new Map(),
   current: null,
+  // The bundles whose report is this page's own, of a build that crashed
+  // here. It goes with the next build that starts, where roc's report of a
+  // build that failed stays until the server says a build succeeded.
+  crashes: new Set(),
   report(name, text) {
+    this.crashes.delete(name);
     this.reports.set(name, text);
     this.current = name;
     this.show();
   },
+  reportCrash(name, text) {
+    this.report(name, text);
+    this.crashes.add(name);
+  },
+  clearCrash(name) {
+    if (this.crashes.has(name)) this.clear(name);
+  },
   clear(name) {
+    this.crashes.delete(name);
     if (!this.reports.delete(name)) return;
     if (this.current === name) this.current = [...this.reports.keys()].at(-1) ?? null;
     this.show();

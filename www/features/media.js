@@ -2,7 +2,7 @@
 // Capture (getUserMedia), loudness (an AnalyserNode), recording
 // (MediaRecorder), decoding an audio file (decodeAudioData), object URLs and
 // <audio>/<video> playback. The app owns all state and draws everything,
-// these operations only report numbers and hand over files.
+// these effects only report numbers and hand over files.
 //
 // Streams and recorders live on the host under ids the app holds in its model. A
 // stream lives exactly as long as the app's Media.stream subscription, and
@@ -11,9 +11,9 @@
 // A failure is thrown with the browser's error name (NotAllowedError,
 // NotFoundError, ...), which the platform turns into Media.Problem.
 //
-// Each `////` line starts a section: an operation (`op`), an event source
-// (`events`) or a `helper`, with the helpers it needs. An app's runtime.js
-// holds the sections of the operations its wasm uses and the helpers those
+// Each `////` line starts a section: an `effect`, a `subscription` or a
+// `helper`, with the helpers it needs. An app's runtime.js holds the
+// sections of the effects its wasm uses and the helpers those
 // need (see tools/runtime), so this file is never served whole.
 
 //// helper named
@@ -66,10 +66,10 @@ function closeStream(capture, id) {
   capture.streams.delete(id);
 }
 
-//// events joy/media/stream needs streams
+//// subscription joy/media/stream needs streams
 // Ask for the devices, and report the stream's id once the user allows it,
 // or the error's name. Closing before the answer lets the stream go at once.
-defineEvents('joy/media/stream', (args, host, emit) => {
+defineSubscription('joy/media/stream', (args, host, emit) => {
   const audio = args.bool();
   const video = args.bool();
   const capture = captureOf(host);
@@ -97,12 +97,12 @@ defineEvents('joy/media/stream', (args, host, emit) => {
   };
 });
 
-//// events joy/media/levels needs streams thousandths
+//// subscription joy/media/levels needs streams thousandths
 // The loudest sample since the last report, in thousandths of full scale,
 // every `interval_ms`. A frame loop keeps the loudest, so short peaks
 // between reports are not lost. Nothing is reported for a closed stream or
 // in a browser without Web Audio.
-defineEvents('joy/media/levels', (args, host, emit) => {
+defineSubscription('joy/media/levels', (args, host, emit) => {
   const stream_id = args.u32();
   const interval_ms = args.u32();
   const entry = captureOf(host).streams.get(stream_id);
@@ -137,11 +137,11 @@ defineEvents('joy/media/levels', (args, host, emit) => {
   };
 });
 
-//// op joy/media/record needs streams named
+//// effect joy/media/record needs streams named
 // Start a MediaRecorder on an open stream. With no container asked for,
 // prefer Opus in webm and leave the rest to the browser (Safari records
 // mp4). A browser that would record below the floor is raised to it.
-defineOperation('joy/media/record', (args, host) => {
+defineEffect('joy/media/record', (args, host) => {
   const stream_id = args.u32();
   const mime_type = args.str();
   const min_audio_bits_per_second = args.u32();
@@ -169,10 +169,10 @@ defineOperation('joy/media/record', (args, host) => {
   return new WireWriter().u32(id);
 });
 
-//// op joy/media/finish needs streams named
+//// effect joy/media/finish needs streams named
 // Stop a recording and hand it to the app as a file, its extension
 // following the container the browser recorded in.
-defineOperation('joy/media/finish', (args, host) => {
+defineEffect('joy/media/finish', (args, host) => {
   const recorder_id = args.u32();
   const name = args.str();
   const capture = captureOf(host);
@@ -196,11 +196,11 @@ defineOperation('joy/media/finish', (args, host) => {
   });
 });
 
-//// op joy/media/audio_summary needs named thousandths audio_context
+//// effect joy/media/audio_summary needs named thousandths audio_context
 // An audio file's length and `peak_count` peaks in thousandths, evenly
 // spread over it. A recorder's file often has no duration in its metadata
 // (Chrome reports Infinity), so the decoded audio is the source of truth.
-defineOperation('joy/media/audio_summary', async (args, host) => {
+defineEffect('joy/media/audio_summary', async (args, host) => {
   const file_id = args.u32();
   const peak_count = args.u32();
   const file = host.file(file_id);
@@ -234,10 +234,10 @@ defineOperation('joy/media/audio_summary', async (args, host) => {
   return new WireWriter().i64(Math.round(decoded.duration * 1000)).u16s(peaks);
 });
 
-//// op joy/media/object_url needs named
+//// effect joy/media/object_url needs named
 // The same file always gets the same URL, until the app is unmounted and its
 // files are let go.
-defineOperation('joy/media/object_url', (args, host) => {
+defineEffect('joy/media/object_url', (args, host) => {
   const file_id = args.u32();
   const file = host.file(file_id);
   if (!file) throw named('NotFoundError', 'no such file');
@@ -262,18 +262,18 @@ function mediaElement(selector, host) {
   return el;
 }
 
-//// op joy/media/play needs media_element
-defineOperation('joy/media/play', async (args, host) => {
+//// effect joy/media/play needs media_element
+defineEffect('joy/media/play', async (args, host) => {
   await mediaElement(args.str(), host).play();
 });
 
-//// op joy/media/pause needs media_element
-defineOperation('joy/media/pause', (args, host) => {
+//// effect joy/media/pause needs media_element
+defineEffect('joy/media/pause', (args, host) => {
   mediaElement(args.str(), host).pause();
 });
 
-//// op joy/media/seek needs media_element
-defineOperation('joy/media/seek', (args, host) => {
+//// effect joy/media/seek needs media_element
+defineEffect('joy/media/seek', (args, host) => {
   const el = mediaElement(args.str(), host);
   el.currentTime = args.u64() / 1000;
 });

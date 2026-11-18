@@ -17,12 +17,12 @@ async function writeClipboard(text) {
   await clipboard.writeText(text);
 }
 
-//// op joy/clipboard/write_text needs write_clipboard
-defineOperation('joy/clipboard/write_text', (args) => writeClipboard(args.str()));
+//// effect joy/clipboard/write_text needs write_clipboard
+defineEffect('joy/clipboard/write_text', (args) => writeClipboard(args.str()));
 
-//// op joy/clipboard/write_text_of needs write_clipboard
+//// effect joy/clipboard/write_text_of needs write_clipboard
 // An element that is not there fails as NotFoundError.
-defineOperation('joy/clipboard/write_text_of', async (args, host) => {
+defineEffect('joy/clipboard/write_text_of', async (args, host) => {
   const selector = args.str();
   const text = host.dom.textOf(selector, host.root());
   if (text === null) {

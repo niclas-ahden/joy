@@ -147,7 +147,7 @@ raw_response = |reply|
 		Err(_) => { status: 0, headers: [], body: [] }
 	}
 
-read_response : List(U8) -> Try(Http.Response, [WireEnded])
+read_response : List(U8) -> Try(Http.Response, Wire.Problem)
 read_response = |answer| {
 	r = Wire.reader(answer)
 	(status, r1) = r.u16()?
@@ -157,7 +157,7 @@ read_response = |answer| {
 	Ok({ status, headers, body })
 }
 
-read_headers : Wire.Reader, U32, List(Http.Header) -> Try((List(Http.Header), Wire.Reader), [WireEnded])
+read_headers : Wire.Reader, U32, List(Http.Header) -> Try((List(Http.Header), Wire.Reader), Wire.Problem)
 read_headers = |r, left, acc|
 	if left == 0 {
 		Ok((acc, r))
@@ -218,7 +218,7 @@ expect timeout_to_u64(NoTimeout) == 0
 expect timeout_to_u64(TimeoutMilliseconds(750)) == 750
 
 # What a request effect carries, read back, and what its callback makes of
-# an answer, so each helper is pinned to its operation and its fields.
+# an answer, so each helper is pinned to its effect and its fields.
 
 ## The wire answer for a status, headers and body.
 answer_with : U16, List(Http.Header), List(U8) -> List(U8)
@@ -226,16 +226,16 @@ answer_with = |status, headers, body| [0].concat(headers.fold(Wire.writer({}).u1
 
 ## A request effect's id, method, url, headers and the rest of its
 ## arguments.
-sent_request : Effect(Str) -> Try({ id : Str, method : Str, url : Str, headers : List(Http.Header), rest : List(U8) }, [NotSent, WireEnded])
+sent_request : Effect(Str) -> Try({ id : Str, method : Str, url : Str, headers : List(Http.Header), rest : List(U8) }, [NotSent, WireEnded, WireMismatch({ value : U64, wanted : Str, found : Str })])
 sent_request = |effect|
 	match effect {
-		Call(id, args, _) => {
+		Call(_, args, _) => {
 			r = Wire.reader(args)
 			(method, r1) = r.str()?
 			(url, r2) = r1.str()?
 			(count, r3) = r2.u32()?
 			(headers, r4) = read_headers(r3, count, [])?
-			Ok({ id, method, url, headers, rest: r4.remaining() })
+			Ok({ id: effect.identity().id, method, url, headers, rest: r4.remaining() })
 		}
 		_ => Err(NotSent)
 	}

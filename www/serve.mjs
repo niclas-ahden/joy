@@ -5,9 +5,8 @@
 // ./runtime.js, and there are no query strings, no injected globals and no
 // repo paths. That page is what someone copies into their own project, so it
 // must not know anything about this repo's layout. Everything that has to know
-// lives here instead. A directory example that brings a page or styles of
-// its own (examples/<app>/index.html and style.css, equally copyable) gets
-// them by name.
+// lives here instead. A directory example that brings a page of its own
+// (examples/<app>/www/index.html, equally copyable) gets it by name.
 //
 // Two modes, both naming the optimization level whose build/<opt>/ tree to
 // serve:
@@ -49,13 +48,10 @@ function routeFor(app, rest) {
   switch (rest) {
     // A server-rendered page from the app's build comes first (see
     // render_pages! in build.roc). Then a directory example with a page of
-    // its own, like examples/spa-todomvc/, gets it, and every other app shares
+    // its own, like examples/pages/, gets it, and every other app shares
     // the plain shell. Both of those are complete copyable pages.
     case '/':
       return { files: [`build/${opt}/ssr/${app}/index.html`, `examples/${app}/www/index.html`, 'www/index.html'], type: 'text/html' };
-    // Only a page that links it requests it, so most apps never hit this.
-    case '/style.css':
-      return { file: `examples/${app}/www/style.css`, type: 'text/css' };
     // watch.roc gets the runtime.js with every feature, which never falls
     // behind the wasm it rebuilds. e2e.roc gets the app's own, the core plus
     // the feature code its wasm calls, so the tests run what an app ships.
@@ -88,7 +84,7 @@ function routeFor(app, rest) {
 // app. Pinned mode has no prefix to strip, everything sits at the root.
 function resolve(pathname) {
   // The pinned app also answers under its own prefix, so a URL that names
-  // the app, like the /spa-todomvc/ the browser tests navigate to, works against
+  // the app, like the /counter/ the browser tests navigate to, works against
   // this server and the prefix-mode one alike.
   if (pinned) {
     const prefix = `/${pinned}/`;

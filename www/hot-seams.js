@@ -8,7 +8,30 @@
 // wrapping the function sends every call through this table, which Joy's dev
 // module wraps in turn. An observer's dispatch passes the node it watches, and a
 // handler's the DOM event.
-const hotOps = { dispatch, dispatchValue, dispatchKey, dispatchPointer, deliverFile, dispatchVisible: dispatch, dispatchBytes, dispatchSubBytes, endCall, drainLog, runEffect };
+// The attributes this runtime's view put on each element, by the name the
+// element carries them under. A paint only touches what the view names, but a
+// successor makes the page's elements match a view of its own (see `keep` in
+// www/hot.js), and this is how it tells the view's attributes from the ones
+// another script put there.
+const viewAttrs = new WeakMap();
+{
+  const plainDom = dom;
+  const named = (node, name) => plainDom.attrName?.(node, name) ?? name;
+  dom = {
+    ...plainDom,
+    setAttr: (node, name, ...rest) => {
+      if (!viewAttrs.has(node)) viewAttrs.set(node, new Set());
+      viewAttrs.get(node).add(named(node, name));
+      return plainDom.setAttr(node, name, ...rest);
+    },
+    removeAttr: (node, name, exact) => {
+      viewAttrs.get(node)?.delete(exact ? name : named(node, name));
+      return plainDom.removeAttr(node, name, exact);
+    },
+  };
+}
+
+const hotOps = { dispatch, dispatchValue, dispatchKey, dispatchPointer, deliverFile, dispatchVisible: dispatch, dispatchBytes, dispatchSubBytes, endCall, drainLog, runEffect, defer };
 dispatch = (id, from) => (from !== undefined && from.currentTarget === undefined ? hotOps.dispatchVisible(id, from) : hotOps.dispatch(id, from));
 dispatchValue = (...args) => hotOps.dispatchValue(...args);
 dispatchKey = (...args) => hotOps.dispatchKey(...args);
@@ -19,6 +42,7 @@ dispatchSubBytes = (...args) => hotOps.dispatchSubBytes(...args);
 endCall = (...args) => hotOps.endCall(...args);
 drainLog = (...args) => hotOps.drainLog(...args);
 runEffect = (...args) => hotOps.runEffect(...args);
+defer = (...args) => hotOps.defer(...args);
 handle.dispatch = (id) => dispatch(id);
 handle.dispatchValue = (id, value) => dispatchValue(id, value);
 
@@ -51,6 +75,8 @@ handle.hooks = {
   str,
   start,
   perform,
+  hold,
+  release,
   retire: stop,
   hears,
   reader: (bytes) => new WireReader(bytes),
@@ -58,6 +84,11 @@ handle.hooks = {
   pin: restoreControl,
   listeners: [domListener, compositionListener],
   nodes: () => nodeList,
+  // The attributes this runtime's view put on `node`, or undefined for an
+  // element it never set one on, like one it took over from the server.
+  viewAttrs: (node) => viewAttrs.get(node),
+  // `node` now carries `names` for this runtime's view (see `keep`).
+  declare: (node, names) => viewAttrs.set(node, new Set(names)),
   handlers: (node) => node[EVENTS],
   visibility: (node) => nodeVis.get(node),
   root: () => root,

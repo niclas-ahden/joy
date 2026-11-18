@@ -50,15 +50,15 @@ at = |bytes| Wire.reader(bytes).i64().map_ok(|(ms, _)| ms) ?? 0
 now : List(U8) -> I64
 now = |reply| at(Effect.reply(reply) ?? [])
 
-# Each helper is one operation. Pin the id, the arguments, and that the
+# Each helper is one effect. Pin the id, the arguments, and that the
 # callback survives the wrap.
 
 called : Effect(Str) -> Try({ id : Str, args : List(U8), got : Str }, [NotCalled])
 called = |effect|
 	match effect {
-		Call(id, args, cb) => {
+		Call(_, args, cb) => {
 			inner = Box.unbox(cb)
-			Ok({ id, args, got: Box.unbox(inner([0].concat(Wire.writer({}).i64(9).done()))) })
+			Ok({ id: effect.identity().id, args, got: Box.unbox(inner([0].concat(Wire.writer({}).i64(9).done()))) })
 		}
 		_ => Err(NotCalled)
 	}
@@ -71,9 +71,4 @@ expect {
 	sub.identity() == { id: "joy/time/every", args: Wire.writer({}).u32(16).done() } and sub.deliver(Wire.writer({}).i64(5).done()) == "tick:5"
 }
 
-expect {
-	match Time.cancel("search") {
-		Send(id, args) => id == "joy/time/cancel" and args == Wire.writer({}).str("search").done()
-		_ => Bool.False
-	}
-}
+expect Time.cancel("search").identity() == { id: "joy/time/cancel", args: Wire.writer({}).str("search").done() }

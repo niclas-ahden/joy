@@ -18,7 +18,7 @@ Console := [].{
 	## Log a message: the message reaches the console queue when the
 	## returned effects run.
 	log : Str -> Effect(msg)
-	log = |message| Effect.console_log(message)
+	log = |message| ConsoleLog(message)
 }
 
 expect {

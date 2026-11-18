@@ -5,11 +5,11 @@
 //
 // Sections as in media.js: an app's runtime.js holds the ones its wasm uses.
 
-//// events joy/keyboard/keys
+//// subscription joy/keyboard/keys
 // Each event is the key, the physical code, and the modifiers and repeat
 // packed into a byte (1 ctrl, 2 shift, 4 alt, 8 meta, 16 repeat, 32
 // is_composing).
-defineEvents('joy/keyboard/keys', (args, host, emit) => {
+defineSubscription('joy/keyboard/keys', (args, host, emit) => {
   const event = args.str();
   const keys = [];
   for (let n = args.u32(); n > 0; n--) keys.push(args.str());

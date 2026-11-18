@@ -99,13 +99,13 @@ DOM := [].{
 		Sub.listen("joy/dom/document_clicks", Wire.writer({}).str(attribute).done(), |event| on_click(Wire.reader(event).str().map_ok(|(value, _)| value) ?? ""))
 }
 
-# Each helper is one operation. Pin its id and argument so a helper can
+# Each helper is one effect. Pin its id and argument so a helper can
 # never quietly produce its sibling (push as replace, show as close).
 
 sent : Effect(msg) -> Try((Str, Str), [NotSent])
 sent = |effect|
 	match effect {
-		Send(id, args) => Wire.reader(args).str().map_ok(|(value, _)| (id, value)).map_err(|_| NotSent)
+		Send(_, args) => Wire.reader(args).str().map_ok(|(value, _)| (effect.identity().id, value)).map_err(|_| NotSent)
 		_ => Err(NotSent)
 	}
 
@@ -118,12 +118,7 @@ expect sent(DOM.replace_url("?q=hats")) == Ok(("joy/dom/replace_url", "?q=hats")
 expect sent(DOM.set_title("Inbox")) == Ok(("joy/dom/set_title", "Inbox"))
 
 # x before y, so a scroll down never lands sideways.
-expect {
-	match DOM.scroll_to({ x: 3, y: 40 }) {
-		Send(id, args) => id == "joy/dom/scroll_to" and args == Wire.writer({}).u64(3).u64(40).done()
-		_ => Bool.False
-	}
-}
+expect DOM.scroll_to({ x: 3, y: 40 }).identity() == { id: "joy/dom/scroll_to", args: Wire.writer({}).u64(3).u64(40).done() }
 
 expect {
 	sub = DOM.on_url_change(|url| "nav:${url}")

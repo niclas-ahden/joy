@@ -31,19 +31,17 @@ Clipboard := [].{
 done : List(U8) -> Try({}, Clipboard.Problem)
 done = |reply| Effect.reply(reply).map_ok(|_| {}).map_err(problem)
 
-## A failed reply's reason starts with the browser's error name, the way the
-## clipboard feature reports it: "NotAllowedError: Document is not focused."
-problem : [FeatureFailed(Str)] -> Clipboard.Problem
-problem = |FeatureFailed(reason)| {
-	name = reason.split_first(":").map_ok(|parts| parts.before) ?? reason
-	match name.trim() {
+## A failed reply has the browser's error name, the way the clipboard's
+## JavaScript reports it: NotAllowedError when the document is not focused.
+problem : [EffectFailed({ name : Str, message : Str })] -> Clipboard.Problem
+problem = |EffectFailed({ name, .. })|
+	match name {
 		"NotAllowedError" => NotAllowed
 		"SecurityError" => Insecure
 		"NotSupportedError" => Unsupported
 		"NotFoundError" => NotFound
 		other => Other(other)
 	}
-}
 
 expect done([0]) == Ok({})
 expect done([1].concat(Str.to_utf8("NotAllowedError: Document is not focused."))) == Err(NotAllowed)
@@ -52,16 +50,6 @@ expect done([1].concat(Str.to_utf8("NotSupportedError: no clipboard"))) == Err(U
 expect done([1].concat(Str.to_utf8("NotFoundError: nothing matches"))) == Err(NotFound)
 expect done([1].concat(Str.to_utf8("TypeError: odd"))) == Err(Other("TypeError"))
 
-expect {
-	match Clipboard.write_text("roc build", |result| result) {
-		Call(id, args, _) => id == "joy/clipboard/write_text" and args == Wire.writer({}).str("roc build").done()
-		_ => Bool.False
-	}
-}
+expect Clipboard.write_text("roc build", |result| result).identity() == { id: "joy/clipboard/write_text", args: Wire.writer({}).str("roc build").done() }
 
-expect {
-	match Clipboard.write_text_of("#code-1f", |result| result) {
-		Call(id, args, _) => id == "joy/clipboard/write_text_of" and args == Wire.writer({}).str("#code-1f").done()
-		_ => Bool.False
-	}
-}
+expect Clipboard.write_text_of("#code-1f", |result| result).identity() == { id: "joy/clipboard/write_text_of", args: Wire.writer({}).str("#code-1f").done() }

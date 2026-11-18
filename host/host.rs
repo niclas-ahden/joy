@@ -5,8 +5,8 @@
 //! object and is driven purely through exports + linear memory. To stay
 //! import-free this host defines every symbol it needs and calls out to
 //! nothing: `roc_dbg` queues into the console buffer JS drains (at debug
-//! level, next to Console.log's log level), while `roc_expect_failed` and
-//! `roc_crashed` stay a no-op and a trap.
+//! level, next to Console.log's log level), `roc_crashed` keeps what the
+//! crash said for JS to read and traps, and `roc_expect_failed` is a no-op.
 //!
 //! Memory: a size-class free-list allocator over bump-grown wasm linear
 //! memory. Every block is a 16-aligned span holding [capacity word, free-list
@@ -121,7 +121,8 @@ unsafe fn span_of(ptr: usize) -> usize {
 // reads indexed by total/16 instead of scans over CLASSES. Totals are always
 // multiples of 16 and the largest class is 4096, so 256 slots cover the
 // classed range.
-const CLASS_SLOTS: usize = 4096 / 16;
+const LARGEST_CLASS: usize = 4096;
+const CLASS_SLOTS: usize = LARGEST_CLASS / 16;
 /// CLASS_UP[t/16 - 1] = smallest class index whose spans hold `t` bytes.
 const CLASS_UP: [u8; CLASS_SLOTS] = {
     let mut t = [0u8; CLASS_SLOTS];
@@ -169,6 +170,21 @@ fn class_of(total: usize) -> Option<usize> {
     Some(unsafe { *CLASS_UP.get_unchecked((total + 15) / 16 - 1) } as usize)
 }
 
+/// The size of a span for a large request: the next of eight steps to each
+/// power of two, so at most an eighth more than was asked for. A value that
+/// grows a little with every update, like one long text, asks for a little
+/// more each time. In steps, the span its last version left often fits the
+/// next, and a list that grows in place has room to.
+#[inline]
+fn large_size(total: usize) -> usize {
+    let top = usize::BITS - 1 - total.leading_zeros();
+    let step = 1usize << (top - 3);
+    match total.checked_add(step - 1) {
+        Some(padded) => padded & !(step - 1),
+        None => total,
+    }
+}
+
 /// Bump a fresh 16-aligned span of `total` bytes off the top of the heap,
 /// growing linear memory when out of room. Returns 0 on out-of-memory.
 unsafe fn bump_span(total: usize) -> usize {
@@ -185,7 +201,10 @@ unsafe fn bump_span(total: usize) -> usize {
         END = cur;
     }
     let start = NEXT;
-    let end = start + total;
+    // Past the end of the address space there is nothing to hand out.
+    let Some(end) = start.checked_add(total) else {
+        return 0;
+    };
     if end > END {
         let pages = (end - END + PAGE - 1) / PAGE;
         let prev = core::arch::wasm32::memory_grow(0, pages);
@@ -222,12 +241,12 @@ unsafe fn take_span(total: usize) -> usize {
             }
         }
         None => {
-            // Large: first fit over the large list.
+            // Large: first fit over the large list, lowest address first.
+            let sized = large_size(total);
             let mut prev: usize = 0;
             let mut cur = LARGE_HEAD;
             loop {
                 if cur == 0 {
-                    let sized = align_up(total, 16);
                     let s = bump_span(sized);
                     if s == 0 {
                         return 0;
@@ -235,8 +254,18 @@ unsafe fn take_span(total: usize) -> usize {
                     *(s as *mut usize) = sized;
                     break s;
                 }
-                if *(cur as *const usize) >= total {
-                    let next = *((cur + 4) as *const usize);
+                let capacity = *(cur as *const usize);
+                if capacity >= total {
+                    let mut next = *((cur + 4) as *const usize);
+                    // A span with room to spare gives up its tail, which
+                    // stays free, as long as the tail is a large span too.
+                    if capacity >= sized && capacity - sized > LARGEST_CLASS {
+                        let tail = cur + sized;
+                        *(tail as *mut usize) = capacity - sized;
+                        *((tail + 4) as *mut usize) = next;
+                        *(cur as *mut usize) = sized;
+                        next = tail;
+                    }
                     if prev == 0 {
                         LARGE_HEAD = next;
                     } else {
@@ -269,10 +298,35 @@ unsafe fn release_span(span: usize) {
             *((span + 4) as *mut usize) = *FREE_HEADS.get_unchecked(class);
             *FREE_HEADS.get_unchecked_mut(class) = span;
         }
-        None => {
-            *((span + 4) as *mut usize) = LARGE_HEAD;
-            LARGE_HEAD = span;
-        }
+        None => release_large(span),
+    }
+}
+
+/// Return a large span to its list, which is kept in address order, and
+/// merge it with a free neighbour on either side. Spans that touch are one
+/// stretch of the bump region, so two of them are one larger span. That is
+/// what gives a value that keeps growing somewhere to go: the spans its
+/// earlier versions left add up to one that fits the next.
+unsafe fn release_large(span: usize) {
+    let mut prev: usize = 0;
+    let mut cur = LARGE_HEAD;
+    while cur != 0 && cur < span {
+        prev = cur;
+        cur = *((cur + 4) as *const usize);
+    }
+    *((span + 4) as *mut usize) = cur;
+    if prev == 0 {
+        LARGE_HEAD = span;
+    } else {
+        *((prev + 4) as *mut usize) = span;
+    }
+    if cur != 0 && span + *(span as *const usize) == cur {
+        *(span as *mut usize) += *(cur as *const usize);
+        *((span + 4) as *mut usize) = *((cur + 4) as *const usize);
+    }
+    if prev != 0 && prev + *(prev as *const usize) == span {
+        *(prev as *mut usize) += *(span as *const usize);
+        *((prev + 4) as *mut usize) = *((span + 4) as *const usize);
     }
 }
 
@@ -390,9 +444,32 @@ pub extern "C" fn roc_expect_failed(_bytes: *const u8, _len: usize) {
     // no-op
 }
 
+// What a `crash` in Roc code said. The host cannot call out, so it keeps the
+// text here and traps, and the runtime reads it into the error it throws. A
+// fixed buffer needs no allocation, so a crash for lack of memory is told too.
+const CRASH_TEXT_MAX: usize = 4096;
+static mut CRASH_TEXT: [u8; CRASH_TEXT_MAX] = [0; CRASH_TEXT_MAX];
+static mut CRASH_LEN: usize = 0;
+
 #[no_mangle]
-pub extern "C" fn roc_crashed(_bytes: *const u8, _len: usize) -> ! {
+pub extern "C" fn roc_crashed(bytes: *const u8, len: usize) -> ! {
+    unsafe {
+        let kept = if len < CRASH_TEXT_MAX { len } else { CRASH_TEXT_MAX };
+        core::ptr::copy_nonoverlapping(bytes, CRASH_TEXT.as_mut_ptr(), kept);
+        CRASH_LEN = kept;
+    }
     core::arch::wasm32::unreachable()
+}
+
+#[no_mangle]
+pub extern "C" fn crash_ptr() -> usize {
+    unsafe { CRASH_TEXT.as_ptr() as usize }
+}
+
+/// Bytes of crash text, 0 when the app stopped for another reason.
+#[no_mangle]
+pub extern "C" fn crash_len() -> usize {
+    unsafe { CRASH_LEN }
 }
 
 // --- Boundary types, straight from the generated bindings ---
@@ -2510,12 +2587,12 @@ unsafe fn str_from_parts(ptr: usize, len: usize) -> RocStr {
 // The host cannot reach the browser (the module is import-free), so each
 // effect is serialised into this queue as u32 words and the JS runtime
 // drains and executes them after every entry call. Every effect but
-// ConsoleLog is an operation of a browser feature, by its id, with its
+// ConsoleLog runs JavaScript the runtime has under an id, with its
 // arguments as Wire bytes (see platform/Wire.roc):
 //   CALL:         [1, cb, id_ptr, id_len, args_ptr, args_len]
 //                     (the reply goes to dispatch_bytes)
 //   SEND:         [2, id_ptr, id_len, args_ptr, args_len]
-//                     (an operation that answers nothing)
+//                     (an effect that answers nothing)
 //   LISTEN START: [3, slot, id_ptr, id_len, args_ptr, args_len]
 //                     (from sync_subs; events go to dispatch_sub_bytes)
 //   SUB STOP:     [4, slot]   (from sync_subs)
@@ -2867,8 +2944,7 @@ unsafe fn finish_msgs(msgs: *mut u32, n: usize) -> u32 {
     }
     roc_dealloc(msgs as *mut u8, 4);
     if applied > 0 {
-        render_current();
-        sync_subs();
+        settle();
         1
     } else {
         0
@@ -2946,15 +3022,70 @@ unsafe fn apply_msg(msg_box: usize) {
 /// diffs to an empty patch, so the paint is a no-op then. A replaying hot
 /// build drops the messages it was not told to expect instead (see
 /// `hot_admit`), and returns 0, which leaves nothing to render or paint.
+/// While the render is held (see `hold_render`) the update runs alone.
 unsafe fn run_update(msg_box: usize) -> u32 {
     #[cfg(joy_hot)]
     if !hot_admit(msg_box) {
         return 0;
     }
     apply_msg(msg_box);
-    render_current();
-    sync_subs();
+    settle();
     1
+}
+
+/// Render the model an update left and re-sync the subscriptions, or leave
+/// the render for `release_render` while it is held.
+unsafe fn settle() {
+    if HOLD == HOLD_NONE {
+        render_current();
+        sync_subs();
+    } else {
+        HELD = true;
+        if HOLD == HOLD_RENDER {
+            sync_subs();
+        }
+    }
+}
+
+// --- Holding the render ---
+// Several messages can belong to one moment: a click passes a button's
+// handler and then its row's, and both were written for the view the click
+// happened in. Rendering between them would free the row's message and give
+// its element the handler of whatever the new view shows there. So the
+// runtime holds the render, runs every update, and renders once. The view
+// tree, and every handler in it, stays as it was until `release_render`.
+const HOLD_NONE: u32 = 0;
+/// The view and the subscriptions wait: the handlers of one DOM event.
+const HOLD_ALL: u32 = 1;
+/// The view waits and the subscriptions follow each update: a replay, whose
+/// next message may come in through a subscription the last one started.
+const HOLD_RENDER: u32 = 2;
+
+static mut HOLD: u32 = HOLD_NONE;
+static mut HELD: bool = false;
+
+/// Hold the render back from every update until `release_render`: 1 holds
+/// the subscriptions too, 2 lets them follow each update.
+#[no_mangle]
+pub extern "C" fn hold_render(what: u32) {
+    unsafe { HOLD = what };
+}
+
+/// Render what the updates since `hold_render` came to, once, and re-sync
+/// the subscriptions. Returns 1 when there is a view to paint, and 0 when no
+/// update ran meanwhile.
+#[no_mangle]
+pub extern "C" fn release_render() -> u32 {
+    unsafe {
+        HOLD = HOLD_NONE;
+        if !HELD {
+            return 0;
+        }
+        HELD = false;
+        render_current();
+        sync_subs();
+        1
+    }
 }
 
 // --- Hot reload ---
@@ -3437,7 +3568,7 @@ pub extern "C" fn dispatch_sub_bytes(id: usize, ptr: usize, len: usize) -> u32 {
 }
 
 /// Release a browser feature call's callback JS holds without answering it,
-/// for an operation that ends with no answer (a debounce re-armed or
+/// for an effect that ends with no answer (a debounce re-armed or
 /// cancelled before it fired, say).
 #[no_mangle]
 pub extern "C" fn drop_call_cb(callable: usize) {

@@ -4,8 +4,8 @@
 //
 // Sections as in media.js: an app's runtime.js holds the ones its wasm uses.
 
-//// op joy/crypto/digest
-defineOperation('joy/crypto/digest', async (args) => {
+//// effect joy/crypto/digest
+defineEffect('joy/crypto/digest', async (args) => {
   const algorithm = args.str();
   const data = args.bytes();
   return new Uint8Array(await crypto.subtle.digest(algorithm, data));
@@ -50,8 +50,8 @@ function startDigests() {
   }
 }
 
-//// op joy/crypto/digest_file needs digest_queue
-defineOperation('joy/crypto/digest_file', (args, host) => {
+//// effect joy/crypto/digest_file needs digest_queue
+defineEffect('joy/crypto/digest_file', (args, host) => {
   const algorithm = args.str();
   const fileId = args.u32();
   const start = args.u64();
