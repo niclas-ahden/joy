@@ -18,6 +18,7 @@
 ## That is for a release build. During development `full` holds every
 ## feature instead, so the runtime.js never has to keep up with the wasm.
 JoyRuntime := [].{
+
 	## A part of a feature file (www/features/<feature>.js), from one `////`
 	## line to the next: the JavaScript of an Effect.call or Effect.send
 	## (`effect <id>`), of a Sub.listen (`subscription <id>`) or a
@@ -142,7 +143,7 @@ JoyRuntime := [].{
 	generate = |{ core, features, wasm }| {
 		parsed = features.map_try(JoyRuntime.sections)?
 		used = JoyRuntime.used_ids(wasm, effect_ids(parsed))?
-		header = "\n// Features this app uses (see tools/runtime): ${if used.is_empty() "none" else Str.join_with(used, ", ")}\n"
+		header = "\n// Features this app uses (see tools/runtime): ${if (used.is_empty()) "none" else Str.join_with(used, ", ")}\n"
 		Ok(JoyRuntime.shipping(assemble(core, "\n", parsed, used)?).concat(header))
 	}
 
@@ -172,7 +173,7 @@ JoyRuntime := [].{
 		ids = effect_ids(parsed.concat(brought))
 		per_wasm = wasms.map_try(|wasm| JoyRuntime.used_ids(wasm, ids))?
 		used = ids.keep_if(|id| per_wasm.any(|found| found.contains(id)))
-		header = "\n// Features these apps use (see tools/runtime): ${if used.is_empty() "none" else Str.join_with(used, ", ")}\n"
+		header = "\n// Features these apps use (see tools/runtime): ${if (used.is_empty()) "none" else Str.join_with(used, ", ")}\n"
 		Ok({ runtime: JoyRuntime.shipping(assemble(core, "\n", parsed, used)?).concat(header), custom: JoyRuntime.custom_module(custom, Used(used))? })
 	}
 
@@ -230,7 +231,7 @@ feature_block = |sections, used| {
 		Ok("")
 	} else {
 		needed = helpers_needed(sections, roots.map(|s| s.needs).join(), [])?
-		chosen = sections.keep_if(|s| if s.kind == Helper needed.contains(s.name) else used.contains(s.name))
+		chosen = sections.keep_if(|s| if (s.kind == Helper) needed.contains(s.name) else used.contains(s.name))
 		Ok("{\n${Str.join_with(chosen.map(|s| s.code), "")}}\n")
 	}
 }
@@ -315,7 +316,7 @@ leb_from = |bytes, at, value, shift| {
 		Err(BadWasm("number too long"))
 	} else {
 		next = value.bitwise_or((byte.bitwise_and(0x7f)).to_u32().shl_wrap(shift))
-		if byte.bitwise_and(0x80) == 0 Ok((next, at + 1)) else leb_from(bytes, at + 1, next, shift + 7)
+		if (byte.bitwise_and(0x80) == 0) Ok((next, at + 1)) else leb_from(bytes, at + 1, next, shift + 7)
 	}
 }
 
@@ -323,7 +324,7 @@ leb_from = |bytes, at, value, shift| {
 skip_leb : List(U8), U64 -> Try(U64, [BadWasm(Str)])
 skip_leb = |bytes, at| {
 	byte = bytes.get(at) ? |_| BadWasm("number")
-	if byte.bitwise_and(0x80) == 0 Ok(at + 1) else skip_leb(bytes, at + 1)
+	if (byte.bitwise_and(0x80) == 0) Ok(at + 1) else skip_leb(bytes, at + 1)
 }
 
 ## The ids in `data` after each `mark` and up to the `>` that ends it. What
@@ -408,13 +409,13 @@ expect {
 	match generated {
 		Ok({ runtime, custom }) =>
 			runtime.starts_with("run();\n")
-			and !runtime.contains("my/hello'")
-			and !runtime.contains("'joy/test/first'")
-			and custom.starts_with("// The custom effects of this app and its packages (see Custom effects in Joy's guide).\nexport default ({ defineEffect, defineSubscription, WireWriter }) => {\n{\n")
-			and custom.contains("const greeting = `\n  // kept\n  hello`;")
-			and custom.contains("'my/hello'")
-			and !custom.contains("'my/unused'")
-			and custom.ends_with("}\n};\n")
+				and !runtime.contains("my/hello'")
+				and !runtime.contains("'joy/test/first'")
+				and custom.starts_with("// The custom effects of this app and its packages (see Custom effects in Joy's guide).\nexport default ({ defineEffect, defineSubscription, WireWriter }) => {\n{\n")
+				and custom.contains("const greeting = `\n  // kept\n  hello`;")
+				and custom.contains("'my/hello'")
+				and !custom.contains("'my/unused'")
+				and custom.ends_with("}\n};\n")
 
 		Err(_) => Bool.False
 	}

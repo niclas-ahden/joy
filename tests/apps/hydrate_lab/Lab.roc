@@ -66,7 +66,11 @@ Lab := [].{
 	update = |model, msg|
 		match msg {
 			# Refuses "!", so a value typed before boot can be refused too.
-			Named(n) => if n.contains("!") { model } else { { ..model, name: n } }
+			Named(n) => if n.contains("!") {
+				model
+			} else {
+				{ ..model, name: n }
+			}
 			Bio(bio) => { ..model, bio }
 			Sized(size) => { ..model, size }
 			Colored(color) => { ..model, color }
@@ -105,7 +109,7 @@ Lab := [].{
 					text("")
 				},
 				rows(model),
-			].concat(if model.contents contents_view else []),
+			].concat(if (model.contents) contents_view else []),
 		)
 }
 
@@ -128,7 +132,7 @@ forms = |model|
 			span([class("nudges")], [text("nudges ${model.nudges.to_str()}")]),
 			span(
 				[class("echo")],
-				[text("${model.name}|${model.bio}|${model.size}|${model.color}|${if model.agree "yes" else "no"}|${model.count.to_str()}")],
+				[text("${model.name}|${model.bio}|${model.size}|${model.color}|${if (model.agree) "yes" else "no"}|${model.count.to_str()}")],
 			),
 		],
 	)

@@ -1,8 +1,8 @@
 # hot_told_v1.roc with the clipboard's answer under another name, so the
 # answer v1 got no longer replays (tests/check_hot_told.mjs).
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../platform/main.roc",
 }
 
 import html.Html exposing [button, div, input, p, text]

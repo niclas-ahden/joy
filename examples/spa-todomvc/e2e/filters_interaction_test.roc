@@ -7,7 +7,9 @@ import TodoPage
 import playwright.Playwright exposing [assert!]
 
 active_filter = ".filters li:nth-child(2) a"
+
 completed_filter = ".filters li:nth-child(3) a"
+
 all_filter = ".filters li:nth-child(1) a"
 
 # Changing todos while a filter is on: the view updates right away, and

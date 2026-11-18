@@ -1,6 +1,6 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../platform/main.roc",
 }
 
 import html.Html exposing [div, input, option, select, span, text, textarea]
@@ -42,7 +42,11 @@ init = |flags|
 update : Model, Msg -> (Model, List(Effect(Msg)))
 update = |model, msg|
 	match msg {
-		Named(n) => if n.contains("!") { (model, []) } else { ({ ..model, name: n }, []) }
+		Named(n) => if n.contains("!") {
+			(model, [])
+		} else {
+			({ ..model, name: n }, [])
+		}
 		Bio(bio) => ({ ..model, bio }, [])
 		Notes(notes) => ({ ..model, notes }, [])
 		Sized(size) => ({ ..model, size }, [])
@@ -70,7 +74,7 @@ view = |model|
 			},
 			span(
 				[class("echo")],
-				[text("${model.name}|${model.bio}|${model.notes}|${model.size}|${model.level}|${model.color}|${if model.agree "yes" else "no"}")],
+				[text("${model.name}|${model.bio}|${model.notes}|${model.size}|${model.level}|${model.color}|${if (model.agree) "yes" else "no"}")],
 			),
 		],
 	)

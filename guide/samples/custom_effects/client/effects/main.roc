@@ -1,3 +1,1 @@
-package [Locale, Share, Network] {
-	pf: platform "../../../../../platform/main.roc",
-}
+package [Locale, Network, Share] { pf: platform "../../../../../platform/main.roc" }

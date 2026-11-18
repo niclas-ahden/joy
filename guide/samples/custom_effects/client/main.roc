@@ -1,7 +1,7 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../../../platform/main.roc",
-	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+app [Model, Msg, init, subscriptions, update, view] {
 	effects: "effects/main.roc",
+	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../../../platform/main.roc",
 }
 
 # The guide's custom effects in one app: the language and time zone the

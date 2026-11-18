@@ -1,9 +1,9 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../platform/main.roc",
 }
 
-import html.Html exposing [div, button, text]
+import html.Html exposing [button, div, text]
 import html.Attribute exposing [on_click]
 import pf.Effect
 
@@ -28,7 +28,7 @@ update = |model, msg|
 	}
 
 nest : I64 -> Html(Msg)
-nest = |n| if n <= 1 text("bottom") else div([], [nest(n - 1)])
+nest = |n| if (n <= 1) text("bottom") else div([], [nest(n - 1)])
 
 view : Model -> Html(Msg)
 view = |model| div([], [button([on_click(Go)], [text("go")]), nest(model.depth)])

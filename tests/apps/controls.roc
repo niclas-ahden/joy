@@ -1,6 +1,6 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../platform/main.roc",
 }
 
 import html.Html exposing [button, div, input, option, p, select, text]
@@ -79,8 +79,8 @@ update = |model, msg|
 	match msg {
 		UserPickedLevel(level) => ({ ..model, level }, [])
 		UserClickedLoad => ({ ..model, loaded: Bool.True }, [])
-		UserTypedQuery(query) => if query.contains("!") (model, []) else ({ ..model, query }, [])
-		UserToggledAgree(now) => if now ({ ..model, agreed: Bool.True }, []) else (model, [])
+		UserTypedQuery(query) => if (query.contains("!")) (model, []) else ({ ..model, query }, [])
+		UserToggledAgree(now) => if (now) ({ ..model, agreed: Bool.True }, []) else (model, [])
 		UserSearched(search) => ({ ..model, search, searches: model.searches + 1 }, [])
 		UserClickedRename => {
 			renames = model.renames + 1
@@ -100,7 +100,7 @@ view = |model| {
 		[],
 		[
 			select([id("level"), value(model.level), on_change(|l| UserPickedLevel(l))], levels),
-			select([id("late"), value(model.level), on_change(|l| UserPickedLevel(l))], if model.loaded levels else []),
+			select([id("late"), value(model.level), on_change(|l| UserPickedLevel(l))], if (model.loaded) levels else []),
 			button([id("load"), on_click(UserClickedLoad)], [text("Load")]),
 			div([id("query-box"), on_input(|s| UserTypedQuery(s))], [input([id("query"), value(model.query)])]),
 			div([id("agree-box"), on_check(|now| UserToggledAgree(now))], [input([id("agree"), type("checkbox"), checked(model.agreed)])]),
@@ -111,7 +111,7 @@ view = |model| {
 			p([id("selects")], [text("selects ${model.selects.to_str()}")]),
 			div([id("note-box"), on_click(UserClickedNoteBox)], [input([id("note"), value(model.note), on_change(|s| UserChangedNote(s))])]),
 			p([id("note-clicks")], [text("note clicks ${model.note_clicks.to_str()}")]),
-			select([id("swap"), value("b")], [option([value(if model.swapped "b" else "c")], [text("first")]), option([value("a")], [text("second")])]),
+			select([id("swap"), value("b")], [option([value(if (model.swapped) "b" else "c")], [text("first")]), option([value("a")], [text("second")])]),
 			button([id("swap-button"), on_click(UserClickedSwap)], [text("Swap")]),
 		],
 	)

@@ -90,7 +90,7 @@ check_watchexec! = |probe|
 					"\n",
 				),
 			)
-		}
+	}
 
 # Start the dev server, and confirm it is still alive before printing a URL and
 # claiming it works. spawn_leashed! ties the server to this process, so it goes
@@ -111,7 +111,7 @@ start_server! = |port, opt, name| {
 						"\n",
 					),
 				)?
-			}
+		}
 
 	Sleep.millis!(300)?
 
@@ -138,7 +138,7 @@ start_server! = |port, opt, name| {
 					],
 					"\n",
 				)
-					.concat(if said.is_empty() "" else "\n\nnode said:\n${said}"),
+					.concat(if (said.is_empty()) "" else "\n\nnode said:\n${said}"),
 			)
 		}
 

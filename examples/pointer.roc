@@ -1,10 +1,10 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../platform/main.roc",
 }
 
 import html.Html exposing [div, p, text]
-import html.Attribute exposing [id, style, on_pointer, on_pointer_down, on_pointer_move, on_pointer_up]
+import html.Attribute exposing [id, on_pointer, on_pointer_down, on_pointer_move, on_pointer_up, style]
 import pf.Effect
 
 # Pointer events (unifying mouse, touch and pen) as typed messages: each
@@ -43,7 +43,7 @@ update = |model, msg|
 					x: e.offset_x,
 					y: e.offset_y,
 					dragging: Bool.True,
-					shift_clicks: if e.shift model.shift_clicks + 1 else model.shift_clicks,
+					shift_clicks: if (e.shift) model.shift_clicks + 1 else model.shift_clicks,
 				},
 				[],
 			)
@@ -51,7 +51,7 @@ update = |model, msg|
 		UserDragged(e) =>
 		# `buttons` is the held-buttons bitmask, so a plain hover (no
 		# button down) never counts as dragging.
-			if model.dragging and e.buttons > 0
+			if (model.dragging and e.buttons > 0)
 				({ ..model, x: e.offset_x, y: e.offset_y, moves: model.moves + 1 }, [])
 			else
 				(model, [])
@@ -61,7 +61,7 @@ update = |model, msg|
 
 view : Model -> Html(Msg)
 view = |model| {
-	dragging_status = if model.dragging "dragging" else "idle"
+	dragging_status = if (model.dragging) "dragging" else "idle"
 	div(
 		[],
 		[

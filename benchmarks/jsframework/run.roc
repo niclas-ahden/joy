@@ -56,7 +56,11 @@ main! = |_args| {
 		Ok(output) => output.status == Exited(0)
 		Err(_) => Bool.False
 	}
-	in_fork = if use_direnv { "direnv exec ." } else { "" }
+	in_fork = if use_direnv {
+		"direnv exec ."
+	} else {
+		""
+	}
 
 	# By default only Joy is re-benchmarked: the comparison frameworks don't
 	# change between Joy edits, and their result JSONs from the last FULL run
@@ -86,7 +90,11 @@ main! = |_args| {
 	# history reads as a changelog keyed on that commit, so say when the tree
 	# was dirty instead of quietly attributing the numbers to HEAD.
 	dirty = !(capture_line!("git", ["status", "--porcelain"]) ?? "").is_empty()
-	commit = if dirty { "${head}-dirty" } else { head }
+	commit = if dirty {
+		"${head}-dirty"
+	} else {
+		head
+	}
 	subject = capture_line!("git", ["log", "-1", "--format=%s"]) ?? ""
 	# The compiler is the confounder a size delta is most often hiding: a
 	# nightly bump moved the bundle 25% on 2026-08-25 with the source
@@ -106,7 +114,11 @@ main! = |_args| {
 	# in the same session so a Joy-vs-Joy delta carries no machine drift. Label
 	# the dev results with the commit that built them. No dashes or underscores:
 	# render.mjs finds the entries by matching `<name>-v<version>-<bracket>`.
-	entry_version = if dirty { "${head}.dirty" } else { head }
+	entry_version = if dirty {
+		"${head}.dirty"
+	} else {
+		head
+	}
 	set_entry_version!(fork, entry_version)?
 
 	Stdout.line!("== rebuilding the Joy entries ==")?
@@ -140,7 +152,11 @@ main! = |_args| {
 	# the round to round spread for its noise band.
 	arms = frameworks.split_on(" ")
 	for round in ["1", "2"] {
-		order = if round == "1" { arms } else { arms.fold([], |acc, arm| acc.prepend(arm)) }
+		order = if round == "1" {
+			arms
+		} else {
+			arms.fold([], |acc, arm| acc.prepend(arm))
+		}
 		run_round!(fork, in_fork, order, benches, fast, "${out}/rounds/${round}")?
 	}
 
@@ -272,9 +288,17 @@ report_pair! = |framework, bench, outcome|
 
 print_output! = |exit| {
 	out = Str.from_utf8_lossy(exit.stdout_bytes).trim()
-	_ = if out.is_empty() { {} } else { Stdout.line!(out) ?? {} }
+	_ = if out.is_empty() {
+		{}
+	} else {
+		Stdout.line!(out) ?? {}
+	}
 	err = Str.from_utf8_lossy(exit.stderr_bytes).trim()
-	if err.is_empty() { {} } else { Stderr.line!(err) ?? {} }
+	if err.is_empty() {
+		{}
+	} else {
+		Stderr.line!(err) ?? {}
+	}
 }
 
 # Hold until the pair's chromium is actually gone before the next pair
@@ -391,7 +415,11 @@ retry_missing! = |fork, in_fork, frameworks, benches| {
 		for pair in missing.split_on(" ") {
 			match pair.split_first(":") {
 				Ok(split) => {
-					extra = if split.after == "07_" { "--count 1" } else { "" }
+					extra = if split.after == "07_" {
+						"--count 1"
+					} else {
+						""
+					}
 					run_pair!(fork, in_fork, split.before, split.after, extra)?
 				}
 				Err(NotFound) => {}

@@ -1,9 +1,9 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../platform/main.roc",
 }
 
-import html.Html exposing [div, button, text]
+import html.Html exposing [button, div, text]
 import html.Attribute exposing [id, on_click]
 import pf.Effect
 
@@ -45,13 +45,43 @@ view = |model|
 	)
 
 small : Item -> U8
-small = |it| if it.flag { 1 } else { 0 }
+small = |it| if it.flag {
+	1
+} else {
+	0
+}
 
 tuple_bool_view : U64, Bool -> Html(Msg)
-tuple_bool_view = |n, flag| div([], [text("t${n.to_str()}${if flag { "y" } else { "n" }}")])
+tuple_bool_view = |n, flag| div(
+	[],
+	[
+		text(
+			"t${n.to_str()}${
+				if flag {
+					"y"
+				} else {
+					"n"
+				}
+			}",
+		),
+	],
+)
 
 record_bool_view : Item -> Html(Msg)
-record_bool_view = |it| div([], [text("r${it.n.to_str()}${if it.flag { "y" } else { "n" }}")])
+record_bool_view = |it| div(
+	[],
+	[
+		text(
+			"r${it.n.to_str()}${
+				if it.flag {
+					"y"
+				} else {
+					"n"
+				}
+			}",
+		),
+	],
+)
 
 u8_view : U8, U64 -> Html(Msg)
 u8_view = |s, n| div([], [text("u${n.to_str()}${s.to_str()}")])

@@ -39,14 +39,18 @@ main! = |_args| {
 ## Open `url` with the wasm held back, run `meddle` once mount is watching,
 ## then let the wasm through and wait for the app.
 load_meddled! = |page, url, meddle|
-	Playwright.with_routes!(page, [{ pattern: "**/app.wasm", method: AnyMethod, action: Hold }], |routed| {
-		Playwright.navigate_with!(routed, { url, wait_until: Commit })?
-		Assert.eq(routed.evaluate!(mount_started)?, "started") ? |e| MountNeverStarted(Str.inspect(e))
-		Assert.eq(routed.evaluate!(meddle)?, "ok") ? |e| CouldNotMeddle(Str.inspect(e))
-		release_held!(routed, 100)?
-		assert!(routed.find("#app[data-booted]").is_visible())?
-		Ok({})
-	})
+	Playwright.with_routes!(
+		page,
+		[{ pattern: "**/app.wasm", method: AnyMethod, action: Hold }],
+		|routed| {
+			Playwright.navigate_with!(routed, { url, wait_until: Commit })?
+			Assert.eq(routed.evaluate!(mount_started)?, "started") ? |e| MountNeverStarted(Str.inspect(e))
+			Assert.eq(routed.evaluate!(meddle)?, "ok") ? |e| CouldNotMeddle(Str.inspect(e))
+			release_held!(routed, 100)?
+			assert!(routed.find("#app[data-booted]").is_visible())?
+			Ok({})
+		},
+	)
 
 ## Wait until the page's loader has called mount.
 mount_started : Str

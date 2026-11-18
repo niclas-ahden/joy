@@ -21,7 +21,6 @@
 ## app or a package brings with its own JavaScript, is built the same way.
 ## An app's runtime.js holds the JavaScript its wasm uses.
 Effect(msg) := [
-
 	## JavaScript that answers (see Features in the runtime): its id as `Id`
 	## marks it, its arguments (see Wire), on_reply. The reply is a status byte, 0 for done
 	## and 1 for failed, then the answer (see Wire) or the reason as UTF-8.

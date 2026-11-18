@@ -1,10 +1,10 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../platform/main.roc",
 }
 
-import html.Html exposing [dialog, div, element, p, button, input, text]
-import html.Attribute exposing [id, type, on_click, on_file]
+import html.Html exposing [button, dialog, div, element, input, p, text]
+import html.Attribute exposing [id, on_click, on_file, type]
 import pf.Clipboard
 import pf.DOM
 import pf.Effect
@@ -22,7 +22,7 @@ Model : { grab : Bool, fired : I64, file : U32, url : Str, keys : I64, hashed : 
 Msg : [Arm, Cancel, Fired, Picked(U32), Ask, Got(Str), Focus, Open, Shut, OpenPageDialog, Play, Copy, Ignored, Key, Hash, HashRepeated, Hashed]
 
 subscriptions = |model|
-	if model.grab [Keyboard.on_down_keys_prevent_default([" "], |_| Key)] else []
+	if (model.grab) [Keyboard.on_down_keys_prevent_default([" "], |_| Key)] else []
 
 init : Str -> (Model, List(Effect(Msg)))
 init = |flags| ({ grab: flags == "grab", fired: 0, file: 0, url: "", keys: 0, hashed: 0 }, [])

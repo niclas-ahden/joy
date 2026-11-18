@@ -462,7 +462,7 @@ write_joy_files! = |out, bundles, names, debug| {
 ## the files as written.
 minified_or! : Str => Str
 minified_or! = |www|
-	if Path.utf8("${www}/min/runtime.js").is_file!() ?? False "${www}/min" else www
+	if (Path.utf8("${www}/min/runtime.js").is_file!() ?? False) "${www}/min" else www
 
 www_of! : List(Project.Bundle) => Try(Str, _)
 www_of! = |bundles|

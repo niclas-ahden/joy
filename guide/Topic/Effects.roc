@@ -451,12 +451,12 @@ Effects := [].{
 			Doc.code(
 				Roc,
 				"quote.roc",
-				\\app [Model, Msg, init, update, view, subscriptions] {
-				\\    pf: platform "https://github.com/niclas-ahden/joy/releases/download/VERSION/HASH.tar.zst",
+				\\app [Model, Msg, init, subscriptions, update, view] {
 				\\    html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+				\\    pf: platform "https://github.com/niclas-ahden/joy/releases/download/VERSION/HASH.tar.zst",
 				\\}
 				\\
-				\\import html.Html exposing [div, button, p, text]
+				\\import html.Html exposing [button, div, p, text]
 				\\import html.Attribute exposing [on_click]
 				\\import pf.Effect
 				\\import pf.Http

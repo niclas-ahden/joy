@@ -3,9 +3,9 @@
 # handler and then its row's, and the first removes the row the second was
 # written for. `flip` is a click that changes what the row above it says.
 # The flags can ask for more rows, as a number, for a view of some size.
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../platform/main.roc",
 }
 
 import html.Html exposing [button, div, li, p, text, ul]
@@ -56,7 +56,7 @@ view = |model|
 			ul([id("keyed")], model.keyed.map(|name| Html.keyed(name, row("keyed", Keyed, name)))),
 			# The outer handler says what the view showed when it was written.
 			div(
-				[id("outer"), on_click(UserSaw(if model.flipped "flipped" else "plain"))],
+				[id("outer"), on_click(UserSaw(if (model.flipped) "flipped" else "plain"))],
 				[button([id("flip"), on_click(UserFlipped)], [text("flip")])],
 			),
 			p([id("log")], [text(Str.join_with(model.log, ", "))]),

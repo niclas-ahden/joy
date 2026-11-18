@@ -1,10 +1,10 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../platform/main.roc",
 }
 
-import html.Html exposing [div, button, input, text]
-import html.Attribute exposing [id, type, value, checked, on_input, on_check, on_click]
+import html.Html exposing [button, div, input, text]
+import html.Attribute exposing [checked, id, on_check, on_click, on_input, type, value]
 import pf.Effect
 
 # Probe: `value` and `checked` name live DOM properties that drift as the
@@ -50,15 +50,15 @@ update = |model, msg|
 
 view : Model -> Html(Msg)
 view = |model| {
-	value_attr = if model.pinned [value(model.name)] else []
-	checked_attr = if model.pinned [checked(model.agreed)] else []
+	value_attr = if (model.pinned) [value(model.name)] else []
+	checked_attr = if (model.pinned) [checked(model.agreed)] else []
 	div(
 		[],
 		[
 			input([id("name"), type("text"), on_input(|s| UserTyped(s))].concat(value_attr)),
 			input([id("agree"), type("checkbox"), on_check(|now| UserToggledAgree(now))].concat(checked_attr)),
 			button([id("tick"), on_click(UserClickedTick)], [text(model.ticks.to_str())]),
-			button([id("pin"), on_click(UserClickedPin)], [text(if model.pinned "pinned" else "unpinned")]),
+			button([id("pin"), on_click(UserClickedPin)], [text(if (model.pinned) "pinned" else "unpinned")]),
 		],
 	)
 }

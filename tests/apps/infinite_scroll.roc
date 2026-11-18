@@ -1,10 +1,10 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../platform/main.roc",
 }
 
 import html.Html exposing [div, text]
-import html.Attribute exposing [id, style, on_visible]
+import html.Attribute exposing [id, on_visible, style]
 import pf.Effect
 
 # A minimal infinite-scroll list. `shown` is how many items are currently
@@ -43,7 +43,7 @@ update = |model, msg|
 			} else {
 				({ shown: (model.shown + batch_size).min(max_items) }, [])
 			}
-		}
+	}
 
 view : Model -> Html(Msg)
 view = |model| {
@@ -60,21 +60,21 @@ view = |model| {
 			.collect()
 
 	sentinel =
-	# The infinite-scroll sentinel. `on_visible` attaches an
-	# IntersectionObserver whose lifetime the runtime ties to this node.
-	# There is no manual setup, teardown, or querySelector.
-	#
-	# `root_margin: "200px"` makes the msg fire 200px before the sentinel
-	# actually reaches the viewport, so the next batch is revealed just
-	# ahead of the user reaching the bottom.
-	#
-	# An IntersectionObserver only fires on a crossing into view. After a
-	# batch is revealed the sentinel can still be on screen, and with no
-	# new crossing it would not fire again, so loading would stall.
-	# `rearm_key` changes per batch (here the shown count), which tells
-	# the runtime to re-check visibility after each reveal, so loading
-	# continues until the sentinel is off-screen or `max_items` is
-	# reached. A constant `rearm_key` fires once per crossing.
+		# The infinite-scroll sentinel. `on_visible` attaches an
+		# IntersectionObserver whose lifetime the runtime ties to this node.
+		# There is no manual setup, teardown, or querySelector.
+		#
+		# `root_margin: "200px"` makes the msg fire 200px before the sentinel
+		# actually reaches the viewport, so the next batch is revealed just
+		# ahead of the user reaching the bottom.
+		#
+		# An IntersectionObserver only fires on a crossing into view. After a
+		# batch is revealed the sentinel can still be on screen, and with no
+		# new crossing it would not fire again, so loading would stall.
+		# `rearm_key` changes per batch (here the shown count), which tells
+		# the runtime to re-check visibility after each reveal, so loading
+		# continues until the sentinel is off-screen or `max_items` is
+		# reached. A constant `rearm_key` fires once per crossing.
 		div(
 			[
 				id("sentinel"),

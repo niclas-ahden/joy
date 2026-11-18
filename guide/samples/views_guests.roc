@@ -1,10 +1,10 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../platform/main.roc",
 }
 
-import html.Html exposing [div, input, button, ul, li, p, text]
-import html.Attribute exposing [placeholder, value, disabled, on_input, on_click]
+import html.Html exposing [button, div, input, li, p, text, ul]
+import html.Attribute exposing [disabled, on_click, on_input, placeholder, value]
 import pf.Effect
 
 Model : { new_guest : Str, guests : List(Str) }

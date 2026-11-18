@@ -5,9 +5,9 @@
 # Optional args: a filename pattern (substring) and --fail-fast.
 # Optional env: ROC_SPEC_MAX_WORKERS (default 4).
 app [main!] {
+	http: "https://github.com/roc-lang/http/releases/download/2.0.0/6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst",
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.32.0/3MnQnCrtfe6XS5qx58MnAGU6iWk8i1N24MYfoejcWeax.tar.zst",
 	spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.7.1/GXr8UJ7VDaJ8HYykmVYtTjLs7X4bZeE9YDTzAHoVXFJ9.tar.zst",
-	http: "https://github.com/roc-lang/http/releases/download/2.0.0/6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst",
 }
 
 import http.Request
@@ -135,25 +135,33 @@ main! = |os_args| {
 
 	# Spawn all test servers first (spawn_leashed! so they die with the
 	# runner), then poll them all until every one answers (up to ~30s).
-	servers = TestEnvironment.start!(hooks, {
-		count: workers,
-		spawn!: |index| spawn_worker!(index, port_of(ports, index.to_u64())),
-		ready!: |index| check_worker!(port_of(ports, index.to_u64())),
-		max_attempts: 150,
-		delay_ms: 200,
-	})?
+	servers = TestEnvironment.start!(
+		hooks,
+		{
+			count: workers,
+			spawn!: |index| spawn_worker!(index, port_of(ports, index.to_u64())),
+			ready!: |index| check_worker!(port_of(ports, index.to_u64())),
+			max_attempts: 150,
+			delay_ms: 200,
+		},
+	)?
 
 	Stdout.line!("All ${workers.to_str()} test servers ready")?
 
-	results = Spec.run_filtered!(hooks, "e2e", {
-		test_command: ["roc", "--opt=speed"],
-		max_workers: workers,
-		worker_envs: |index| worker_env(port_of(ports, index)),
-		before_each!: |_index| Ok({}),
-		per_test_timeout_ms: 120_000,
-		quiet: Bool.True,
-		fail_fast,
-	}, pattern)?
+	results = Spec.run_filtered!(
+		hooks,
+		"e2e",
+		{
+			test_command: ["roc", "--opt=speed"],
+			max_workers: workers,
+			worker_envs: |index| worker_env(port_of(ports, index)),
+			before_each!: |_index| Ok({}),
+			per_test_timeout_ms: 120_000,
+			quiet: Bool.True,
+			fail_fast,
+		},
+		pattern,
+	)?
 
 	# Holding the handles until here kept the servers up for the run. A child
 	# is terminated when its last reference is released, so close them only

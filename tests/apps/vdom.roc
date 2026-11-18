@@ -1,10 +1,10 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../platform/main.roc",
 }
 
-import html.Html exposing [div, p, ul, li, a, button, input, text, element]
-import html.Attribute exposing [attribute, class, value, checked, type, href, on_click]
+import html.Html exposing [a, button, div, element, input, li, p, text, ul]
+import html.Attribute exposing [attribute, checked, class, href, on_click, type, value]
 import pf.Effect
 
 # Steps through view shapes so the node harness can exercise every diff path:

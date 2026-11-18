@@ -1,10 +1,10 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../platform/main.roc",
 }
 
-import html.Html exposing [div, fieldset, legend, input, label, select, option, textarea, button, text, element]
-import html.Attribute exposing [id, class, type, name, value, checked, selected, attribute, for_, on_input, on_check, on_change, on, on_click]
+import html.Html exposing [button, div, element, fieldset, input, label, legend, option, select, text, textarea]
+import html.Attribute exposing [attribute, checked, class, for_, id, name, on, on_change, on_check, on_click, on_input, selected, type, value]
 import pf.Effect
 
 # Probe: a large form, every kind of control, and an update that refuses
@@ -44,12 +44,12 @@ update = |model, msg|
 			if s.contains("!") {
 				(model, [])
 			} else {
-				({ ..model, rows: model.rows.map(|r| if r.id == row_id { ..r, text: s } else r) }, [])
+				({ ..model, rows: model.rows.map(|r| if (r.id == row_id) { ..r, text: s } else r) }, [])
 			}
 
 		RowChecked(row_id, now) =>
 			if now {
-				({ ..model, rows: model.rows.map(|r| if r.id == row_id { ..r, on: Bool.True } else r) }, [])
+				({ ..model, rows: model.rows.map(|r| if (r.id == row_id) { ..r, on: Bool.True } else r) }, [])
 			} else {
 				(model, [])
 			}
@@ -73,7 +73,7 @@ update = |model, msg|
 				({ ..model, qty }, [])
 			} else {
 				match U64.from_str(qty) {
-					Ok(q) => if q <= 10 ({ ..model, qty }, []) else (model, [])
+					Ok(q) => if (q <= 10) ({ ..model, qty }, []) else (model, [])
 					Err(_) => (model, [])
 				}
 			}
@@ -96,7 +96,7 @@ normalize_code = |s|
 	Str.from_utf8_lossy(
 		s.to_utf8()
 			.keep_if(|b| b != 32)
-			.map(|b| if b >= 97 and b <= 122 b - 32 else b),
+			.map(|b| if (b >= 97 and b <= 122) b - 32 else b),
 	)
 
 view : Model -> Html(Msg)

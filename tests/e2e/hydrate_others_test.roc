@@ -20,17 +20,21 @@ main! = |_args| {
 	base = Browser.base_url!()
 	{ browser, page } = Browser.launch!()?
 
-	Playwright.with_routes!(page, [{ pattern: "**/app.wasm", method: AnyMethod, action: Hold }], |routed| {
-		Playwright.navigate_with!(routed, { url: "${base}/hydrate_lab/", wait_until: Commit })?
-		# The loader defines its helpers right before it calls mount, which
-		# starts watching the page before it asks for the wasm.
-		Assert.eq(routed.evaluate!(mount_started)?, "started") ? |e| MountNeverStarted(Str.inspect(e))
-		Assert.eq(routed.evaluate!(meddle)?, "ok") ? |e| CouldNotMeddle(Str.inspect(e))
-		routed.fill!(".name", "Annie")?
-		release_held!(routed, 100)?
-		assert!(routed.find("#app[data-booted]").is_visible())?
-		Ok({})
-	})?
+	Playwright.with_routes!(
+		page,
+		[{ pattern: "**/app.wasm", method: AnyMethod, action: Hold }],
+		|routed| {
+			Playwright.navigate_with!(routed, { url: "${base}/hydrate_lab/", wait_until: Commit })?
+			# The loader defines its helpers right before it calls mount, which
+			# starts watching the page before it asks for the wasm.
+			Assert.eq(routed.evaluate!(mount_started)?, "started") ? |e| MountNeverStarted(Str.inspect(e))
+			Assert.eq(routed.evaluate!(meddle)?, "ok") ? |e| CouldNotMeddle(Str.inspect(e))
+			routed.fill!(".name", "Annie")?
+			release_held!(routed, 100)?
+			assert!(routed.find("#app[data-booted]").is_visible())?
+			Ok({})
+		},
+	)?
 
 	Assert.eq(page.evaluate!("JSON.stringify(window.app.hydration())")?, "{\"claimed\":true,\"mismatch\":null}") ? |e| OthersAreNoMismatch(Str.inspect(e))
 	Assert.eq(page.evaluate!(still_there)?, "icon tiles data-pm") ? |e| OthersWereRemoved(Str.inspect(e))

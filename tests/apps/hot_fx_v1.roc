@@ -1,9 +1,9 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../platform/main.roc",
 }
 
-import html.Html exposing [div, p, button, input, text]
+import html.Html exposing [button, div, input, p, text]
 import html.Attribute exposing [id, on_click, on_input]
 import pf.Effect
 import pf.Http
@@ -110,7 +110,7 @@ view = |model|
 			button([id("pick-b"), on_click(Pick(Str.concat(long, "B")))], [text("B")]),
 			button([id("label"), on_click(Label(long, |n| n + 1))], [text("Label")]),
 			p([id("bumps")], [text(model.bumps.to_str())]),
-			p([id("saving")], [text(if model.saving "saving" else "idle")]),
+			p([id("saving")], [text(if (model.saving) "saving" else "idle")]),
 			p([id("saved")], [text(model.saved)]),
 			p([id("loaded")], [text(model.loaded)]),
 			p([id("reminded")], [text(model.reminded.to_str())]),

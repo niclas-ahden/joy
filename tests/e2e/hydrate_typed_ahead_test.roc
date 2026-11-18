@@ -18,23 +18,27 @@ main! = |_args| {
 	base = Browser.base_url!()
 	{ browser, page } = Browser.launch!()?
 
-	Playwright.with_routes!(page, [{ pattern: "**/app.wasm", method: AnyMethod, action: Hold }], |routed| {
-		Playwright.navigate_with!(routed, { url: "${base}/hydrate_lab/", wait_until: Commit })?
-		assert!(routed.find(".name").is_visible())?
+	Playwright.with_routes!(
+		page,
+		[{ pattern: "**/app.wasm", method: AnyMethod, action: Hold }],
+		|routed| {
+			Playwright.navigate_with!(routed, { url: "${base}/hydrate_lab/", wait_until: Commit })?
+			assert!(routed.find(".name").is_visible())?
 
-		# The page is the server's alone: nothing has booted.
-		Assert.eq(routed.evaluate!("String(document.getElementById('app').hasAttribute('data-booted'))")?, "false") ? |e| BootedTooEarly(Str.inspect(e))
+			# The page is the server's alone: nothing has booted.
+			Assert.eq(routed.evaluate!("String(document.getElementById('app').hasAttribute('data-booted'))")?, "false") ? |e| BootedTooEarly(Str.inspect(e))
 
-		routed.fill!(".name", "Annie")?
-		routed.fill!(".bio", "edited")?
-		_ = routed.evaluate!("(document.querySelector('.size').value = 'l', 'ok')")?
-		routed.check!(".red")?
-		routed.uncheck!(".agree")?
+			routed.fill!(".name", "Annie")?
+			routed.fill!(".bio", "edited")?
+			_ = routed.evaluate!("(document.querySelector('.size').value = 'l', 'ok')")?
+			routed.check!(".red")?
+			routed.uncheck!(".agree")?
 
-		release_held!(routed, 100)?
-		assert!(routed.find("#app[data-booted]").is_visible())?
-		Ok({})
-	})?
+			release_held!(routed, 100)?
+			assert!(routed.find("#app[data-booted]").is_visible())?
+			Ok({})
+		},
+	)?
 
 	assert!(page.find(".name").has_value("Annie"))?
 	assert!(page.find(".bio").has_value("edited"))?
@@ -48,14 +52,18 @@ main! = |_args| {
 	assert!(page.find(".echo").has_text("Anna|edited|l|red|no|0"))?
 
 	# A value the app refuses, typed before boot.
-	Playwright.with_routes!(page, [{ pattern: "**/app.wasm", method: AnyMethod, action: Hold }], |routed| {
-		Playwright.navigate_with!(routed, { url: "${base}/hydrate_lab/", wait_until: Commit })?
-		assert!(routed.find(".name").is_visible())?
-		routed.fill!(".name", "Ann!")?
-		release_held!(routed, 100)?
-		assert!(routed.find("#app[data-booted]").is_visible())?
-		Ok({})
-	})?
+	Playwright.with_routes!(
+		page,
+		[{ pattern: "**/app.wasm", method: AnyMethod, action: Hold }],
+		|routed| {
+			Playwright.navigate_with!(routed, { url: "${base}/hydrate_lab/", wait_until: Commit })?
+			assert!(routed.find(".name").is_visible())?
+			routed.fill!(".name", "Ann!")?
+			release_held!(routed, 100)?
+			assert!(routed.find("#app[data-booted]").is_visible())?
+			Ok({})
+		},
+	)?
 	assert!(page.find(".name").has_value("Ann"))?
 	Assert.eq(page.evaluate!("document.querySelector('.echo').textContent")?, "Ann|First line\nsecond line|m|blue|yes|0") ? |e| RefusedValueReachedTheModel(Str.inspect(e))
 

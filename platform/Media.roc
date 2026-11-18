@@ -36,6 +36,7 @@ import Sub
 import Wire
 
 Media := [].{
+
 	## An open microphone or camera, from `stream`. The browser's `MediaStream`.
 	MediaStream : { stream_id : U32 }
 

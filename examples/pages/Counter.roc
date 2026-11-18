@@ -8,6 +8,7 @@ import pf.Effect
 import pf.Sub
 
 Counter := [].{
+
 	## The count, how far one click moves it, and the clicks so far, so the
 	## page has state of its own to keep across visits to the other pages.
 	Model : { count : I64, step : I64, clicks : U64 }

@@ -9,9 +9,9 @@
 # The page modules are the same as in examples/spa_pages/, which keeps every
 # page's model alive and switches between them in place. Only this file
 # differs, so the two are easy to compare.
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../platform/main.roc",
 }
 
 import Clock

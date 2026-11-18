@@ -15,6 +15,7 @@ import Browser
 # 79 bytes. The hex is `printf '...\n' | sha256sum` of the same content, so
 # the assertion catches a digest of the wrong bytes, not just a wrong format.
 content = "Joy streams these bytes straight from the browser. The wasm never copies them.\n"
+
 content_sha256 = "sha256: 8c42a10b9677385bcd3ac511337917a9e2055f38cb54610727c38c5e90879995"
 
 main! = |_args| {

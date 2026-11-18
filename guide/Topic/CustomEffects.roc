@@ -54,9 +54,7 @@ CustomEffects := [].{
 		Doc.code(
 			Roc,
 			"client/effects/main.roc",
-			\\package [Locale, Share, Network] {
-			\\    pf: platform "https://github.com/niclas-ahden/joy/releases/download/VERSION/HASH.tar.zst",
-			\\}
+			\\package [Locale, Network, Share] { pf: platform "https://github.com/niclas-ahden/joy/releases/download/VERSION/HASH.tar.zst" }
 		),
 		p(
 			[],
@@ -79,10 +77,10 @@ CustomEffects := [].{
 		Doc.code(
 			Roc,
 			"client/main.roc",
-			\\app [Model, Msg, init, update, view, subscriptions] {
-			\\    pf: platform "https://github.com/niclas-ahden/joy/releases/download/VERSION/HASH.tar.zst",
-			\\    html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+			\\app [Model, Msg, init, subscriptions, update, view] {
 			\\    effects: "effects/main.roc",
+			\\    html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+			\\    pf: platform "https://github.com/niclas-ahden/joy/releases/download/VERSION/HASH.tar.zst",
 			\\}
 		),
 		h2([], [text("The Roc half")]),

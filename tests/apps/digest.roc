@@ -1,10 +1,10 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../platform/main.roc",
 }
 
-import html.Html exposing [div, p, input, button, text]
-import html.Attribute exposing [type, id, on_file, on_click]
+import html.Html exposing [button, div, input, p, text]
+import html.Attribute exposing [id, on_click, on_file, type]
 import pf.Effect
 import pf.WebCrypto
 
@@ -39,7 +39,7 @@ subscriptions = |_model| []
 init : Str -> (Model, List(Effect(Msg)))
 init = |_| ({ mem: "", slice: "", missing: "", chunks: List.repeat("", chunk_count) }, [])
 
-show = |hash| if hash.len() == 0 "failed" else WebCrypto.to_hex(hash)
+show = |hash| if (hash.len() == 0) "failed" else WebCrypto.to_hex(hash)
 
 update : Model, Msg -> (Model, List(Effect(Msg)))
 update = |model, msg|

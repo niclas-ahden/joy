@@ -306,6 +306,6 @@ expect {
 	log = "── ✗ package module is private ──\n\nThe package import `effects.Network` does not name a public module declared by\nthat package.\n"
 	header = "app [Model] {\n\tpf: platform \"x\",\n\teffects: \"effects/main.roc\",\n}\n"
 	Compile.hints(log, header, "client/main.roc")
-	== "\nHint from ./joy: Network is not in the list of the modules of the package effects.\nAdd it to the list at the top of client/effects/main.roc:\n\n    package [..., Network] {\n"
+		== "\nHint from ./joy: Network is not in the list of the modules of the package effects.\nAdd it to the list at the top of client/effects/main.roc:\n\n    package [..., Network] {\n"
 }
 expect Compile.hints("But the function needs the first argument to be:\n\n    Effect.Id\n", "", "client/main.roc").starts_with("\nHint from ./joy: Effect.Id and Sub.Id are the ids of effects.")

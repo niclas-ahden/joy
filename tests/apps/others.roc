@@ -1,6 +1,6 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../platform/main.roc",
 }
 
 import html.Html exposing [button, div, element, input, li, p, span, text, ul]
@@ -52,8 +52,8 @@ update = |model, msg|
 
 item : Str, Bool -> Html(Msg)
 item = |name, fancy| {
-	mark = if fancy element("em", [class("mark")], [text("*")]) else span([class("mark")], [text("-")])
-	tags = if fancy ["x", "y"] else ["y", "x"]
+	mark = if (fancy) element("em", [class("mark")], [text("*")]) else span([class("mark")], [text("-")])
+	tags = if (fancy) ["x", "y"] else ["y", "x"]
 	Html.keyed(
 		name,
 		li(
@@ -88,12 +88,12 @@ view = |model|
 			input([class("name"), value(model.name), on_input(|s| Named(s))]),
 			div(
 				[class("media")],
-				[if model.fancy element("video", [class("clip")], []) else element("img", [class("clip")], [])],
+				[if (model.fancy) element("video", [class("clip")], []) else element("img", [class("clip")], [])],
 			),
 			ul([class("items")], model.items.map(|name| item(name, model.fancy))),
 			# x-note is a custom element: the browser test defines it with a
 			# connectedCallback that inserts next to it inside the runtime's insert.
-			div([class("panel")], if model.open [element("x-note", [], [text("one")]), p([], [text("two")])] else []),
+			div([class("panel")], if (model.open) [element("x-note", [], [text("one")]), p([], [text("two")])] else []),
 			element("figure", [class("map")], []),
 			span([class("total")], [text("count ${model.count.to_str()}")]),
 			span([class("echo")], [text("name ${model.name}")]),

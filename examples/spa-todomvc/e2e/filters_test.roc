@@ -8,7 +8,9 @@ import playwright.Playwright exposing [assert!]
 
 # The three filter links in footer order
 all_filter = ".filters li:nth-child(1) a"
+
 active_filter = ".filters li:nth-child(2) a"
+
 completed_filter = ".filters li:nth-child(3) a"
 
 main! = |_args| {

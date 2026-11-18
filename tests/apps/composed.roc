@@ -1,9 +1,9 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../platform/main.roc",
 }
 
-import html.Html exposing [div, h2, button, text]
+import html.Html exposing [button, div, h2, text]
 import html.Attribute exposing [on_click]
 import pf.Effect
 import pf.Sub
@@ -58,7 +58,7 @@ subscriptions = |_model| [Sub.map(counter_ticks, |m| Left(m))]
 
 init : Str -> (Model, List(Effect(Msg)))
 init = |_|
-# Effect.map routes the component's boot effect to the right counter.
+	# Effect.map routes the component's boot effect to the right counter.
 	({ left: 0, right: 0 }, [Effect.map(counter_boot, |m| Right(m))])
 
 update : Model, Msg -> (Model, List(Effect(Msg)))

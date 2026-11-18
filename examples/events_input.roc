@@ -1,10 +1,10 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../platform/main.roc",
 }
 
-import html.Html exposing [div, form, textarea, label, input, button, p, h1, text]
-import html.Attribute exposing [id, rows, cols, type, checked, on_input, on_submit, on_check]
+import html.Html exposing [button, div, form, h1, input, label, p, text, textarea]
+import html.Attribute exposing [checked, cols, id, on_check, on_input, on_submit, rows, type]
 import pf.Effect
 import pf.Console
 
@@ -34,7 +34,7 @@ update = |model, msg|
 
 view : Model -> Html(Msg)
 view = |model| {
-	secret_status = if model.secret "on" else "off"
+	secret_status = if (model.secret) "on" else "off"
 	div(
 		[],
 		[

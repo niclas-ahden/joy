@@ -1,6 +1,6 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../platform/main.roc",
 }
 
 import html.Html exposing [div, p, pre, text]
@@ -86,7 +86,6 @@ error_view = |flags|
 								\\    root: document.getElementById('app'),
 								\\    flags: `{"name": "Brödil", "karma": 99}`,
 								\\});
-								,
 							),
 						],
 					),
@@ -103,4 +102,4 @@ error_view = |flags|
 					pre([], [text(flags)]),
 				],
 			)
-		}
+	}

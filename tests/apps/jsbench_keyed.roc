@@ -1,11 +1,11 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../platform/main.roc",
 	random: "https://github.com/niclas-ahden/roc-prng/releases/download/0.4.1/C3JpBYoPwC9SN5aweoh1Dux2K3iy4vfMTdAsWooE1HF5.tar.zst",
 }
 
-import html.Html exposing [div, h1, button, table, tbody, tr, td, a, span, text]
-import html.Attribute exposing [id, class, attribute, on_click]
+import html.Html exposing [a, button, div, h1, span, table, tbody, td, text, tr]
+import html.Attribute exposing [attribute, class, id, on_click]
 import pf.Effect
 import random.Random
 

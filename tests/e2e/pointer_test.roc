@@ -14,6 +14,7 @@ import playwright.Playwright exposing [assert!]
 import Browser
 
 position = "#position"
+
 moves = "#moves"
 
 main! = |_args| {

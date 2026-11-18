@@ -1,6 +1,6 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../../platform/main.roc",
 }
 
 import html.Html exposing [a, button, div, footer, h1, header, input, label, li, p, section, span, strong, text, ul]
@@ -76,7 +76,7 @@ update = |model, msg|
 			(
 				{
 					..model,
-					todos: model.todos.map(|t| if t.id == todo_id ({ ..t, done: now }) else t),
+					todos: model.todos.map(|t| if (t.id == todo_id) ({ ..t, done: now }) else t),
 				},
 				[],
 			)
@@ -114,7 +114,7 @@ update = |model, msg|
 					todos = if title.is_empty() {
 						model.todos.keep_if(|t| t.id != todo_id)
 					} else {
-						model.todos.map(|t| if t.id == todo_id ({ ..t, title: title }) else t)
+						model.todos.map(|t| if (t.id == todo_id) ({ ..t, title: title }) else t)
 					}
 					({ ..model, todos: todos, editing: NotEditing }, [])
 				}
@@ -205,7 +205,7 @@ view_todo = |todo, editing| {
 	# While the input is hidden its `value` tracks the todo's title, so each
 	# edit starts from the current title. While editing it tracks the typed
 	# text, so cancelling can put the title back.
-	shown_value = if is_editing edit_text else todo.title
+	shown_value = if (is_editing) edit_text else todo.title
 
 	li(
 		[
@@ -240,7 +240,7 @@ view_todo = |todo, editing| {
 				on_key(
 					"keydown",
 					["Enter", "Escape"],
-					|e| if e.key == "Enter" UserCommittedEdit else UserCancelledEdit,
+					|e| if (e.key == "Enter") UserCommittedEdit else UserCancelledEdit,
 				),
 			]),
 		],
@@ -251,7 +251,7 @@ view_footer : Model -> Html(Msg)
 view_footer = |model| {
 	active_count = model.todos.count_if(|t| !t.done)
 	completed_count = model.todos.len() - active_count
-	items = if active_count == 1 "item" else "items"
+	items = if (active_count == 1) "item" else "items"
 
 	clear = if completed_count == 0 {
 		[]

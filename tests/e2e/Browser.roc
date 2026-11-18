@@ -13,6 +13,7 @@ import playwright.Playwright exposing [assert!]
 ## holds or the page's timeout expires, so the tests need no polling of their
 ## own.
 Browser :: [].{
+
 	## Like open!, at a page of an app by its path under the server, as in
 	## "hydrate_lab/" or "hydrate_lab/stale" (a page of a server-rendered
 	## app, see render_pages! in build.roc).

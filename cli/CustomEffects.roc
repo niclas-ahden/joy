@@ -669,33 +669,33 @@ in_file = |file, source| |id| CustomEffects.sites({ file, source, home: "${file.
 expect {
 	written = in_file("pkg/Store.roc", "import pf.Effect\n\nStore := [].{\n\tget = |done|\n\t\tEffect.call(\"store/gte_one\", [], done)\n}")
 	CustomEffects.problems({ used: effects(["store/gte_one", "store/set_one"]), defined: effects(["store/set_one", "store/get_one", "other/thing_here"]), written, scripts: ["pkg/Store.js"] })
-	== [
-		Str.join_with(
-			[
-				"── ✗ custom effect without javascript ─────────────────────── pkg/Store.roc:5:16",
-				"",
-				"No JavaScript defines the custom effect with this id:",
-				"",
-				"    Effect.call(\"store/gte_one\", [], done)",
-				"                 ^^^^^^^^^^^^^",
-				"",
-				"Did you mean one of these?",
-				"",
-				"    store/get_one",
-				"    store/set_one",
-				"",
-				"If the id is the one you meant, then its JavaScript is what is missing:",
-				"a section that starts with `//// effect store/gte_one`",
-				"in pkg/Store.js.",
-				"",
-				"Hint: A custom effect is a call in Roc and JavaScript for the browser, joined",
-				"by an id. roc cannot see the JavaScript, so ./joy checks that it is there.",
-				"",
-				"The guide has more on this: https://niclas-ahden.github.io/joy/#custom-effects",
-			],
-			"\n",
-		),
-	]
+		== [
+			Str.join_with(
+				[
+					"── ✗ custom effect without javascript ─────────────────────── pkg/Store.roc:5:16",
+					"",
+					"No JavaScript defines the custom effect with this id:",
+					"",
+					"    Effect.call(\"store/gte_one\", [], done)",
+					"                 ^^^^^^^^^^^^^",
+					"",
+					"Did you mean one of these?",
+					"",
+					"    store/get_one",
+					"    store/set_one",
+					"",
+					"If the id is the one you meant, then its JavaScript is what is missing:",
+					"a section that starts with `//// effect store/gte_one`",
+					"in pkg/Store.js.",
+					"",
+					"Hint: A custom effect is a call in Roc and JavaScript for the browser, joined",
+					"by an id. roc cannot see the JavaScript, so ./joy checks that it is there.",
+					"",
+					"The guide has more on this: https://niclas-ahden.github.io/joy/#custom-effects",
+				],
+				"\n",
+			),
+		]
 }
 
 # An id that is like none of its package: all of them, as none stands out.
@@ -709,36 +709,36 @@ expect {
 expect {
 	written = in_file("pkg/Store.roc", "watch = |heard| Sub.listen(\"store/changes\", [], heard)")
 	CustomEffects.problems({ used: [{ id: "store/changes", kind: Subscription }], defined: effects(["store/get_one"]), written, scripts: ["joy/www/features/time.js"] })
-	== [
-		Str.join_with(
-			[
-				"── ✗ custom effect without javascript ─────────────────────── pkg/Store.roc:1:29",
-				"",
-				"No JavaScript defines the custom effect with this id:",
-				"",
-				"    watch = |heard| Sub.listen(\"store/changes\", [], heard)",
-				"                                ^^^^^^^^^^^^^",
-				"",
-				"No subscription has an id that starts with store/ yet, so the JavaScript",
-				"of this one is still to be written. It goes in a new file beside the module,",
-				"pkg/Store.js, and starts like this:",
-				"",
-				"    //// subscription store/changes",
-				"    defineSubscription('store/changes', (args, host, emit) => {",
-				"      // start listening, and emit(...) each event",
-				"      return () => {",
-				"        // stop listening",
-				"      };",
-				"    });",
-				"",
-				"Hint: A custom effect is a call in Roc and JavaScript for the browser, joined",
-				"by an id. roc cannot see the JavaScript, so ./joy checks that it is there.",
-				"",
-				"The guide has more on this: https://niclas-ahden.github.io/joy/#custom-effects",
-			],
-			"\n",
-		),
-	]
+		== [
+			Str.join_with(
+				[
+					"── ✗ custom effect without javascript ─────────────────────── pkg/Store.roc:1:29",
+					"",
+					"No JavaScript defines the custom effect with this id:",
+					"",
+					"    watch = |heard| Sub.listen(\"store/changes\", [], heard)",
+					"                                ^^^^^^^^^^^^^",
+					"",
+					"No subscription has an id that starts with store/ yet, so the JavaScript",
+					"of this one is still to be written. It goes in a new file beside the module,",
+					"pkg/Store.js, and starts like this:",
+					"",
+					"    //// subscription store/changes",
+					"    defineSubscription('store/changes', (args, host, emit) => {",
+					"      // start listening, and emit(...) each event",
+					"      return () => {",
+					"        // stop listening",
+					"      };",
+					"    });",
+					"",
+					"Hint: A custom effect is a call in Roc and JavaScript for the browser, joined",
+					"by an id. roc cannot see the JavaScript, so ./joy checks that it is there.",
+					"",
+					"The guide has more on this: https://niclas-ahden.github.io/joy/#custom-effects",
+				],
+				"\n",
+			),
+		]
 }
 
 # An id that is a named value: the report is about where it is written, and
@@ -747,7 +747,7 @@ expect {
 	written = in_file("pkg/Store.roc", "remove_id : Effect.Id\nremove_id = \"store/remove_it\"\n\nagain = Effect.send(\"store/remove_it\", [])")
 	report = CustomEffects.problems({ used: effects(["store/remove_it"]), defined: [], written, scripts: [] }).first() ?? ""
 	report.contains(" pkg/Store.roc:2:14\n")
-	and report.contains("    remove_id = \"store/remove_it\"\n                 ^^^^^^^^^^^^^^^\n\nThe id is also written at pkg/Store.roc:4:22.\n")
+		and report.contains("    remove_id = \"store/remove_it\"\n                 ^^^^^^^^^^^^^^^\n\nThe id is also written at pkg/Store.roc:4:22.\n")
 }
 
 # An effect's call on a subscription's id.
@@ -755,8 +755,8 @@ expect {
 	written = in_file("pkg/Store.roc", "watch = Effect.call(\"store/changes\", [], heard)")
 	report = CustomEffects.problems({ used: effects(["store/changes"]), defined: [{ id: "store/changes", kind: Subscription }], written, scripts: [] }).first() ?? ""
 	report.contains("── ✗ custom effect of the other kind ")
-	and report.contains("The JavaScript with this id defines a subscription, and the app uses it with Effect.call or Effect.send:")
-	and report.contains("Effect.call or Effect.send needs a section that starts with\n`//// effect store/changes` and `defineEffect`.")
+		and report.contains("The JavaScript with this id defines a subscription, and the app uses it with Effect.call or Effect.send:")
+		and report.contains("Effect.call or Effect.send needs a section that starts with\n`//// effect store/changes` and `defineEffect`.")
 }
 
 expect CustomEffects.problems({ used: effects(["store/set_one"]), defined: effects(["store/set_one"]), written: |_| [], scripts: [] }) == []
@@ -765,29 +765,29 @@ expect CustomEffects.problems({ used: effects(["store/set_one"]), defined: effec
 expect CustomEffects.mismatched([{ file: "pkg/Store.js", source: "//// helper store\nconst a = 1;\n//// effect store/get_one needs store\ndefineEffect('store/get_one', () => a);\n//// subscription store/changes\ndefineSubscription(\"store/changes\", () => {});\n" }]) == []
 expect {
 	CustomEffects.mismatched([{ file: "pkg/Store.js", source: "//// effect store/get_one\ndefineEffect('store/get_once', () => 1);\n" }])
-	== [
-		Str.join_with(
-			[
-				"── ✗ custom effect section without its code ─────────────────────── pkg/Store.js",
-				"",
-				"The code under this line does not define the id the line names:",
-				"",
-				"    //// effect store/get_one",
-				"",
-				"The line says what the code below it defines, up to the next such line,",
-				"so the two have the same id:",
-				"",
-				"    //// effect store/get_one",
-				"    defineEffect('store/get_one', ...",
-				"",
-				"Hint: A build keeps the sections whose ids an app uses and leaves the",
-				"rest out, so it has to know what each section defines.",
-				"",
-				"The guide has more on this: https://niclas-ahden.github.io/joy/#custom-effects",
-			],
-			"\n",
-		),
-	]
+		== [
+			Str.join_with(
+				[
+					"── ✗ custom effect section without its code ─────────────────────── pkg/Store.js",
+					"",
+					"The code under this line does not define the id the line names:",
+					"",
+					"    //// effect store/get_one",
+					"",
+					"The line says what the code below it defines, up to the next such line,",
+					"so the two have the same id:",
+					"",
+					"    //// effect store/get_one",
+					"    defineEffect('store/get_one', ...",
+					"",
+					"Hint: A build keeps the sections whose ids an app uses and leaves the",
+					"rest out, so it has to know what each section defines.",
+					"",
+					"The guide has more on this: https://niclas-ahden.github.io/joy/#custom-effects",
+				],
+				"\n",
+			),
+		]
 }
 expect CustomEffects.mismatched([{ file: "pkg/Store.js", source: "//// subscription store/changes\ndefineEffect('store/changes', () => 1);\n" }]).len() == 1
 expect CustomEffects.mismatched([{ file: "pkg/Store.js", source: "//// effect store/get_one\n// defineEffect('store/get_one', () => 1);\n" }]).len() == 1

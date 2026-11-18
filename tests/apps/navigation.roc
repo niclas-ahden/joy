@@ -1,11 +1,11 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../platform/main.roc",
 	url: "https://github.com/niclas-ahden/roc-url/releases/download/0.7.1/AuBv5v9TGGUS4yRtC8tLEVyEr7MkaReZCeuu2sYANn8F.tar.zst",
 }
 
-import html.Html exposing [a, div, h1, h2, p, input, button, text]
-import html.Attribute exposing [href, id, placeholder, on_input, on_click]
+import html.Html exposing [a, button, div, h1, h2, input, p, text]
+import html.Attribute exposing [href, id, on_click, on_input, placeholder]
 import pf.Effect
 import pf.DOM
 import url.Uri
@@ -48,9 +48,9 @@ subscriptions = |_model| [
 
 init : Str -> (Model, List(Effect(Msg)))
 init = |flags|
-# The flags are expected to be the URL search string, e.g.
-# "?q=hats%20on". Wire www/index.html to pass `location.search` so a
-# shared or refreshed link starts with the box filled in.
+	# The flags are expected to be the URL search string, e.g.
+	# "?q=hats%20on". Wire www/index.html to pass `location.search` so a
+	# shared or refreshed link starts with the box filled in.
 	(query_from_search(flags), [])
 
 ## Pull the "q" parameter out of a URL search string, so "?q=hats%20on"

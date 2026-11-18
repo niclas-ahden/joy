@@ -25,8 +25,8 @@
 # build/<opt>/<name>.hot.wasm.
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.32.0/3MnQnCrtfe6XS5qx58MnAGU6iWk8i1N24MYfoejcWeax.tar.zst",
-	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.10.2/7CdYzjBAJmprmnK45oTpmH6BXt76ZASN2Ck5uZQEoWsK.tar.zst",
 	runtime: "tools/runtime/main.roc",
+	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.10.2/7CdYzjBAJmprmnK45oTpmH6BXt76ZASN2Ck5uZQEoWsK.tar.zst",
 }
 
 import pf.Cmd
@@ -372,4 +372,3 @@ summary_counts = |line| {
 	warnings = U64.from_str(at_warning.before.trim()).map_err(|_| NotFound)?
 	Ok({ errors, warnings })
 }
-

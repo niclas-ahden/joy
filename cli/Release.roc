@@ -1,6 +1,7 @@
 ## The Joy release this CLI belongs to: none in a checkout, and the one
 ## bundle-cli.roc names in the copy it bundles for a release.
 Release :: [].{
+
 	## The release's tag, such as 0.36.0, the URL of its platform bundle,
 	## which the bundles of a project init starts name, and the URL of its
 	## notes, which show the command that installs ./joy, since the CLI's own

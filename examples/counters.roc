@@ -1,10 +1,10 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../platform/main.roc",
 }
 
-import html.Html exposing [div, button, ul, li, text]
-import html.Attribute exposing [style, on_click]
+import html.Html exposing [button, div, li, text, ul]
+import html.Attribute exposing [on_click, style]
 import pf.Effect
 
 # Three independent counters. Exercises messages with payloads

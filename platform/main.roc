@@ -166,6 +166,9 @@ drop_bytes_for_host = |_| {}
 # one that matches nothing needs a dropper of its own. Only a hot build has any
 # of this: its copy of this file is this file with each `# hot: ` taken off, so
 # what ships is built as if none of it were here.
+#
+# Do not run `roc fmt` on this file. It moves the `# hot: ` lines inside the
+# header's lists, and the hot copy then no longer parses.
 
 # hot: drop_msg_for_host : Box(Msg) -> {}
 # hot: drop_msg_for_host = |_| {}

@@ -40,7 +40,7 @@ main! = |args| {
 		.map_try!(|dir| Path.utf8(dir).list!())?
 		.join()
 		.map(Path.display)
-		.map_try!(|entry| if Path.utf8(entry).is_dir!()? has_suite!(entry) else Ok([]))?
+		.map_try!(|entry| if (Path.utf8(entry).is_dir!()?) has_suite!(entry) else Ok([]))?
 		.join()
 	if suites.is_empty() {
 		fail!("no tests.roc found in a folder of ${Str.join_with(project_dirs, " or ")}")?
@@ -64,7 +64,7 @@ main! = |args| {
 						Ok(output) => output.status == Exited(0)
 						Err(_) => Bool.False
 					}
-				Ok(if passed [] else ["${dir} in ${engine}"])
+				Ok(if (passed) [] else ["${dir} in ${engine}"])
 			},
 		)?
 		.join()
@@ -77,4 +77,4 @@ main! = |args| {
 }
 
 # The directory, in a list, when it has a suite of its own.
-has_suite! = |dir| Path.utf8("${dir}/tests.roc").is_file!().map_ok(|exists| if exists [dir] else [])
+has_suite! = |dir| Path.utf8("${dir}/tests.roc").is_file!().map_ok(|exists| if (exists) [dir] else [])

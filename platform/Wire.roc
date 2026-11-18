@@ -45,7 +45,7 @@ Wire := [].{
 		u8 = |w, n| put(w, tag_u8, [n])
 
 		bool : Wire.Writer, Bool -> Wire.Writer
-		bool = |w, b| put(w, tag_bool, [if b 1 else 0])
+		bool = |w, b| put(w, tag_bool, [if (b) 1 else 0])
 
 		u16 : Wire.Writer, U16 -> Wire.Writer
 		u16 = |w, n| put(w, tag_u16, le(n.to_u64(), 2))
@@ -152,14 +152,23 @@ Wire := [].{
 
 # The byte in front of each value. www/runtime.js has the same ones.
 tag_u8 = 1
+
 tag_u16 = 2
+
 tag_u32 = 3
+
 tag_u64 = 4
+
 tag_i64 = 5
+
 tag_f64 = 6
+
 tag_bool = 7
+
 tag_bytes = 8
+
 tag_str = 9
+
 tag_u16s = 10
 
 ## What a tag stands for, in words.

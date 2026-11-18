@@ -52,16 +52,18 @@ Sub(msg) := { id : Str, args : List(U8), on_event : Box((List(U8) -> Box(msg))) 
 	## identity comes from the id and the arguments, never the callback.
 	map : Sub(a), (a -> b) -> Sub(b)
 	map = |Sub.({ id, args, on_event }), f|
-		Sub.({
-			id: id,
-			args: args,
-			on_event: Box.box(
-				|bytes| {
-					inner = Box.unbox(on_event)
-					Box.box(f(Box.unbox(inner(bytes))))
-				},
-			),
-		})
+		Sub.(
+			{
+				id: id,
+				args: args,
+				on_event: Box.box(
+					|bytes| {
+						inner = Box.unbox(on_event)
+						Box.box(f(Box.unbox(inner(bytes))))
+					},
+				),
+			},
+		)
 
 	## Re-target every subscription of a list, as a page's subscriptions
 	## become the app's: `Sub.map_all(subs, |m| PageMsg(m))`.

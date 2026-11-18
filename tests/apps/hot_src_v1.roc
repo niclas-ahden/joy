@@ -1,10 +1,10 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../platform/main.roc",
 }
 
-import html.Html exposing [div, p, input, text]
-import html.Attribute exposing [id, type, on_key, on_pointer_down, on_file, on_visible]
+import html.Html exposing [div, input, p, text]
+import html.Attribute exposing [id, on_file, on_key, on_pointer_down, on_visible, type]
 import pf.Effect
 import pf.Sub
 import pf.Time

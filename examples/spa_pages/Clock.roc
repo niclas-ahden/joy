@@ -10,6 +10,7 @@ import pf.Sub
 import pf.Time
 
 Clock := [].{
+
 	## The time in ms since the Unix epoch, whether the clock is paused,
 	## and the moments the user marked.
 	Model : { now : I64, paused : Bool, laps : List(I64) }
@@ -52,8 +53,8 @@ Clock := [].{
 			[id("clock")],
 			[
 				h2([], [text("Clock")]),
-				p([id("time")], [text(if model.now == 0 "..." else Clock.format(model.now))]),
-				button([id("pause"), on_click(UserToggledPause)], [text(if model.paused "Resume" else "Pause")]),
+				p([id("time")], [text(if (model.now == 0) "..." else Clock.format(model.now))]),
+				button([id("pause"), on_click(UserToggledPause)], [text(if (model.paused) "Resume" else "Pause")]),
 				button([id("lap"), on_click(UserClickedLap)], [text("Lap")]),
 				button([id("clear"), on_click(UserClearedLaps)], [text("Clear laps")]),
 				ul([id("laps")], model.laps.map(|lap| li([], [text(Clock.format(lap))]))),
@@ -71,7 +72,7 @@ Clock := [].{
 	}
 
 	pad : I64 -> Str
-	pad = |n| if n < 10 "0${n.to_str()}" else n.to_str()
+	pad = |n| if (n < 10) "0${n.to_str()}" else n.to_str()
 }
 
 expect Clock.format(0) == "00:00:00 UTC"

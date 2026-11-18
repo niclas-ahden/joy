@@ -70,15 +70,13 @@ Notes := [].{
 			[id("notes")],
 			[
 				h2([], [text("Notes")]),
-				input(
-					[
-						id("draft"),
-						placeholder("Write a note and press Enter"),
-						value(model.draft),
-						on_input(|s| UserTypedDraft(s)),
-						on_key("keydown", ["Enter"], |_| UserSubmittedDraft).prevent_default(),
-					],
-				),
+				input([
+					id("draft"),
+					placeholder("Write a note and press Enter"),
+					value(model.draft),
+					on_input(|s| UserTypedDraft(s)),
+					on_key("keydown", ["Enter"], |_| UserSubmittedDraft).prevent_default(),
+				]),
 				button([id("add"), on_click(UserSubmittedDraft)], [text("Add")]),
 				button([id("clear"), on_click(UserClearedNotes)], [text("Clear all")]),
 				p(

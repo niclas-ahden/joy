@@ -262,11 +262,11 @@ expect {
 		Ok(req) =>
 			req.id == "joy/http/send"
 				and req.method == "GET"
-					and req.url == "/api/hats"
-						and req.headers == []
-							and req.rest == Wire.writer({}).bytes([]).u64(0).done()
-								and answered(effect, answer_with(200, [], [])) == "ok:200"
-									and answered(effect, answer_with(0, [], [])) == "network"
+				and req.url == "/api/hats"
+				and req.headers == []
+				and req.rest == Wire.writer({}).bytes([]).u64(0).done()
+				and answered(effect, answer_with(200, [], [])) == "ok:200"
+				and answered(effect, answer_with(0, [], [])) == "network"
 		Err(_) => Bool.False
 	}
 }
@@ -278,7 +278,7 @@ expect {
 		Ok(req) =>
 			req.method == "POST"
 				and req.rest == Wire.writer({}).bytes("{}".to_utf8()).u64(0).done()
-					and answered(effect, answer_with(1, [], [])) == "timeout"
+				and answered(effect, answer_with(1, [], [])) == "timeout"
 		Err(_) => Bool.False
 	}
 }
@@ -298,9 +298,9 @@ expect {
 		Ok(sent) =>
 			sent.method == "PATCH"
 				and sent.url == "/api/hats/7"
-					and sent.headers == [{ name: "content-type", value: "application/json" }]
-						and sent.rest == Wire.writer({}).bytes("{}".to_utf8()).u64(2500).done()
-							and answered(effect, answer_with(204, [], [])) == "ok:204"
+				and sent.headers == [{ name: "content-type", value: "application/json" }]
+				and sent.rest == Wire.writer({}).bytes("{}".to_utf8()).u64(2500).done()
+				and answered(effect, answer_with(204, [], [])) == "ok:204"
 		Err(_) => Bool.False
 	}
 }
@@ -312,9 +312,9 @@ expect {
 		Ok(req) =>
 			req.id == "joy/http/send_file"
 				and req.method == "POST"
-					and req.headers == [{ name: "x-tag", value: "a" }]
-						and req.rest == Wire.writer({}).u32(3).u64(0).u64(0).u64(0).done()
-							and answered(effect, answer_with(201, [], [])) == "ok:201"
+				and req.headers == [{ name: "x-tag", value: "a" }]
+				and req.rest == Wire.writer({}).u32(3).u64(0).u64(0).u64(0).done()
+				and answered(effect, answer_with(201, [], [])) == "ok:201"
 		Err(_) => Bool.False
 	}
 }
@@ -343,7 +343,7 @@ expect {
 		Ok(sent) =>
 			sent.method == "PATCH-CHUNK"
 				and sent.rest == Wire.writer({}).u32(4).u64(65536).u64(32768).u64(9000).done()
-					and answered(effect, answer_with(0, [], [])) == "network"
+				and answered(effect, answer_with(0, [], [])) == "network"
 		Err(_) => Bool.False
 	}
 }

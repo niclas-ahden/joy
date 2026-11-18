@@ -56,11 +56,13 @@ Release : {
 published! = |repo| {
 	query = ".[] | select(.draft | not) | select(.prerelease | not) | {tag: .tag_name, date: (.published_at // \"\"), body: (.body // \"\"), assets: [.assets[] | {name, label: (.label // \"\"), url: .browser_download_url}]}"
 	output = capture!(Cmd.new(OsStr.from_str("gh")).args(["api", "--paginate", "repos/${repo}/releases?per_page=100", "--jq", query].map(OsStr.from_str)))?
-	output.split_on("\n").drop_if(|line| line.trim().is_empty()).map_try(|line| {
-		release : Try(Release, _)
-		release = Json.parse(line)
-		release.map_err(|_| Exit(1))
-	})
+	output.split_on("\n").drop_if(|line| line.trim().is_empty()).map_try(
+		|line| {
+			release : Try(Release, _)
+			release = Json.parse(line)
+			release.map_err(|_| Exit(1))
+		},
+	)
 }
 
 entry = |{ tag, date, body, assets }| {

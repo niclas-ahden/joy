@@ -150,9 +150,9 @@ main! = |args| {
 on_path! : Str => Bool
 on_path! = |program|
 	succeeds!(program)
-	# npm installs the CLI as `<name>.cmd` on Windows, and a spawn's PATH
-	# search there only ever appends `.exe`, so the bare name resolves on
-	# Unix and nowhere else. Try the shim second.
+		# npm installs the CLI as `<name>.cmd` on Windows, and a spawn's PATH
+		# search there only ever appends `.exe`, so the bare name resolves on
+		# Unix and nowhere else. Try the shim second.
 		or succeeds!("${program}.cmd")
 
 # Whether `program --version` runs and exits 0.

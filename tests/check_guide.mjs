@@ -44,8 +44,9 @@ const rocFiles = (dir) => readdirSync(dir).flatMap((name) => {
   return name.endsWith('.roc') ? [path] : [];
 });
 const significant = (lines) => lines.map((l) => l.trim()).filter((l) => l !== '');
-// A release's URL is not known here, so the line naming it stands for any platform.
-const anyPlatform = (line) => line.startsWith('pf: platform "');
+// A release's URL is not known here, so a platform's name stands for any platform,
+// on a line of its own or in a header written on one line.
+const anyPlatform = (line) => line.replace(/pf: platform "[^"]*"/, 'pf: platform "*"');
 const corpus = [...rocFiles('examples'), ...rocFiles('cli/templates'), ...rocFiles('guide/samples')].map((path) => ({ path, lines: significant(readFileSync(path, 'utf8').split('\n')) }));
 
 // The lines of `sample` that `file` lacks, in order, once those before them matched.
@@ -53,7 +54,7 @@ const missing = (sample, file) => {
   let from = 0;
   const lacked = [];
   for (const line of sample) {
-    const at = file.lines.findIndex((l, i) => i >= from && (l === line || (anyPlatform(line) && anyPlatform(l))));
+    const at = file.lines.findIndex((l, i) => i >= from && (l === line || anyPlatform(l) === anyPlatform(line)));
     if (at < 0) lacked.push(line);
     else from = at + 1;
   }

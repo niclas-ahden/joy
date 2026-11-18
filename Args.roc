@@ -80,7 +80,7 @@ Args :: [].{
 							"\n",
 						),
 					)
-				}
+			}
 		}
 
 	## Reject levels that cannot produce what this repo builds, before any

@@ -1,10 +1,10 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../../platform/main.roc",
 }
 
-import html.Html exposing [div, button, article, h2, p, a, text, element]
-import html.Attribute exposing [class, href, attribute, on_click]
+import html.Html exposing [a, article, button, div, element, h2, p, text]
+import html.Attribute exposing [attribute, class, href, on_click]
 import pf.Effect
 
 # Benchmark app shaped like a listings search page: a header whose text
@@ -113,7 +113,7 @@ view = |model|
 					button([on_click(HeroTick)], [text("tick")]),
 					button([on_click(Swap)], [text("swap")]),
 					button([on_click(Rotate)], [text("rotate")]),
-					if model.badge_em element("em", [class("badge")], [text("new")]) else Html.span([class("badge")], [text("new")]),
+					if (model.badge_em) element("em", [class("badge")], [text("new")]) else Html.span([class("badge")], [text("new")]),
 					chips(model.order, "a"),
 					chips(model.order, "b"),
 					text("q ${model.query}"),

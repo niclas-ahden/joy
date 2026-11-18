@@ -11,6 +11,7 @@ import Browser
 ## that reloads has no answer meanwhile, so these wait by asking again, where
 ## assert! could time out.
 HotDev :: [].{
+
 	## Whether the CLI is built: it is not on Windows, which has no host for it
 	## yet, and a test then passes without running.
 	has_cli! = || {
@@ -52,7 +53,6 @@ HotDev :: [].{
 		Ok({ dir, dev, browser, page, url: "http://localhost:${port}" })
 	}
 
-
 	## Run ./joy dev on the project at `dir` and open a browser, for a project whose
 	## own server serves its pages: the server listens on `port`, and `env` is the
 	## rest of its environment, as `NAME=value` words.
@@ -61,6 +61,7 @@ HotDev :: [].{
 		{ browser, page } = Browser.launch!()?
 		Ok({ dir, dev, browser, page, url: "http://127.0.0.1:${port}" })
 	}
+
 	## Close the browser and ./joy dev.
 	stop! = |started| {
 		started.browser.close!()?
@@ -170,7 +171,7 @@ HotDev :: [].{
 	}
 
 	## Fails unless `got` is `want`.
-	same! = |got, want| if got == want Ok({}) else Err(NotSame({ got, want }))
+	same! = |got, want| if (got == want) Ok({}) else Err(NotSame({ got, want }))
 
 	## Let builds and events settle, for a test that shows nothing happened.
 	quiet! = || Sleep.millis!(3_000)

@@ -1,6 +1,6 @@
-app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../platform/main.roc",
+app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	pf: platform "../platform/main.roc",
 }
 
 import html.Html exposing [div, h1, p, pre, small, text]
@@ -22,7 +22,7 @@ Model : I32
 Msg : [Tick]
 
 subscriptions = |model|
-	if model < 3 [Port.listen("excitement", |_| Tick)] else []
+	if (model < 3) [Port.listen("excitement", |_| Tick)] else []
 
 init : Str -> (Model, List(Effect(Msg)))
 init = |_|
@@ -39,7 +39,7 @@ update = |model, msg|
 					Port.send("level", (model + 1).to_str()),
 				],
 			)
-		}
+	}
 
 view : Model -> Html(Msg)
 view = |model|
@@ -66,4 +66,4 @@ view = |model|
 					},
 				],
 			)
-		}
+	}
