@@ -262,11 +262,10 @@ start_build! = |path, opt, hot| {
 	swap_platform = if (hot) ["--replace-dep", "${here}/platform/main.roc", "${here}/${hot_platform}/main.roc"] else []
 
 	## Memory size
-	# `--wasm-memory=0` makes both `wasm-ld` and Roc's built-in linker
-	# automatically determine the necessary memory size. That'll roughly be the
-	# data section of the app (constants etc. from the user's app) plus the
-	# stack size. Since the data section is app-dependent we don't want to
-	# have to specify a fixed memory size.
+	# Roc sizes the memory itself when no `--wasm-memory` is given: roughly
+	# the data section of the app (constants etc. from the user's app) plus
+	# the stack size. Since the data section is app-dependent we don't want
+	# to have to specify a fixed memory size.
 	#
 	## Stack size
 	# We are using a fixed stack size of 1 MiB, which by testing corresponds to
@@ -282,7 +281,7 @@ start_build! = |path, opt, hot| {
 	# The engine's native call stack is a separate limit, and in optimized
 	# builds it usually binds first.
 	Cmd.new(OsStr.from_str("roc"))
-		.args(["build", "--opt=${opt}", "--target=wasm32", "--wasm-memory=0", "--wasm-stack-size=1048576", "--no-cache"].concat(swap_platform).concat(["--output=${out}", src]).map(OsStr.from_str))
+		.args(["build", "--opt=${opt}", "--target=wasm32", "--wasm-stack-size=1048576", "--no-cache"].concat(swap_platform).concat(["--output=${out}", src]).map(OsStr.from_str))
 		.stdout(Capture)
 		.stderr(Capture)
 		.spawn_leashed!()
