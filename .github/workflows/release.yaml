@@ -9,7 +9,7 @@ name: Release
 #    full browser matrix on main. This proves the compiler that bundles.
 # 2. `draft` bundles the platform and the CLI, starts and builds a project
 #    with that CLI, and creates a DRAFT release with both bundles,
-#    docs and starter notes attached. A human presses Publish. Drafting before
+#    docs and notes attached. A human presses Publish. Drafting before
 #    the bundle is tested is deliberate: the draft is what the rest of the run
 #    tests, so it has to exist first, and nothing is public until Publish.
 # 3. The advisory board: every nightly worth asking about (the newest, and the
@@ -222,7 +222,7 @@ jobs:
             sleep 0.5
           done
           cd verify-cli/app
-          ${{ steps.setup.outputs.prefix }} roc run --opt=speed "http://127.0.0.1:8789/joy/$cli" init --template spa --no-input
+          ${{ steps.setup.outputs.prefix }} roc run "http://127.0.0.1:8789/joy/$cli" init --template spa --no-input
           # ./joy dev first, as a new project does: it reads the release's files
           # before anything has built, so it has to fetch them itself.
           ${{ steps.setup.outputs.prefix }} ./joy dev --port 8790 > ../dev.log 2>&1 &
@@ -320,7 +320,7 @@ jobs:
               echo "In an empty folder, with the Roc above:"
               echo ""
               echo '```sh'
-              echo "roc run --opt=speed $cli_url init"
+              echo "roc run $cli_url init"
               echo '```'
               echo ""
               echo "It asks what kind of app you want, writes it into the folder, and installs \`./joy\`. In a fresh clone of a project, the same command installs \`./joy\` and leaves the app as it is."

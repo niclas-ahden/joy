@@ -58,7 +58,7 @@
                 wasm-pack
                 wasmtime # run standalone wasm32-wasip1 repros
                 watchexec
-                caddy # serves the todomvc template's dev and test servers
+                caddy # serves the build under test in examples/spa-todomvc/tests.roc
                 nodejs_22 # runs the tests/check_*.mjs harnesses
                 uglify-js # bundle.roc minifies what a release ships
                 esbuild # cli/tests.roc runs the guide's commands for these two
