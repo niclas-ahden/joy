@@ -81,7 +81,7 @@ view = |model|
 
 ## Getting started
 
-First install [Roc](https://www.roc-lang.org/). Joy follows Roc's nightly builds, and each release names the nightly it is tested with in its notes. The latest release is tested with [`roc nightly-2026-10-17-5f126ac`](https://github.com/roc-lang/nightlies/releases/tag/nightly-2026-10-17-5f126ac). Another Roc can fail to build Joy's command line with an error that says nothing about versions.
+First install [Roc](https://www.roc-lang.org/). Joy follows Roc's nightly builds, and each release names the nightly it is tested with in its notes. The latest release is tested with [`roc nightly-2026-11-18-a520eed`](https://github.com/roc-lang/nightlies/releases/tag/nightly-2026-11-18-a520eed). Another Roc can fail to build Joy's command line with an error that says nothing about versions.
 
 Then make a folder for your project, and run Joy's command line in it:
 
