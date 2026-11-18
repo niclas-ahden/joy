@@ -4,13 +4,14 @@
 Route := [].{
 	Route : [Home, About]
 
-	## The route a path names. A query or a fragment after it does not count.
+	## The route a URL names. A query or a fragment after the path does not
+	## count.
 	parse : Str -> Try(Route.Route, [NotFound])
-	parse = |path| {
+	parse = |url| {
 		without_fragment =
-			match path.split_first("#") {
+			match url.split_first("#") {
 				Ok({ before, .. }) => before
-				Err(_) => path
+				Err(_) => url
 			}
 		without_query =
 			match without_fragment.split_first("?") {
@@ -32,6 +33,8 @@ Route := [].{
 		}
 }
 
+# The compiler cannot see a route that `parse` forgets, so each route goes
+# through `to_path` and back here.
 expect Route.parse(Route.to_path(Home)) == Ok(Home)
 expect Route.parse(Route.to_path(About)) == Ok(About)
 expect Route.parse("/about?from=menu#top") == Ok(About)

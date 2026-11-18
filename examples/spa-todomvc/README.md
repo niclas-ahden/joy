@@ -1,49 +1,44 @@
 # Joy TodoMVC
 
-[TodoMVC](https://todomvc.com) written in [Joy](https://github.com/niclas-ahden/joy), a framework for building web apps in [Roc](https://www.roc-lang.org). It is a small but complete app, so it is also the fastest way to start one of your own: clone it and edit `app.roc`.
+[TodoMVC](https://todomvc.com) written in [Joy](https://github.com/niclas-ahden/joy), a framework for building web apps in [Roc](https://www.roc-lang.org). It is a small but complete single-page app, with no server of its own: `./joy build` writes a folder any static host can serve. To start an app of your own, run `./joy init` in an empty folder instead of copying this one.
 
 ## Run it
 
-You need [`caddy`](https://caddyserver.com/docs/install) and Roc on your PATH (we recommend [`roc nightly-2026-10-06-c34079d`](https://github.com/roc-lang/nightlies/releases/tag/nightly-2026-10-06-c34079d)). Download the archive for your platform from that page, extract it, and put the `roc` binary on your PATH. If you use Nix, `nix develop` hands you both instead.
+The example is a Joy project inside the Joy repository, and its app builds against the checkout's platform. Use the repository's dev shell (`nix develop` at the root), and install `./joy`, the command line every Joy project has, in this folder:
+
+```sh
+$ roc build --opt=dev ../../cli/main.roc --output=joy
+```
 
 Then:
 
 ```sh
-$ git clone https://github.com/niclas-ahden/joy-todomvc
-$ cd joy-todomvc
-$ ./watch.roc
+$ ./joy dev
 ```
 
-Your app is now running at [`http://localhost:8000`](http://localhost:8000). Edit `app.roc` and it recompiles on save. Refresh the browser to see your changes (there is no hot-reloading yet). Set `JOY_WATCH_PORT` to serve on another port.
+Your app is now running at [`http://localhost:8000`](http://localhost:8000). Edit `client/app.roc` and save: the open page takes the new build and keeps the todos you typed. `./joy dev --port 8080` serves on another port.
 
-That is the whole setup. `app.roc`'s header names Joy and [`joy-html`](https://github.com/niclas-ahden/joy-html) by URL, so Roc downloads them for you on the first build and there is nothing else to install or compile.
-
-Roc is a moving target, so which version you use matters. We test the latest Joy release against the newest nightly every morning and move the name above forward whenever it passes. Each [Joy release](https://github.com/niclas-ahden/joy/releases) also names the nightly it shipped against, under "Roc compiler version". The `nix develop` shell pins its own compiler and may build it from source the first time, which takes a while. After that it comes from the Nix cache.
+For deploying, `./joy build` writes `dist/client/`: the page, the stylesheet and the app's wasm under names with a hash of their content, and Joy's runtime with only the browser features the app calls.
 
 ## Test it
 
 ```sh
-$ ./tests.roc
+$ roc tests.roc
 ```
 
-Builds the app and drives it through a real Chromium, so this one also wants [`playwright`](https://playwright.dev) with a chromium installed (`nix develop` covers it). Every `tests/*_test.roc` is a standalone Roc program that steers the browser with [roc-playwright](https://github.com/niclas-ahden/roc-playwright), and [roc-spec](https://github.com/niclas-ahden/roc-spec) runs them in parallel, each worker against its own server. `./tests.roc edit` runs only the tests whose name contains "edit", and `--fail-fast` stops at the first failure.
+Builds what ships with `./joy build` into `.joy/test/build/` and drives it through a real Chromium, so this one also wants [`playwright`](https://playwright.dev) with a chromium installed, and [`caddy`](https://caddyserver.com) to serve the build (`nix develop` covers both). Every `e2e/*_test.roc` is a standalone Roc program that steers the browser with [roc-playwright](https://github.com/niclas-ahden/roc-playwright), and [roc-spec](https://github.com/niclas-ahden/roc-spec) runs them in parallel, each worker against its own server. `roc tests.roc edit` runs only the tests whose name contains "edit", and `--fail-fast` stops at the first failure.
 
-A full run ends with a smoke pass over the dev loop itself: it starts `./watch.roc` and runs a browser test against it, so the scripts you develop with are tested too.
+A full run ends with a smoke pass over the loop you work in: it starts `./joy dev` and runs a browser test against it.
 
 ## Structure
 
-The whole app is this directory:
-
-* `app.roc` is the app: model, messages, update and view. This is the file to play with.
-* `www/` is its page and styles. `build.roc` puts the compiled `app.wasm` and Joy's `runtime.js` next to them (both gitignored). For deploying, `./build.roc --release` optimizes for size and keeps only the browser features the app calls in `runtime.js`.
-* `watch.roc` serves the app and rebuilds it on save.
-* `tests.roc` and `tests/` drive the app through a real Chromium, then smoke test `watch.roc`.
-* `Caddyfile` is the static file server `watch.roc` and the test servers share.
+* `client/app.roc` is the app: model, messages, update and view. This is the file to play with. A Joy app in `client/` is a bundle, and `./joy` builds every one it finds there.
+* `public/index.html` is the page. The element with `data-joy-bundle="app"` is where the app mounts, and `joy.js` is Joy's loader.
+* `assets/css/style.css` is the stylesheet. A build gives a file in `assets/` a hashed name and puts that name in the page.
+* `tests.roc` and `e2e/` drive the app through a real Chromium, then smoke test `./joy dev`.
 
 ## Learn more
 
 * [Joy's documentation](https://niclas-ahden.github.io/joy) for the platform API.
-* [More Joy examples](https://github.com/niclas-ahden/joy/tree/main/examples), each a single file.
+* [More Joy examples](https://github.com/niclas-ahden/joy/tree/main/examples), most of them a single file.
 * [A tour of Roc's syntax](https://github.com/roc-lang/roc/blob/main/docs/mini-tutorial-new-compiler.md) if the language is new to you.
-
-Play around with it, it's a great starting point for a web app!

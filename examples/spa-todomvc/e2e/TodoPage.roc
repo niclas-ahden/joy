@@ -1,6 +1,6 @@
 # Shared helpers for the browser tests. Not a test itself: the runner only
 # spawns files ending in _test.roc, so this module can sit here. Launching is
-# spelled out rather than borrowed from tests/e2e/Browser.roc, so this
+# spelled out rather than borrowed from Joy's own tests, so this
 # directory stands on its own.
 import pf.Cmd
 import pf.OsStr
@@ -14,11 +14,9 @@ TodoPage :: [].{
 	## input only exists once the wasm has rendered, so waiting for it
 	## means every test starts against a running app.
 	##
-	## The URL under test comes from E2E_URL, which both test runners
-	## set: Joy's e2e.roc exports one shared server, this directory's
-	## run.roc gives every worker its own. Without it, a test run on its
-	## own (`roc tests/add_test.roc`) targets the ./watch.roc dev server.
-	## Every server answers under /spa-todomvc/, so one URL fits them all.
+	## The URL under test comes from E2E_URL, which run.roc sets to its
+	## worker's server. Without it, a test run on its own
+	## (`roc e2e/add_test.roc`) targets ./joy dev on its default port.
 	open! = |{}| {
 		browser_type = match Env.var_str!("JOY_BROWSER") ?? "chromium" {
 			"firefox" => Firefox
@@ -29,9 +27,8 @@ TodoPage :: [].{
 			{ new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis },
 			{ browser_type, timeout: TimeoutMilliseconds(10000) },
 		)?
-		watch_port = Env.var_str!("JOY_WATCH_PORT") ?? "8000"
-		base = Env.var_str!("E2E_URL") ?? "http://localhost:${watch_port}"
-		page.navigate!("${base}/spa-todomvc/")?
+		base = Env.var_str!("E2E_URL") ?? "http://localhost:8000"
+		page.navigate!("${base}/")?
 		assert!(page.find(".new-todo").is_visible())?
 		Ok({ browser, page })
 	}

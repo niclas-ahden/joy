@@ -9,7 +9,7 @@ About := [].{
 			[],
 			[
 				h1([], [text("About")]),
-				p([], [text("Route.roc has every URL of the app. Add one there, and the compiler shows what else needs it.")]),
+				p([], [text("Route.roc has every URL of the app. Add one there, and the compiler shows where the app needs to know about it. Its line in Route.parse and a link to it are yours to add.")]),
 			],
 		)
 }

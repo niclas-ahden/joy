@@ -21,27 +21,44 @@ Model : [Home(HomePage.Model), About, NotFound]
 Msg : [
 	UserClickedLink(Route.Route),
 	UserWentBackOrForward(Str),
-	Home(HomePage.Msg),
+	HomeMsg(HomePage.Msg),
 ]
 
-## The page passes the path it was opened at as the flags (see
+## The page passes the URL it was opened at as the flags (see
 ## public/index.html), so a refresh or a shared link opens the same page.
 init : Str -> (Model, List(Effect(Msg)))
-init = |path| open(Route.parse(path))
+init = |url| open(Route.parse(url))
 
 update : Model, Msg -> (Model, List(Effect(Msg)))
 update = |model, msg|
-	match (model, msg) {
-		(_, UserClickedLink(route)) => {
-			(page, effects) = open(Ok(route))
-			(page, effects.append(DOM.push_url(Route.to_path(route))))
+	match msg {
+		# A link to the page on screen changes nothing. Any other opens its
+		# page at the top, and adds its URL to the history so Back returns.
+		UserClickedLink(route) =>
+			if on_screen(model) == Ok(route) {
+				(model, [])
+			} else {
+				(page, effects) = open(Ok(route))
+				(page, effects.concat([DOM.push_url(Route.to_path(route)), DOM.scroll_to({ x: 0, y: 0 })]))
+			}
+
+		# The browser has changed the URL already. A URL that still names the
+		# page on screen leaves the page as it is.
+		UserWentBackOrForward(url) => {
+			found = Route.parse(url)
+			if found == on_screen(model) {
+				(model, [])
+			} else {
+				open(found)
+			}
 		}
 
-		(_, UserWentBackOrForward(path)) => open(Route.parse(path))
-		(Home(page), Home(page_msg)) => on_page(HomePage.update(page, page_msg), |p| Home(p), |m| Home(m))
-
-		# A message for a page that is no longer on screen, like a late timer.
-		_ => (model, [])
+		HomeMsg(page_msg) =>
+			match model {
+				Home(page) => on_page(HomePage.update(page, page_msg), |p| Home(p), |m| HomeMsg(m))
+				# A message for a page that is no longer on screen, like a late timer.
+				_ => (model, [])
+			}
 	}
 
 ## Back and Forward change the URL without a message of the app's own, so
@@ -50,17 +67,17 @@ subscriptions : Model -> List(Sub(Msg))
 subscriptions = |model| {
 	page =
 		match model {
-			Home(home) => HomePage.subscriptions(home).map(|sub| sub.map(|m| Home(m)))
+			Home(home) => HomePage.subscriptions(home).map(|sub| sub.map(|m| HomeMsg(m)))
 			About | NotFound => []
 		}
-	[DOM.on_url_change(|path| UserWentBackOrForward(path))].concat(page)
+	[DOM.on_url_change(|url| UserWentBackOrForward(url))].concat(page)
 }
 
 view : Model -> Html(Msg)
 view = |model| {
 	page =
 		match model {
-			Home(home) => Html.map(HomePage.view(home), |m| Home(m))
+			Home(home) => Html.map(HomePage.view(home), |m| HomeMsg(m))
 			About => AboutPage.view({})
 			NotFound => p([], [text("There is no page here.")])
 		}
@@ -73,13 +90,33 @@ view = |model| {
 	)
 }
 
-## The page a route opens, from the start.
+## The page a route opens, from the start, with its title on the tab.
 open : Try(Route.Route, [NotFound]) -> (Model, List(Effect(Msg)))
-open = |found|
-	match found {
-		Ok(Home) => on_page(HomePage.init({}), |p| Home(p), |m| Home(m))
-		Ok(About) => (About, [])
-		Err(NotFound) => (NotFound, [])
+open = |found| {
+	(model, effects) =
+		match found {
+			Ok(Home) => on_page(HomePage.init({}), |p| Home(p), |m| HomeMsg(m))
+			Ok(About) => (About, [])
+			Err(NotFound) => (NotFound, [])
+		}
+	(model, effects.append(DOM.set_title("${title(model)} - Joy app")))
+}
+
+## The route of the page on screen.
+on_screen : Model -> Try(Route.Route, [NotFound])
+on_screen = |model|
+	match model {
+		Home(_) => Ok(Home)
+		About => Ok(About)
+		NotFound => Err(NotFound)
+	}
+
+title : Model -> Str
+title = |model|
+	match model {
+		Home(_) => "Home"
+		About => "About"
+		NotFound => "Not found"
 	}
 
 ## A page's update, put back into the app's model and messages.
@@ -93,15 +130,8 @@ link = |label, route, model|
 	a(
 		[
 			href(Route.to_path(route)),
-			class_list([("current", is_on(model, route))]),
+			class_list([("current", on_screen(model) == Ok(route))]),
 			on_click(UserClickedLink(route)).prevent_default(),
 		],
 		[text(label)],
 	)
-
-is_on : Model, Route.Route -> Bool
-is_on = |model, route|
-	match (model, route) {
-		(Home(_), Home) | (About, About) => Bool.True
-		_ => Bool.False
-	}

@@ -1,6 +1,6 @@
-# Test-suite runner (invoked by ./tests.roc from the repo root): starts one
-# caddy per worker serving www/, waits until they all answer, then runs every
-# tests/*_test.roc through roc-spec.
+# Test-suite runner (invoked by tests.roc from the example's folder): starts
+# one caddy per worker serving the build in .joy/test/build/client, waits
+# until they all answer, then runs every e2e/*_test.roc through roc-spec.
 #
 # Optional args: a filename pattern (substring) and --fail-fast.
 # Optional env: ROC_SPEC_MAX_WORKERS (default 4).
@@ -46,9 +46,7 @@ hooks = {
 port_of : List(U64), U64 -> U64
 port_of = |ports, index| ports.get(index) ?? 0
 
-## Environment for each test process: its own server's URL, in the same
-## variable Joy's own e2e runner sets, so these tests run unchanged under
-## either runner.
+## Environment for each test process: its own server's URL.
 worker_env : U64 -> List((Str, Str))
 worker_env = |port| [
 	("E2E_URL", "http://localhost:${port.to_str()}"),
@@ -69,7 +67,7 @@ parse_args = |args| {
 	{ pattern, fail_fast }
 }
 
-## The first tests/<name>_test.roc on disk. Every test file carries the same
+## The first e2e/<name>_test.roc on disk. Every test file carries the same
 ## dependency header, so whichever one comes back stands in for all of them.
 first_test_file! : Str => Try(Str, [NoTestFiles])
 first_test_file! = |test_dir| {
@@ -102,14 +100,12 @@ warm_package_cache! = |test_dir|
 		}
 	}
 
-## Start one static file server for the given worker index. The same
-## Caddyfile that ./watch.roc uses, so the tests serve www/ exactly like
-## the dev server does.
+## Start one static file server for the given worker index, on the files
+## ./joy build wrote: what a static host would serve.
 spawn_worker! : U16, U64 => Try(Cmd.Child, _)
 spawn_worker! = |index, port| {
 	Cmd.new(OsStr.from_str("caddy"))
-		.args(["run", "--config", "Caddyfile", "--adapter", "caddyfile"].map(OsStr.from_str))
-		.env(OsStr.from_str("JOY_WATCH_PORT"), OsStr.from_str(port.to_str()))
+		.args(["file-server", "--root", ".joy/test/build/client", "--listen", ":${port.to_str()}"].map(OsStr.from_str))
 		.stdout(Null)
 		.stderr(Null)
 		.spawn_leashed!()
@@ -133,7 +129,7 @@ main! = |os_args| {
 	# runs beside a dev server or anything else listening on this machine.
 	ports = free_ports!(workers.to_u64())?
 
-	warm_package_cache!("tests")?
+	warm_package_cache!("e2e")?
 
 	Stdout.line!("Starting ${workers.to_str()} test servers...")?
 
@@ -149,7 +145,7 @@ main! = |os_args| {
 
 	Stdout.line!("All ${workers.to_str()} test servers ready")?
 
-	results = Spec.run_filtered!(hooks, "tests", {
+	results = Spec.run_filtered!(hooks, "e2e", {
 		test_command: ["roc", "--opt=speed"],
 		max_workers: workers,
 		worker_envs: |index| worker_env(port_of(ports, index)),

@@ -1,5 +1,5 @@
 app [Model, Msg, init, update, view, subscriptions] {
-	pf: platform "../../platform/main.roc",
+	pf: platform "../../../platform/main.roc",
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc1/6eTqakHk59tsBefdx2VPuYDVZxG8SoEtzE74e7MzyoBq.tar.zst",
 }
 
@@ -9,8 +9,8 @@ import pf.DOM
 import pf.Effect
 
 # TodoMVC (https://todomvc.com) as a client-side Joy app. All state lives in
-# the model, so a page reload starts you over. The page, styles and browser
-# tests live next to this file, so the whole example is this one directory.
+# the model, so a page reload starts you over. The page is public/index.html,
+# the styles are assets/css/style.css and the browser tests are in e2e/.
 
 Todo : { id : U64, title : Str, done : Bool }
 

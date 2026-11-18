@@ -9,8 +9,8 @@
 <body>
   <div id="app" data-joy-bundle="app"></div>
   <script>
-    // The app opens the page its URL names, so the path is its flags.
-    document.getElementById("app").dataset.joyFlags = location.pathname;
+    // The app opens the page its URL names, so the URL is its flags.
+    document.getElementById("app").dataset.joyFlags = location.pathname + location.search + location.hash;
   </script>
   <script type="module" src="/joy.js"></script>
 </body>
