@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - 'platform/**'
-      - 'docs/**'
+      - 'guide/**'
   # Re-deploy when a release is published. Its docs.tar.gz was attached while
   # the release was still a draft (see release.yaml), so it is already there
   # to serve.
@@ -65,19 +65,45 @@ jobs:
               echo "no docs.tar.gz on $tag, skipping"
             fi
           done
-          # gh lists newest releases first, so the first hit is the landing
-          # page target. Fall back to the main-branch docs before any release
-          # has published docs.
-          echo "${latest:-main}" > /tmp/redirect-target
+          # gh lists newest releases first, so the first hit is the release
+          # the guide links to. Fall back to the main-branch docs before
+          # any release has published docs.
+          echo "${latest:-main}" > /tmp/latest-docs
 
       - name: Build docs for the main branch
         run: ${{ steps.setup.outputs.prefix }} roc docs platform/main.roc --output=site/main
 
-      - name: Add the landing page
+      # The guide's topics are Roc modules, rendered into its page.
+      - name: Build the guide
+        run: ${{ steps.setup.outputs.prefix }} bash -c 'cd guide && roc ./build.roc'
+
+      # The guide is the landing page, and links to the API docs. Its samples
+      # name the platform as VERSION/HASH, which becomes the platform bundle
+      # of the same release, so a sample that is copied builds. A release
+      # labels that asset "platform". Older ones have one bundle and no
+      # label. With no release to name, the samples stay as they are written.
+      - name: Add the guide
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          redirect=$(cat /tmp/redirect-target)
-          sed "s|LATESTVERSION|$redirect|g" docs/index.html > site/index.html
-          echo "landing page redirects to $redirect"
+          latest=$(cat /tmp/latest-docs)
+          cp guide/www/style.css site/
+          platform=""
+          if [ "$latest" != "main" ]; then
+            assets=$(gh release view "$latest" --repo "${{ github.repository }}" --json assets \
+              -q '.assets[] | select(.name | endswith(".tar.zst")) | "\(.label) \(.url)"' 2>/dev/null || true)
+            platform=$(printf '%s\n' "$assets" | sed -n 's|^platform ||p' | head -1)
+            [ -n "$platform" ] || platform=$(printf '%s\n' "$assets" | sed -n 's|^ ||p' | head -1)
+          fi
+          placeholder="https://github.com/niclas-ahden/joy/releases/download/VERSION/HASH.tar.zst"
+          if [ -n "$platform" ]; then
+            sed -e "s|LATESTVERSION|$latest|g" -e "s|$placeholder|$platform|g" guide/www/index.html > site/index.html
+            echo "the guide's samples name $platform"
+          else
+            sed "s|LATESTVERSION|$latest|g" guide/www/index.html > site/index.html
+            echo "no platform bundle to name, the guide's samples keep VERSION/HASH"
+          fi
+          echo "the guide links to the docs for $latest"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

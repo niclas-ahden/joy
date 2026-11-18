@@ -1,11 +1,12 @@
 name: Test latest Joy release on latest nightly Roc
 
 # Every morning, test the latest published Joy bundle, by its real URL, on
-# the newest Roc nightly. Green moves the recommendation forward in the
-# READMEs (here and in the published joy-todomvc starter) and in that
-# release's notes. Red means we adapt to Roc or report a bug.
+# the newest Roc nightly. Green moves the recommendation forward wherever
+# a nightly is named in this repo and in that release's notes. Red means we adapt
+# to Roc or report a bug.
 #
-# Speed only, because dev and size must not hold back a recommendation.
+# Speed gates the recommendation, on every system and in every browser. Dev
+# and size run beside it and must not hold a recommendation back.
 # Publishing does not trigger this. The release workflow already tested that
 # bundle as a draft.
 
@@ -18,7 +19,7 @@ on:
 permissions:
   contents: read
 
-# Queue instead of cancel. The run ends by pushing to the READMEs and editing
+# Queue instead of cancel. The run ends by pushing the new nightly and editing
 # the release notes, and a cancel between the two leaves them disagreeing.
 concurrency:
   group: nightly-roc
@@ -50,7 +51,7 @@ jobs:
 
           joy_tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)
           bundle=$(gh release view --repo "$GITHUB_REPOSITORY" --json assets \
-                     -q '.assets[] | select(.name | endswith(".tar.zst")) | .url')
+                     -q '.assets[] | select(.label != "cli" and (.name | endswith(".tar.zst"))) | .url')
 
           [ -n "$tag" ] || { echo "error: could not resolve the latest roc nightly" >&2; exit 1; }
           [ -n "$bundle" ] || { echo "error: no platform bundle on Joy $joy_tag" >&2; exit 1; }
@@ -76,12 +77,24 @@ jobs:
       opts: '["speed"]'
       ref: ${{ needs.resolve.outputs.joy }}
       bundle-url: ${{ needs.resolve.outputs.bundle }}
+      e2e: all
 
-  # Green on every leg: recommend this nightly in the READMEs (the checkout,
-  # the TodoMVC starter in-repo and as published) and in the tested release's
-  # notes (bundle users).
+  # Informational: not in update-recommendation's needs.
+  test-opts:
+    needs: resolve
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: '["${{ needs.resolve.outputs.nightly }}"]'
+      label: Joy ${{ needs.resolve.outputs.joy }} on ${{ needs.resolve.outputs.nightly }}
+      opts: '["dev", "size"]'
+      ref: ${{ needs.resolve.outputs.joy }}
+      bundle-url: ${{ needs.resolve.outputs.bundle }}
+      e2e: all
+
+  # Green on every leg: recommend this nightly wherever this repo names one,
+  # and in the tested release's notes (bundle users).
   update-recommendation:
-    name: Name ${{ needs.resolve.outputs.nightly }} in the READMEs and release notes
+    name: Name ${{ needs.resolve.outputs.nightly }} in the repo and the release notes
     needs: [resolve, test]
     runs-on: ubuntu-24.04
     permissions:
@@ -91,106 +104,50 @@ jobs:
         with:
           ref: main
 
-      - name: Name this nightly in the READMEs
+      - name: Name this nightly everywhere in the repo
         env:
           NIGHTLY: ${{ needs.resolve.outputs.nightly }}
         run: |
           set -euo pipefail
 
-          # Both files name a nightly for people who install roc themselves:
-          # the root README for anyone building the checkout, the TodoMVC
-          # starter's for everyone who clones it as a template.
-          files="README.md examples/todomvc/README.md"
+          # Every nightly tag in a tracked file is the recommended one: the
+          # READMEs, a Dockerfile's ROC_NIGHTLY, anything added
+          # later. So a new reference needs no change here, as long as it
+          # spells out the whole tag (nightly-2026-08-26-b29bef3, never just
+          # the date and the sha).
+          #
+          # .github/ is left out: its tags are examples in input docs, and a
+          # push made with GITHUB_TOKEN may not change workflow files.
+          pattern='nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9a-f]{7,40}'
+          echo "$NIGHTLY" | grep -qxE "$pattern" || {
+            echo "error: $NIGHTLY does not look like a nightly tag, so it replaces nothing" >&2
+            exit 1
+          }
 
-          for file in $files; do
-            # Find the currently recommended nightly in this README
-            current=$(sed -n 's|.*/roc-lang/nightlies/releases/tag/\(nightly-[^)]*\)).*|\1|p' "$file" | head -1)
-            [ -n "$current" ] || {
-              echo "error: no roc nightly link in $file to update" >&2
-              exit 1
-            }
-            if [ "$current" = "$NIGHTLY" ]; then
-              echo "$file already names $NIGHTLY"
-              continue
-            fi
+          files=$(git grep -lE "$pattern" -- . ':!.github' || true)
+          [ -n "$files" ] || {
+            echo "error: no tracked file names a roc nightly, so nothing recommends one" >&2
+            exit 1
+          }
 
-            # The tag is both the link text and the URL, so replace it wherever
-            # it appears and any wording around it survives.
-            sed -i "s|$current|$NIGHTLY|g" "$file"
-            if git diff --quiet "$file"; then
-              echo "error: rewrite of $file changed nothing" >&2
-              exit 1
-            fi
-            echo "$file now recommends $NIGHTLY (was $current)"
-          done
+          # Replace every tag wherever it appears, so a link's text and its
+          # URL move together and the wording around them survives.
+          git grep -lzE "$pattern" -- . ':!.github' | xargs -0 sed -i -E "s/$pattern/$NIGHTLY/g"
 
-          # One README may lag the other, so commit whatever actually moved.
           if git diff --quiet; then
-            echo "every README already names $NIGHTLY"
+            echo "every reference already names $NIGHTLY"
             exit 0
           fi
+          git diff --stat
 
           git config user.name 'GitHub Actions'
           git config user.email ''
-          git add $files
-          git commit -m "README: Update recommended Roc to $NIGHTLY"
+          git add -u
+          git commit -m "Update recommended Roc to $NIGHTLY"
           # main may have moved since checkout, replay this one commit on top
           # rather than failing the push.
           git pull --rebase origin main
           git push
-
-      # The published starter is a copy of examples/todomvc with no nightly
-      # CI of its own (people clone it as a template and should not inherit
-      # our maintenance jobs), so its README moves from here. Only when it
-      # pins the bundle this run tested: a starter that lags the latest
-      # release must not get a claim proven against another bundle. The next
-      # publish brings the two back in sync.
-      - name: Name this nightly in the published starter's README
-        env:
-          NIGHTLY: ${{ needs.resolve.outputs.nightly }}
-          BUNDLE: ${{ needs.resolve.outputs.bundle }}
-          TOKEN: ${{ secrets.TODOMVC_PUSH_TOKEN }}
-        run: |
-          set -euo pipefail
-
-          [ -n "$TOKEN" ] || {
-            echo "error: the TODOMVC_PUSH_TOKEN secret is missing. Create a fine-grained token with contents read/write on niclas-ahden/joy-todomvc and add it to this repo's secrets." >&2
-            exit 1
-          }
-
-          git clone --depth=1 "https://x-access-token:${TOKEN}@github.com/niclas-ahden/joy-todomvc" starter
-          cd starter
-
-          if ! grep -qF "platform \"$BUNDLE\"" app.roc; then
-            pinned=$(sed -n 's|.*platform "\(https://[^"]*\)".*|\1|p' app.roc)
-            echo "::warning::joy-todomvc pins $pinned, not the tested $BUNDLE, so its README keeps its current claim"
-            exit 0
-          fi
-
-          current=$(sed -n 's|.*/roc-lang/nightlies/releases/tag/\(nightly-[^)]*\)).*|\1|p' README.md | head -1)
-          if [ -z "$current" ]; then
-            # A pre-starter README without a pinned nightly link. The next
-            # publish ships a README that has one.
-            echo "::warning::no roc nightly link in the starter's README.md, nothing to update"
-            exit 0
-          fi
-          if [ "$current" = "$NIGHTLY" ]; then
-            echo "the starter's README already names $NIGHTLY"
-            exit 0
-          fi
-
-          sed -i "s|$current|$NIGHTLY|g" README.md
-          if git diff --quiet README.md; then
-            echo "error: rewrite of the starter's README.md changed nothing" >&2
-            exit 1
-          fi
-
-          git config user.name 'GitHub Actions'
-          git config user.email ''
-          git add README.md
-          git commit -m "README: Update recommended Roc to $NIGHTLY"
-          git push
-          echo "the starter's README now recommends $NIGHTLY (was $current)"
 
       - name: Name this nightly in the release notes
         env:
@@ -198,6 +155,17 @@ jobs:
         run: |
           .github/scripts/name-nightly.sh \
             "${{ needs.resolve.outputs.joy }}" "${{ needs.resolve.outputs.nightly }}"
+
+  # Refresh versions.json every morning, whether or not the nightly passed. A
+  # green run may have named a new nightly above, and the file is written
+  # from the releases, so one deleted since yesterday drops out on a red day
+  # too. The notes edit above triggers nothing (see versions-index.yml).
+  versions-index:
+    needs: [update-recommendation]
+    if: always()
+    permissions:
+      contents: write
+    uses: ./.github/workflows/versions-index.yml
 
   name-commit-range:
     name: Name the commit range
