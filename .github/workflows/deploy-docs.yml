@@ -105,6 +105,27 @@ jobs:
           fi
           echo "the guide links to the docs for $latest"
 
+      # The guide's editors compile the reader's code in the page, with a
+      # compiler built outside this repository against one release's platform.
+      # It is attached to that release as docs-editor.tar.gz and unpacked
+      # beside the guide. Without it the guide's examples are plain code
+      # blocks, which is how the page reads when its script is missing.
+      - name: Add the guide's editors
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest=$(cat /tmp/latest-docs)
+          if [ "$latest" != "main" ] && gh release download "$latest" --repo "${{ github.repository }}" \
+               --pattern docs-editor.tar.gz --output /tmp/docs-editor.tar.gz --clobber 2>/dev/null; then
+            mkdir -p site/playground
+            tar -xzf /tmp/docs-editor.tar.gz -C site/playground
+            rm /tmp/docs-editor.tar.gz
+            cp guide/www/editor.js site/
+            echo "added the editors of $latest"
+          else
+            echo "::warning::no docs-editor.tar.gz on $latest, so the guide's examples cannot be edited"
+          fi
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

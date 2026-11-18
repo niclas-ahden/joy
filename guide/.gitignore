@@ -1,4 +1,5 @@
 # Written by ./build.roc from page.html and the topics.
 www/index.html
-# The compiler and runtime the playgrounds load, built outside the repo.
+# The compiler and runtime the editors load. They are built outside the repo
+# and attached to each release as docs-editor.tar.gz.
 www/playground/
