@@ -93,6 +93,22 @@
     },
     "nixpkgs_2": {
       "locked": {
+        "lastModified": 1792773339,
+        "narHash": "sha256-rZLrzrC6i+jnTAlvPZHogKDulY7WWDEv9hJeHieO7Zw=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "3ec636362e1816bc2f0888fa0fa2c69f1bc9e504",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_3": {
+      "locked": {
         "lastModified": 1779560665,
         "narHash": "sha256-tpyBcxPpcQb8ukyNF7DoCwfSY3VPsxHoYwj00Cayv5o=",
         "owner": "NixOS",
@@ -107,7 +123,7 @@
         "type": "github"
       }
     },
-    "nixpkgs_3": {
+    "nixpkgs_4": {
       "locked": {
         "lastModified": 1744536153,
         "narHash": "sha256-awS2zRgF4uTwrOKwwiJcByDzDOdo3Q1rPZbiHQg/N38=",
@@ -126,9 +142,7 @@
     "roc-nix": {
       "inputs": {
         "flake-utils": "flake-utils_2",
-        "nixpkgs": [
-          "nixpkgs"
-        ],
+        "nixpkgs": "nixpkgs_2",
         "roc-src": [
           "roc-src"
         ]
@@ -151,7 +165,7 @@
       "inputs": {
         "flake-utils": "flake-utils_3",
         "gitignore": "gitignore",
-        "nixpkgs": "nixpkgs_2"
+        "nixpkgs": "nixpkgs_3"
       },
       "locked": {
         "dir": "src",
@@ -181,7 +195,7 @@
     },
     "rust-overlay": {
       "inputs": {
-        "nixpkgs": "nixpkgs_3"
+        "nixpkgs": "nixpkgs_4"
       },
       "locked": {
         "lastModified": 1789372034,
