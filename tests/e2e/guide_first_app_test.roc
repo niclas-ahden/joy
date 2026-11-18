@@ -1,6 +1,7 @@
-# Real-browser E2E: the guide's Your first app, followed as it is written. The app
-# and the page come from the guide's own text, ./joy dev runs them, and saving the
-# file keeps the count, as the topic says it does.
+# Real-browser E2E: the app of the guide's Your first app, as it is written
+# there, in a project of its own. The app and the page come from the guide's
+# own text, ./joy dev runs them, and saving the file keeps the count, as Joy on
+# your machine says it does.
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.31.0/Ff3fkK1TjYTVxMj9V21FP24ojTJXYk314Fbo1whBZ6Yf.tar.zst",
 	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.14.0/83Dw68fzvXTQMbcZXupMDB3YiEP6pS6YgKxuTDjuMSAw.tar.zst",
@@ -21,8 +22,8 @@ main! = |_args| {
 	Path.utf8("${dir}/client").create_all!()?
 	Path.utf8("${dir}/public").create_all!()?
 
-	# The topic's two blocks of client/counter.roc, on this checkout's platform.
-	blocks = samples!("FirstApp", "client/counter.roc")?
+	# The topic's counter.roc, on this checkout's platform.
+	blocks = samples!("FirstApp", "counter.roc")?
 	source = Str.join_with(blocks, "\n\n")
 	release = "https://github.com/niclas-ahden/joy/releases/download/VERSION/HASH.tar.zst"
 	if !source.contains(release) {
@@ -39,16 +40,15 @@ main! = |_args| {
 
 	started = HotDev.run!(dir, "", "8777")?
 	{ page, url, .. } = started
-	HotDev.open!(page, "${url}/", "#increment")?
-	page.find("#increment").click!()?
-	page.find("#increment").click!()?
-	assert!(page.find("[data-joy-bundle=counter]").has_text("+2-"))?
+	HotDev.open!(page, "${url}/", "[data-joy-bundle=counter] button")?
+	page.find("[data-joy-bundle=counter] button:nth-of-type(2)").click!()?
+	page.find("[data-joy-bundle=counter] button:nth-of-type(2)").click!()?
+	assert!(page.find("[data-joy-bundle=counter]").has_text("-2+"))?
 
-	# "Save client/counter.roc and the open page takes the new build without a
-	# reload: the count you clicked up to stays."
+	# "The page takes the change as you save, no refresh needed."
 	HotDev.mark!(page)?
 	HotDev.edit!("${dir}/client/counter.roc", "[text(\"+\")]", "[text(\"add\")]")?
-	HotDev.shows!(page, "[data-joy-bundle=counter]", "add2-")?
+	HotDev.shows!(page, "[data-joy-bundle=counter]", "-2add")?
 	HotDev.same_page!(page)?
 
 	HotDev.stop!(started)
