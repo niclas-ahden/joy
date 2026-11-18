@@ -44,18 +44,6 @@ HotDev :: [].{
 		}
 	}
 
-	## A copy at `dir`, a folder of build/<opt>/, of a template init does not
-	## offer yet, without what a run in its own folder left there. The template
-	## is as deep in this checkout as `dir`, so its bundles find the platform.
-	copy! = |dir, template| {
-		_ = shell("rm -rf ${dir} && cp -r cli/templates/${template} ${dir} && rm -rf ${dir}/joy ${dir}/.joy ${dir}/dist").run!()?
-		if Path.utf8("${dir}/client").is_dir!() ?? False {
-			Ok({})
-		} else {
-			Err(NoTemplateToCopy(template))
-		}
-	}
-
 	## Run ./joy dev with `args` on the project at `dir`, a folder of build/<opt>/, and
 	## open a browser.
 	run! = |dir, args, port| {
