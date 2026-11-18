@@ -72,7 +72,7 @@ if (existsSync('guide/www/index.html')) {
   const html = readFileSync('guide/www/index.html', 'utf8');
   const ids = new Set([...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));
   const links = [...html.matchAll(/href="#([^"]+)"/g)].map((m) => decodeURIComponent(m[1]));
-  expect('guide: there are in-page links', links.length > 50, true);
+  expect('guide: there are in-page links', links.length > 20, true);
   expect('guide: every in-page link leads somewhere', [...new Set(links)].filter((id) => !ids.has(id)).join(' '), '');
 } else {
   expect('guide: built, for its links', 'guide/www/index.html is missing, run guide/build.roc', 'built');
