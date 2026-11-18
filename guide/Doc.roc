@@ -37,13 +37,13 @@ Doc := [].{
 	## Doc.code, which the page's script turns into an editor beside the
 	## running app (see www/editor.js). Without the script it stays an
 	## ordinary code block.
-	playground : Html([]) -> Html([])
-	playground = |block| div([class("playground"), data("playground", "")], [block])
+	editor : Html([]) -> Html([])
+	editor = |block| div([class("editor"), data("editor", "")], [block])
 
 	## The same with the app's header folded away, for a first look at an app.
 	## The reader can open it.
-	playground_folded : Html([]) -> Html([])
-	playground_folded = |block| div([class("playground"), data("playground", "folded")], [block])
+	editor_folded : Html([]) -> Html([])
+	editor_folded = |block| div([class("editor"), data("editor", "folded")], [block])
 
 	## A code block whose Roc cannot compile, like two rival definitions shown side
 	## by side, so tests/check_guide.mjs leaves it alone.

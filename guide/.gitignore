@@ -2,4 +2,4 @@
 www/index.html
 # The compiler and runtime the editors load. They are built outside the repo
 # and attached to each release as docs-editor.tar.gz.
-www/playground/
+www/editor/

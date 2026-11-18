@@ -117,8 +117,8 @@ jobs:
           latest=$(cat /tmp/latest-docs)
           if [ "$latest" != "main" ] && gh release download "$latest" --repo "${{ github.repository }}" \
                --pattern docs-editor.tar.gz --output /tmp/docs-editor.tar.gz --clobber 2>/dev/null; then
-            mkdir -p site/playground
-            tar -xzf /tmp/docs-editor.tar.gz -C site/playground
+            mkdir -p site/editor
+            tar -xzf /tmp/docs-editor.tar.gz -C site/editor
             rm /tmp/docs-editor.tar.gz
             cp guide/www/editor.js site/
             echo "added the editors of $latest"

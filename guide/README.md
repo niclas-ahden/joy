@@ -39,11 +39,11 @@ from a checkout, those links lead nowhere.
 - `Page.roc` renders the index and the topics into `page.html`, which
   `build.roc` writes to `www/index.html`.
 - `www/` holds the stylesheet beside the page the build writes, and
-  `editor.js`, which turns a `Doc.playground` block into an editor beside the
+  `editor.js`, which turns a `Doc.editor` block into an editor beside the
   running app. The compiler it loads is built outside this repository and
   attached to each release as `docs-editor.tar.gz`, which the Deploy docs
-  workflow unpacks into `playground/`. In a checkout that folder is only
-  there when someone has put the same files in `www/playground/`, and
+  workflow unpacks into `editor/`. In a checkout that folder is only
+  there when someone has put the same files in `www/editor/`, and
   without them the blocks stay as code.
 - `samples/` holds real apps with the guide's Roc samples in them, which
   `tests.roc` compiles. `tests/check_guide.mjs` requires each sample to appear

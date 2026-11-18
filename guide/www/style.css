@@ -257,8 +257,8 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
   color: var(--faded);
 }
 .code-head .file { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-/* A playground's buttons look like Copy but are not Copy buttons. */
-.copy, .pg-button {
+/* An editor's buttons look like Copy but are not Copy buttons. */
+.copy, .ed-button {
   font: inherit;
   color: var(--magenta);
   background: var(--block-bg);
@@ -266,7 +266,7 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
   padding: 0.15rem 0.5rem;
   cursor: pointer;
 }
-.copy:hover, .pg-button:hover { color: var(--link-hover); border-color: var(--link-hover); }
+.copy:hover, .ed-button:hover { color: var(--link-hover); border-color: var(--link-hover); }
 .code pre {
   margin: 0;
   padding: 8px 16px;
@@ -280,7 +280,7 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
   tab-size: 4;
 }
 .code pre code { background: none; padding: 0; font-size: inherit; color: inherit; }
-/* A playground's editor colours Roc with CodeMirror's Elm mode, which gives
+/* An editor colours Roc with CodeMirror's Elm mode, which gives
    types and every symbol the keywords' colour. The code blocks do the same,
    so the two look alike. */
 .k { color: var(--syn-kw); }
@@ -355,41 +355,41 @@ td code { white-space: nowrap; }
 .topic .feature-name { font-weight: 700; color: var(--violet); }
 .topic .feature-name + p { font-size: var(--font-sm); color: var(--faded); }
 
-/* A playground: the editor beside the running app. It is wider than the
+/* An editor: the code beside the running app. It is wider than the
    reading column when the window has room, and centred on it. */
-.playground { margin: 36px 0; }
-.playground .code { margin: 0; }
-.pg {
-  --pg-width: max(100%, min(1440px, calc(100vw - var(--index-width) - 48px)));
-  width: var(--pg-width);
-  margin-left: calc((100% - var(--pg-width)) / 2);
+.editor { margin: 36px 0; }
+.editor .code { margin: 0; }
+.ed {
+  --ed-width: max(100%, min(1440px, calc(100vw - var(--index-width) - 48px)));
+  width: var(--ed-width);
+  margin-left: calc((100% - var(--ed-width)) / 2);
   background: var(--block-bg);
   border: 1px solid var(--violet-border);
 }
-.pg-head { padding-bottom: 8px; gap: 12px; }
-.pg-status { margin-left: auto; white-space: nowrap; }
-.pg-open { white-space: nowrap; }
-.pg-body { display: grid; grid-template-columns: minmax(0, var(--pg-split, 55%)) 9px minmax(0, 1fr); min-height: 20rem; }
-.pg-editor { min-width: 0; }
+.ed-head { padding-bottom: 8px; gap: 12px; }
+.ed-status { margin-left: auto; white-space: nowrap; }
+.ed-open { white-space: nowrap; }
+.ed-body { display: grid; grid-template-columns: minmax(0, var(--ed-split, 55%)) 9px minmax(0, 1fr); min-height: 20rem; }
+.ed-code { min-width: 0; }
 /* The line between the code and the app. Drag it, or focus it and use the
    arrow keys, to give one side more room. A double click evens it out. */
-.pg-split {
+.ed-split {
   position: relative;
   cursor: col-resize;
   touch-action: none;
   background: var(--block-bg);
 }
-.pg-split::before {
+.ed-split::before {
   content: "";
   position: absolute;
   inset: 0 4px;
   background: var(--violet-border);
 }
-.pg-split:hover::before, .pg-split:focus-visible::before, .pg-split.dragging::before { inset: 0 3px; background: var(--violet); }
-.pg-split:focus-visible { outline: none; }
-.pg.resizing { user-select: none; cursor: col-resize; }
-.pg.resizing .pg-output { pointer-events: none; }
-.pg-editor .CodeMirror {
+.ed-split:hover::before, .ed-split:focus-visible::before, .ed-split.dragging::before { inset: 0 3px; background: var(--violet); }
+.ed-split:focus-visible { outline: none; }
+.ed.resizing { user-select: none; cursor: col-resize; }
+.ed.resizing .ed-output { pointer-events: none; }
+.ed-code .CodeMirror {
   height: auto;
   background: var(--block-bg);
   color: var(--block-ink);
@@ -397,15 +397,15 @@ td code { white-space: nowrap; }
   font-size: var(--font-sm);
   line-height: 1.6;
 }
-.pg-editor .CodeMirror-gutters { background: var(--block-bg); border-right: 0; }
-.pg-editor .CodeMirror-linenumber { color: var(--faded); }
-.pg-editor .CodeMirror-cursor { border-left-color: var(--block-ink); }
-.pg-editor .CodeMirror-selected { background: var(--violet-border) !important; }
-.pg .pg-editor .cm-keyword, .pg .pg-editor .cm-builtin, .pg .pg-editor .cm-variable-2 { color: var(--syn-kw); }
-.pg .pg-editor .cm-string, .pg .pg-editor .cm-number { color: var(--syn-lit); }
-.pg .pg-editor .cm-comment { color: var(--syn-com); }
-.pg .pg-editor .cm-def, .pg .pg-editor .cm-variable { color: var(--block-ink); }
-.pg-textarea {
+.ed-code .CodeMirror-gutters { background: var(--block-bg); border-right: 0; }
+.ed-code .CodeMirror-linenumber { color: var(--faded); }
+.ed-code .CodeMirror-cursor { border-left-color: var(--block-ink); }
+.ed-code .CodeMirror-selected { background: var(--violet-border) !important; }
+.ed .ed-code .cm-keyword, .ed .ed-code .cm-builtin, .ed .ed-code .cm-variable-2 { color: var(--syn-kw); }
+.ed .ed-code .cm-string, .ed .ed-code .cm-number { color: var(--syn-lit); }
+.ed .ed-code .cm-comment { color: var(--syn-com); }
+.ed .ed-code .cm-def, .ed .ed-code .cm-variable { color: var(--block-ink); }
+.ed-textarea {
   width: 100%;
   height: 100%;
   min-height: 20rem;
@@ -419,10 +419,10 @@ td code { white-space: nowrap; }
   line-height: 1.6;
   tab-size: 4;
 }
-.pg-output { position: relative; min-width: 0; overflow: auto; background: var(--body-bg); }
-.pg-app { padding: 16px; }
-.pg-app button { font: inherit; font-size: var(--font-lg); min-width: 2.5rem; margin: 0 8px; cursor: pointer; }
-.pg-report {
+.ed-output { position: relative; min-width: 0; overflow: auto; background: var(--body-bg); }
+.ed-app { padding: 16px; }
+.ed-app button { font: inherit; font-size: var(--font-lg); min-width: 2.5rem; margin: 0 8px; cursor: pointer; }
+.ed-report {
   display: none;
   position: absolute;
   inset: 0;
@@ -436,8 +436,8 @@ td code { white-space: nowrap; }
   font-size: var(--font-xs);
   line-height: 1.5;
 }
-.pg-report.shown { display: block; }
-.pg-report .pg-quote { white-space: pre; }
+.ed-report.shown { display: block; }
+.ed-report .ed-quote { white-space: pre; }
 /* What an editor suggests. CodeMirror puts the list on the page's body. */
 .CodeMirror-hints {
   z-index: 40;
@@ -450,13 +450,13 @@ td code { white-space: nowrap; }
   font-size: var(--font-xs);
 }
 .CodeMirror-hint { display: flex; justify-content: space-between; gap: 24px; max-width: 44em; padding: 3px 8px; border-radius: 0; color: var(--text); }
-.pg-hint-type { color: var(--faded); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-hint-type { color: var(--faded); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .CodeMirror-hints li.CodeMirror-hint-active { background: var(--violet); color: var(--body-bg); }
-.CodeMirror-hints li.CodeMirror-hint-active .pg-hint-type { color: inherit; }
+.CodeMirror-hints li.CodeMirror-hint-active .ed-hint-type { color: inherit; }
 /* Where the compiler found a problem. */
-.pg-squiggle { text-decoration: underline wavy #e5484d; text-decoration-skip-ink: none; text-underline-offset: 3px; }
-/* A header the playground folded away. A click opens it. */
-.pg-fold {
+.ed-squiggle { text-decoration: underline wavy #e5484d; text-decoration-skip-ink: none; text-underline-offset: 3px; }
+/* A header the editor folded away. A click opens it. */
+.ed-fold {
   font: inherit;
   color: var(--faded);
   background: none;
@@ -464,7 +464,7 @@ td code { white-space: nowrap; }
   padding: 0 6px;
   cursor: pointer;
 }
-.pg-fold:hover { color: var(--violet); border-color: var(--violet); }
+.ed-fold:hover { color: var(--violet); border-color: var(--violet); }
 
 /* A walk-through: code and the steps it goes through (see Walk.roc). As the
    page is written it is the code and then the steps, each with its lines.
@@ -578,7 +578,7 @@ td code { white-space: nowrap; }
 
 /* Following the scroll, wide and tall enough for the stage: it stays put
    while the page scrolls through the walk-through's height, which the script
-   reads as the steps. It is wider than the reading column, as a playground is. */
+   reads as the steps. It is wider than the reading column, as an editor is. */
 @media (min-width: 1180px) and (min-height: 640px) {
   .walk.live {
     --walk-width: max(100%, min(1040px, calc(100vw - var(--index-width) - 48px)));
@@ -666,10 +666,10 @@ td code { white-space: nowrap; }
   }
   .code { margin-inline: -16px; }
   .features { grid-template-columns: minmax(0, 1fr); }
-  .pg { --pg-width: calc(100% + 32px); border-inline: 0; }
-  .pg-head { flex-wrap: wrap; row-gap: 6px; }
-  .pg-body { grid-template-columns: minmax(0, 1fr); }
-  .pg-editor { border-bottom: 1px solid var(--violet-border); }
-  .pg-split { display: none; }
-  .pg-output { min-height: 12rem; }
+  .ed { --ed-width: calc(100% + 32px); border-inline: 0; }
+  .ed-head { flex-wrap: wrap; row-gap: 6px; }
+  .ed-body { grid-template-columns: minmax(0, 1fr); }
+  .ed-code { border-bottom: 1px solid var(--violet-border); }
+  .ed-split { display: none; }
+  .ed-output { min-height: 12rem; }
 }

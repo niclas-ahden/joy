@@ -17,7 +17,7 @@ Views := [].{
 				text(". This app uses a few more."),
 			],
 		),
-		Doc.playground_folded(
+		Doc.editor_folded(
 			Doc.code(
 				Roc,
 				"guests.roc",
@@ -136,7 +136,7 @@ Views := [].{
 			],
 		),
 		p([], [text("Type \"you\" in the box below and watch the messages come in 👇")]),
-		Doc.playground_folded(
+		Doc.editor_folded(
 			Doc.code(
 				Roc,
 				"typing.roc",

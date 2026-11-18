@@ -1,16 +1,16 @@
-// The guide's playgrounds. Each [data-playground] block (see Doc.playground)
+// The guide's editors. Each [data-editor] block (see Doc.editor)
 // becomes an editor beside the running app. The Roc compiler, built for the
-// browser, runs in one worker that every playground on the page shares, and
+// browser, runs in one worker that every editor on the page shares, and
 // Joy's own runtime mounts what it builds, the way a page mounts a bundle. An
 // edit hot reloads the app, so it keeps its state, and a report from roc
 // covers the app until the code compiles again.
 //
-// Nothing loads until a playground comes into view: the compiler is a large
+// Nothing loads until an editor comes into view: the compiler is a large
 // download, and most visits never reach one.
-const BASE = new URL('./playground/', import.meta.url);
+const BASE = new URL('./editor/', import.meta.url);
 const CODEMIRROR = 'https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16';
 
-const blocks = [...document.querySelectorAll('[data-playground]')];
+const blocks = [...document.querySelectorAll('[data-editor]')];
 const seen = new IntersectionObserver((entries) => {
   for (const entry of entries) {
     if (!entry.isIntersecting) continue;
@@ -20,7 +20,7 @@ const seen = new IntersectionObserver((entries) => {
 }, { rootMargin: '200px' });
 for (const block of blocks) seen.observe(block);
 
-// --- What every playground shares ---
+// --- What every editor shares ---
 
 let compiler = null;
 let nextId = 0;
@@ -107,7 +107,7 @@ function ansiToHtml(text) {
   lines.push(line + '</span>'.repeat(open.length));
   const carets = lines.map((html) => /^\s*\^+\s*$/.test(html.replace(/<[^>]*>/g, '')));
   return lines
-    .map((html, i) => (carets[i] || carets[i + 1] ? `<span class="pg-quote">${html}</span>` : html))
+    .map((html, i) => (carets[i] || carets[i + 1] ? `<span class="ed-quote">${html}</span>` : html))
     .join('\n');
 }
 
@@ -198,7 +198,7 @@ function resizable(split, body, ui, editor) {
   let grab = 0;
   const set = (value) => {
     percent = Math.min(80, Math.max(20, value));
-    body.style.setProperty('--pg-split', `${percent}%`);
+    body.style.setProperty('--ed-split', `${percent}%`);
     split.setAttribute('aria-valuenow', String(Math.round(percent)));
   };
   split.tabIndex = 0;
@@ -357,7 +357,7 @@ function suggestionsAt(cm, modules) {
     list: found.map((name) => ({
       text: name.name,
       render: (item) => {
-        item.append(el('span', 'pg-hint-name', name.name), el('span', 'pg-hint-type', name.type));
+        item.append(el('span', 'ed-hint-name', name.name), el('span', 'ed-hint-type', name.type));
         if (name.doc) item.title = name.doc;
       },
       hint: (editor, data) => editor.operation(() => {
@@ -386,29 +386,29 @@ function suggestIn(cm, modules) {
   });
 }
 
-// --- One playground ---
+// --- One editor ---
 
 async function start(block) {
   const original = block.querySelector('code').textContent;
   const file = block.querySelector('.file')?.textContent ?? 'main.roc';
 
-  const status = el('span', 'pg-status', 'Loading the compiler...');
-  const formatButton = el('button', 'pg-button', 'Format');
+  const status = el('span', 'ed-status', 'Loading the compiler...');
+  const formatButton = el('button', 'ed-button', 'Format');
   formatButton.type = 'button';
   formatButton.title = 'Format the code as roc format does (Shift+Alt+F)';
-  const reset = el('button', 'pg-button', 'Reset');
+  const reset = el('button', 'ed-button', 'Reset');
   reset.type = 'button';
-  const open = el('a', 'pg-open', 'Open full screen');
+  const open = el('a', 'ed-open', 'Open full screen');
   open.target = '_blank';
-  const editorPane = el('div', 'pg-editor');
-  const appPane = el('div', 'pg-app');
-  const report = el('pre', 'pg-report');
+  const editorPane = el('div', 'ed-code');
+  const appPane = el('div', 'ed-app');
+  const report = el('pre', 'ed-report');
   report.setAttribute('aria-live', 'polite');
-  const output = el('div', 'pg-output', appPane, report);
-  const split = el('div', 'pg-split');
-  const body = el('div', 'pg-body', editorPane, split, output);
-  const ui = el('div', 'pg',
-    el('div', 'code-head pg-head', el('span', 'file', file), status, formatButton, reset, open),
+  const output = el('div', 'ed-output', appPane, report);
+  const split = el('div', 'ed-split');
+  const body = el('div', 'ed-body', editorPane, split, output);
+  const ui = el('div', 'ed',
+    el('div', 'code-head ed-head', el('span', 'file', file), status, formatButton, reset, open),
     body);
 
   // The static block stays until the editor can take its place.
@@ -418,16 +418,16 @@ async function start(block) {
   let editor;
   if (CodeMirror) {
     const cm = CodeMirror(editorPane, { value: original, mode: 'elm', lineNumbers: true, indentUnit: 4, tabSize: 4, viewportMargin: Infinity });
-    // A folded playground (see Doc.playground_folded) shows the app's header
+    // A folded editor (see Doc.editor_folded) shows the app's header
     // as one button, which opens it, as does moving the cursor into it. The
     // code is whole all along, so the line numbers are those of a report.
     let header = null;
     const fold = () => {
       header = null;
-      if (block.dataset.playground !== 'folded' || !cm.getLine(0).startsWith('app ')) return;
+      if (block.dataset.editor !== 'folded' || !cm.getLine(0).startsWith('app ')) return;
       const end = cm.getValue().split('\n').indexOf('}');
       if (end < 1) return;
-      const chip = el('button', 'pg-fold', 'app header');
+      const chip = el('button', 'ed-fold', 'app header');
       chip.type = 'button';
       chip.title = 'Show the header: the platform and the packages the app uses';
       header = cm.markText({ line: 0, ch: 0 }, { line: end, ch: 1 }, { replacedWith: chip, inclusiveLeft: true, clearOnEnter: true });
@@ -439,14 +439,14 @@ async function start(block) {
     let marked = [];
     const mark = (found) => {
       for (const one of marked) one.clear();
-      marked = found.map((p) => cm.markText({ line: p.line, ch: p.from }, { line: p.line, ch: p.to }, { className: 'pg-squiggle', title: p.title }));
+      marked = found.map((p) => cm.markText({ line: p.line, ch: p.from }, { line: p.line, ch: p.to }, { className: 'ed-squiggle', title: p.title }));
     };
     editor = { get: () => cm.getValue(), set: (v) => { cm.setValue(v); fold(); }, onChange: (f) => cm.on('change', f), refresh: () => cm.refresh(), mark,
       // Keeps the cursor and the scroll, and Ctrl+Z takes it back. A header
       // that was folded stays folded.
       replace: (v) => { const at = cm.getCursor(); const { left, top } = cm.getScrollInfo(); const folded = Boolean(header?.find()); cm.setValue(v); if (folded) fold(); cm.setCursor(at); cm.scrollTo(left, top); } };
   } else {
-    const area = el('textarea', 'pg-textarea');
+    const area = el('textarea', 'ed-textarea');
     area.value = original;
     area.spellcheck = false;
     area.setAttribute('aria-label', 'Roc source');

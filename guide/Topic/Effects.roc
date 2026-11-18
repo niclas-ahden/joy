@@ -447,7 +447,7 @@ Effects := [].{
 				text(" answers."),
 			],
 		),
-		Doc.playground_folded(
+		Doc.editor_folded(
 			Doc.code(
 				Roc,
 				"quote.roc",

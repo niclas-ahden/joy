@@ -40,7 +40,7 @@ Welcome := [].{
 			],
 		),
 		h2([style([("text-align", "center"), ("margin", "3.5rem 0 -0.75rem")])], [text("What does it look like?")]),
-		Doc.playground_folded(
+		Doc.editor_folded(
 			Doc.code(
 				Roc,
 				"counter.roc",

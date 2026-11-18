@@ -6,7 +6,7 @@ import parser.RocSyntax
 ## numbers, symbols and comments, read with roc-parser's Roc lexer, and
 ## JavaScript and shell their comments. The classes are the stylesheet's:
 ## c comment, s string, k keyword, t type, u number and o symbol. The
-## stylesheet colours them as a playground's editor colours the same code.
+## stylesheet colours them as an editor colours the same code.
 Highlight := [].{
 	source : [Roc, Js, Sh, Html, Text], Str -> List(Html(msg))
 	source = |lang, src|

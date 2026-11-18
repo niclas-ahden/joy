@@ -41,7 +41,7 @@ Subscriptions := [].{
 				text("Edit the code below and get excited twice as fast. You can do it!"),
 			],
 		),
-		Doc.playground_folded(
+		Doc.editor_folded(
 			Doc.code(
 				Roc,
 				"ticker.roc",

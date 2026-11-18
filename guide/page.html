@@ -72,9 +72,9 @@
     });
 
     // The left and right arrows page through the topics, except in the
-    // search box, where they move the caret, and in a playground.
+    // search box, where they move the caret, and in an editor.
     addEventListener('keydown', (event) => {
-      if (event.target.closest?.('input, textarea, [data-playground]') || event.ctrlKey || event.altKey || event.metaKey) return;
+      if (event.target.closest?.('input, textarea, [data-editor]') || event.ctrlKey || event.altKey || event.metaKey) return;
       const step = { ArrowLeft: -1, ArrowRight: 1 }[event.key];
       const next = step && topics[topics.indexOf(current()) + step];
       if (next) location.hash = next.id;

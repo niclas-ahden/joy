@@ -259,7 +259,7 @@ FirstApp := [].{
 				text(". Try adding the new message and see what the compiler says."),
 			],
 		),
-		Doc.playground(
+		Doc.editor(
 			Doc.code(
 				Roc,
 				"counter.roc",
