@@ -45,9 +45,9 @@ Effect(msg) := [
 					id,
 					args,
 					Box.box(
-						|reply| {
+						|answer_bytes| {
 							inner = Box.unbox(cb)
-							Box.box(f(Box.unbox(inner(reply))))
+							Box.box(f(Box.unbox(inner(answer_bytes))))
 						},
 					),
 				)
@@ -101,7 +101,7 @@ Effect(msg) := [
 	## JavaScript reads (see Wire), and the reply goes through `reply` on the
 	## way back.
 	call : Id, List(U8), (List(U8) -> msg) -> Effect(msg)
-	call = |Id.(marked), args, on_reply| Call(marked, args, Box.box(|reply| Box.box(on_reply(reply))))
+	call = |Id.(marked), args, on_reply| Call(marked, args, Box.box(|answer_bytes| Box.box(on_reply(answer_bytes))))
 
 	## Run the JavaScript of an effect that answers nothing, by its id.
 	send : Id, List(U8) -> Effect(msg)

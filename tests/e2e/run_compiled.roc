@@ -2,7 +2,7 @@
 # this runs the binary tests/e2e/compile.roc made of it. The test is leashed to
 # this, so roc-spec killing this on a timeout takes the test and its browser too.
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.31.0/Ff3fkK1TjYTVxMj9V21FP24ojTJXYk314Fbo1whBZ6Yf.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.32.0/3MnQnCrtfe6XS5qx58MnAGU6iWk8i1N24MYfoejcWeax.tar.zst",
 }
 
 import pf.Cmd

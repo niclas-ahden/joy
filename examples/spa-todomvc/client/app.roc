@@ -1,6 +1,6 @@
 app [Model, Msg, init, update, view, subscriptions] {
 	pf: platform "../../../platform/main.roc",
-	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc1/6eTqakHk59tsBefdx2VPuYDVZxG8SoEtzE74e7MzyoBq.tar.zst",
+	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
 }
 
 import html.Html exposing [a, button, div, footer, h1, header, input, label, li, p, section, span, strong, text, ul]

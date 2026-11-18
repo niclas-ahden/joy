@@ -30,11 +30,11 @@ Names := {
 				Ok((found, _)) => found
 				Err(_) => return Err(NotAssetsJson("it is not JSON"))
 			}
-		roots = fields(value, "roots").keep_oks(|(name, path)| text_of(path).map_ok(|dir| (name, "${folder}/${dir}")))
-		joy = text_of(field(value, "joy")) ? |_| NotAssetsJson("it has no joy")
-		runtime = text_of(field(value, "runtime")) ?? "runtime.js"
-		bundles = fields(value, "bundles").keep_oks(|(id, path)| text_of(path).map_ok(|file| (id, file)))
-		assets = fields(value, "assets").keep_oks(|(name, path)| text_of(path).map_ok(|file| (name, file)))
+		found_roots = fields(value, "roots").keep_oks(|(name, path)| text_of(path).map_ok(|dir| (name, "${folder}/${dir}")))
+		loader = text_of(field(value, "joy")) ? |_| NotAssetsJson("it has no joy")
+		runtime_file = text_of(field(value, "runtime")) ?? "runtime.js"
+		bundles = fields(value, "bundles").keep_oks(|(id, path)| text_of(path).map_ok(|hashed_file| (id, hashed_file)))
+		assets = fields(value, "assets").keep_oks(|(name, path)| text_of(path).map_ok(|hashed_file| (name, hashed_file)))
 		public =
 			match field(value, "public") {
 				Items(items) => items.keep_oks(text_of)
@@ -52,11 +52,11 @@ Names := {
 			# refuses its own assets.json, while `any` with `==` on the same
 			# list is right: https://github.com/roc-lang/roc/issues/12828.
 			# Go back to `contains` once that is fixed.
-			if !assets.any(|(given, file)| given == name and file == path) {
+			if !assets.any(|(given, given_path)| given == name and given_path == path) {
 				return Err(AssetsDiffer(name))
 			}
 		}
-		Ok({ roots, joy, runtime, bundles, assets, public })
+		Ok({ roots: found_roots, joy: loader, runtime: runtime_file, bundles, assets, public })
 	}
 
 	## The loader's path below the client URL.
@@ -75,7 +75,7 @@ Names := {
 		runtime: Str.concat(client_url, names.runtime),
 		wasm: |id|
 			match names.bundles.find_first(|(bundle, _)| bundle == id) {
-				Ok((_, file)) => Str.concat(client_url, file)
+				Ok((_, wasm_path)) => Str.concat(client_url, wasm_path)
 				Err(_) => "${client_url}${id}/app.wasm"
 			},
 	}
@@ -84,7 +84,7 @@ Names := {
 	wasm : Names, Bundle -> Str
 	wasm = |names, bundle|
 		match names.bundles.find_first(|(id, _)| id == Bundle.path(bundle)) {
-			Ok((_, file)) => file
+			Ok((_, wasm_path)) => wasm_path
 			Err(_) => "${Bundle.path(bundle)}/app.wasm"
 		}
 
@@ -104,10 +104,10 @@ Names := {
 			Found({ root: "joy", path, cache: hashed("joy.js") })
 		} else if path == names.runtime or path == "runtime.js" {
 			Found({ root: "joy", path, cache: hashed("runtime.js") })
-		} else if names.bundles.any(|(_, file)| file == path) {
+		} else if names.bundles.any(|(_, bundle_file)| bundle_file == path) {
 			Found({ root: "joy", path, cache: if (path.ends_with("/app.wasm")) Revalidate else Immutable })
 		} else {
-			match names.assets.find_first(|(_, file)| file == path) {
+			match names.assets.find_first(|(_, asset_file)| asset_file == path) {
 				Ok((name, _)) => Found({ root: "assets", path, cache: hashed(name) })
 				Err(_) => if (names.public.contains(path)) Found({ root: "public", path, cache: Revalidate }) else NotFound
 			}

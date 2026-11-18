@@ -1,7 +1,7 @@
 # The server of tests/e2e/hot_project, which renders the bundle's first view by
 # hand, answers a GET and writes a line for each POST.
 app [main!] {
-	http: "https://github.com/roc-lang/http/releases/download/1.0.0/6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst",
+	http: "https://github.com/roc-lang/http/releases/download/2.0.0/6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst",
 	pf: platform "../../../../../joy-cli-platform/platform/main.roc",
 	shared: "../shared/main.roc",
 }

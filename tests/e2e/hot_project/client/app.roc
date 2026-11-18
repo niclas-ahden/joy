@@ -2,7 +2,7 @@
 # server renders, with a count, a typed value, a dialog, a GET and a POST.
 app [Model, Msg, init, update, view, subscriptions] {
 	pf: platform "../../../../platform/main.roc",
-	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc1/6eTqakHk59tsBefdx2VPuYDVZxG8SoEtzE74e7MzyoBq.tar.zst",
+	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
 	shared: "../shared/main.roc",
 }
 
