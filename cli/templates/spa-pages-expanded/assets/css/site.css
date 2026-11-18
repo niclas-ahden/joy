@@ -1,0 +1,65 @@
+body {
+  font: 1.125rem/1.5 system-ui, sans-serif;
+  max-width: 40rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+nav a {
+  margin-right: 1rem;
+}
+
+nav a[aria-current="page"] {
+  font-weight: bold;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.field input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.25rem 0.5rem;
+}
+
+.notes {
+  padding-left: 1.25rem;
+}
+
+figure {
+  margin: 1rem 0;
+}
+
+blockquote {
+  margin: 0;
+  padding-left: 1rem;
+  border-left: 0.25rem solid #ccc;
+  font-size: 1.25rem;
+}
+
+figcaption {
+  margin-top: 0.5rem;
+  padding-left: 1.25rem;
+  color: #555;
+}
+
+.problem {
+  color: #a40000;
+}
+
+main li {
+  margin: 0.4rem 0;
+}
+
+code {
+  padding: 0 0.25rem;
+  background: #f2f2f2;
+}

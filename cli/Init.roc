@@ -176,7 +176,8 @@ template! = |options| {
 						Err(_) => return Err(Exit(130))
 					}
 				} else {
-					listed = Template.all.map(|template| "  ${template.name}  ${template.description}")
+					longest = Template.all.map(|template| template.name.count_utf8_bytes()).max() ?? 0
+					listed = Template.all.map(|template| "  ${template.name}${Str.repeat(" ", longest - template.name.count_utf8_bytes())}  ${template.description}")
 					return Build.fail!("Which template? Name one with --template:\n${Str.join_with(listed, "\n")}")
 				}
 		}

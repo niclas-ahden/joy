@@ -1,7 +1,8 @@
-# Real-browser E2E: the project ./joy init starts from the spa template, as
-# someone new meets it under ./joy dev. Its links switch pages in place, Back
-# returns, a URL of the app opens its page, and a click that asks the browser
-# for a new tab is left to the browser.
+# Real-browser E2E: the project ./joy init starts from the spa-pages template,
+# as someone new meets it under ./joy dev. Its links switch pages in place,
+# Back returns, a URL of the app opens its page, a click that asks the browser
+# for a new tab is left to the browser, and the Quote page shows what the
+# quote server answers, which the test stands in for.
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.31.0/Ff3fkK1TjYTVxMj9V21FP24ojTJXYk314Fbo1whBZ6Yf.tar.zst",
 	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.14.0/83Dw68fzvXTQMbcZXupMDB3YiEP6pS6YgKxuTDjuMSAw.tar.zst",
@@ -16,8 +17,8 @@ main! = |_args| {
 		return Ok({})
 	}
 	opt = Env.var_str!("JOY_OPT") ?? "speed"
-	dir = "build/${opt}/spa_template"
-	HotDev.init!(dir, "spa")?
+	dir = "build/${opt}/spa_pages_template"
+	HotDev.init!(dir, "spa-pages")?
 
 	started = HotDev.run!(dir, "", "8778")?
 	{ page, url, .. } = started
@@ -43,9 +44,9 @@ main! = |_args| {
 
 	# A link to another page switches the page in place, and changes the URL
 	# and the title.
-	page.find("nav a:nth-child(2)").click!()?
+	page.find("nav a:nth-child(3)").click!()?
 	HotDev.shows!(page, "h1", "About")?
-	assert!(page.find("nav a.current").has_text("About"))?
+	assert!(page.find("nav a[aria-current='page']").has_text("About"))?
 	assert!(page.has_title("About - Joy app"))?
 	HotDev.same!(page.evaluate!("location.pathname")?, "/about")?
 	HotDev.same_page!(page)?
@@ -71,8 +72,51 @@ main! = |_args| {
 	HotDev.shows!(page, "main p", "There is no page here.")?
 	assert!(page.has_title("Not found - Joy app"))?
 
+	# The Quote page asks for a quote when it is opened, and keeps it while
+	# other pages are on screen.
+	HotDev.open!(page, "${url}/", "nav a")?
+	page.with_routes!(
+		[{ pattern: quotes, method: AnyMethod, action: answer(200, "[\"A quote from the test\"]") }],
+		|routed| {
+			routed.find("nav a:nth-child(2)").click!()?
+			HotDev.shows!(routed, "blockquote", "A quote from the test")?
+			assert!(routed.has_title("Quote - Joy app"))?
+			routed.find("nav a:nth-child(3)").click!()?
+			HotDev.shows!(routed, "h1", "About")?
+			routed.find("nav a:nth-child(2)").click!()?
+			HotDev.shows!(routed, "blockquote", "A quote from the test")?
+			Ok({})
+		},
+	)?
+
+	# A server that fails is said, and the button asks again.
+	page.with_routes!(
+		[{ pattern: quotes, method: AnyMethod, action: answer(500, "no") }],
+		|routed| {
+			routed.find("main button").click!()?
+			HotDev.shows!(routed, ".problem", "The server answered 500.")?
+			Ok({})
+		},
+	)?
+	page.with_routes!(
+		[{ pattern: quotes, method: AnyMethod, action: answer(200, "[\"Another quote\"]") }],
+		|routed| {
+			routed.find("main button").click!()?
+			HotDev.shows!(routed, "blockquote", "Another quote")?
+			Ok({})
+		},
+	)?
+
 	HotDev.stop!(started)
 }
+
+## The quote server's address, and an answer the test gives in its place. The
+## header lets a page of another origin read it, as the real server's does.
+quotes : Str
+quotes = "https://ron-swanson-quotes.herokuapp.com/**"
+
+answer = |status, body|
+	Fulfill({ status, headers: [{ name: "content-type", value: "application/json" }, { name: "access-control-allow-origin", value: "*" }], body: Str.to_utf8(body) })
 
 ## The count the Home page shows, between its two buttons.
 count : Str

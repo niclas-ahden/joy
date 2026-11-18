@@ -1,16 +1,19 @@
 # A Joy app
 
-A single-page app on [Joy](https://github.com/niclas-ahden/joy): pages in one
-bundle, with a URL for each and Back and Forward working.
+A single-page app on [Joy](https://github.com/niclas-ahden/joy): several
+pages, with a URL for each and Back and Forward working.
 
     ./joy dev      work on it at http://localhost:8000
     ./joy build    build what ships into dist/client/, for any static host
 
-- `client/app.roc` is the bundle: which page is on screen and the links.
+- `client/app.roc` is the app: the model, the messages, the menu and
+  which page is on screen.
 - `client/Route.roc` has every URL of the app.
-- `client/Page/` has a module per page.
+- `client/Page/` has a module per page. A page is a view of the model. The
+  Quote page shows a quote from the Ron Swanson Quotes API, which is
+  someone else's server. This app has no server of its own.
 - `public/index.html` is the page that loads the app.
-- `assets/` has the files your pages link to. A build gives each a hashed
+- `assets/` has the files the pages link to. A build gives each a hashed
   name.
 
 A static host has to answer `index.html` for the app's own paths, so a
