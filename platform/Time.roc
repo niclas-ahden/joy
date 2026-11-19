@@ -1,44 +1,88 @@
-## Time. A one-shot timer as an effect (`after`), a recurring timer as a
-## subscription (`every`), and a keyed trailing-edge debounce (`debounce` /
-## `cancel`).
+## Timers. Each one hands your app the current time when it fires.
 ##
-## There is no clock read: the app is pure and the compiler
-## enforces it, so every observable effect is an `Effect` value. Every timer
-## firing delivers the current time in its msg, so pure code always has a
-## time at hand. An app that needs the clock at boot has the embedder put
-## `Date.now()` in the flags string `init` receives (see examples/time.roc).
+## - [Time.after] fires once, after a delay. It is an effect.
+## - [Time.every] fires again and again. It is a subscription.
+## - [Time.debounce] fires once things have been quiet for a while, and
+##   [Time.cancel] calls it off.
 ##
-## Each firing calls your function with the current time in ms since the
-## Unix epoch and the resulting msg goes to `update`. `every` is a
-## subscription: return it from `subscriptions` for as long as it should
-## tick, drop it from the list to stop it.
+## A clock that ticks every second:
+##
+## ```roc
+## Msg : [Tick(I64)]
+##
+## subscriptions = |_model| [Time.every(1000, |now| Tick(now))]
+##
+## update = |model, msg|
+##     match msg {
+##         Tick(now) => ({ ..model, now }, [])
+##     }
+## ```
+##
+## ## The time you get
+##
+## Every timer calls your function with the current time, in milliseconds
+## since the start of 1970 (the Unix epoch).
+##
+## There is no function that reads the clock. A timer is how your app learns
+## what time it is. If you need the time right at the start, have the page put
+## it in the flags, for example `Date.now()` in JavaScript.
+##
+## The guide has examples to try: [Time](../../#example-time) and
+## [Debounce](../../#example-debounce).
 import Effect
 import Sub
 import Wire
 
 Time := [].{
 
-	## Produce a msg once, `ms` milliseconds from now.
+	## Send a message once, `ms` milliseconds from now.
+	##
+	## ```roc
+	## Time.after(3000, |_now| NoticeTimedOut)
+	## ```
 	after : U32, (I64 -> msg) -> Effect(msg)
 	after = |ms, on_fire| Effect.call("joy/time/after", Wire.writer({}).u32(ms).done(), |reply| on_fire(now(reply)))
 
-	## Produce a msg every `ms` milliseconds, while subscribed.
+	## Send a message every `ms` milliseconds, for as long as the subscription is
+	## in the list `subscriptions` returns. Leave it out of the list to stop it:
+	##
+	## ```roc
+	## subscriptions = |model|
+	##     if model.paused {
+	##         []
+	##     } else {
+	##         [Time.every(1000, |now| Tick(now))]
+	##     }
+	## ```
 	every : U32, (I64 -> msg) -> Sub(msg)
 	every = |ms, on_tick| Sub.listen("joy/time/every", Wire.writer({}).u32(ms).done(), |event| on_tick(at(event)))
 
-	## Produce a msg once, `ms` milliseconds after the LAST `debounce` with
-	## this key: issuing the effect again re-arms the pending timer, so only
-	## the final call of a burst fires. The classic use is search-as-you-type,
-	## where every keystroke returns `Time.debounce("search", 300, ...)` and
-	## the query runs 300ms after typing pauses. Keys are global to the app,
-	## so pick one per debounced action, and prefix it with the component name
-	## when writing reusable components, so two instances cannot swallow each
-	## other's timers.
+	## Send a message once, `ms` milliseconds after the last `debounce` with the
+	## same key. Each new one starts the wait over, so of a quick run of them only
+	## the last fires.
+	##
+	## Search as you type is the usual case. Every key press asks for the same
+	## debounce, and the search runs when the typing has paused:
+	##
+	## ```roc
+	## UserTypedSearch(text) =>
+	##     (
+	##         { ..model, text },
+	##         [Time.debounce("search", 300, |_now| TypingPaused)],
+	##     )
+	## ```
+	##
+	## Keys belong to the whole app, so use one per thing you debounce. In a
+	## component you mean to reuse, start the key with the component's name.
 	debounce : Str, U32, (I64 -> msg) -> Effect(msg)
 	debounce = |key, ms, on_fire| Effect.call("joy/time/debounce", Wire.writer({}).str(key).u32(ms).done(), |reply| on_fire(now(reply)))
 
-	## Discard the pending `debounce` timer with this key, so it never
-	## fires. No-op when nothing is pending.
+	## Call off a waiting [Time.debounce] by its key, so it never fires. Does
+	## nothing when none is waiting.
+	##
+	## ```roc
+	## Time.cancel("search")
+	## ```
 	cancel : Str -> Effect(msg)
 	cancel = |key| Effect.send("joy/time/cancel", Wire.writer({}).str(key).done())
 }

@@ -1,38 +1,83 @@
-## The bytes an effect's JavaScript is called with and answers with (see
-## Effect.call, Effect.send and Sub.listen): its values one after another, in
-## the order the effect defines, with no names. An effect's Roc function and
-## its JavaScript are a pair that agree on the order, the way a function and
-## its caller agree on its arguments.
+## How the Roc and the JavaScript of a custom effect pass values to each
+## other.
 ##
-## Each value has one byte in front that says what it is, so a read of
-## another kind of value is an error that names the place, on both sides,
-## and not some other number. After that byte, little-endian throughout:
+## You only need this module when you write a custom effect or a subscription
+## of your own, with [Effect.call], [Effect.send] or [Sub.listen]. The guide's
+## page on [custom effects](../../#custom-effects) walks through it.
 ##
-## - `U8`, `U16`, `U32`, `U64`, `I64`: fixed width
-## - `F64`: its eight bytes, as IEEE 754 has them
-## - `Bool`: one byte, 0 or 1
-## - `Str`: a `U32` byte length, then UTF-8
-## - bytes: a `U32` length, then the bytes
-## - `List(U16)`: a `U32` count, then the values
+## ## How it works
 ##
-## ```
+## Values go across as bytes, one after another, with no names. The Roc and
+## the JavaScript agree on the order, the way a function and its caller agree
+## on its arguments.
+##
+## Writing, to call the JavaScript:
+##
+## ```roc
 ## args = Wire.writer({}).u32(stream_id).str(mime_type).done()
+## ```
 ##
-## summary : List(U8) -> Try({ duration_ms : I64, peaks : List(U16) }, Wire.Problem)
+## Reading, what the JavaScript answered:
+##
+## ```roc
+## summary : List(U8) -> Try(Summary, Wire.Problem)
 ## summary = |answer| {
 ##     (duration_ms, rest) = Wire.reader(answer).i64()?
 ##     (peaks, _) = rest.u16s()?
 ##     Ok({ duration_ms, peaks })
 ## }
 ## ```
+##
+## Each read gives you the value and a reader for what comes after it.
+##
+## ## What can go across
+##
+## | Roc type | Method | In JavaScript |
+## |---|---|---|
+## | `Str` | `str` | a string |
+## | `Bool` | `bool` | true or false |
+## | `U8`, `U16`, `U32` | `u8`, `u16`, `u32` | a number |
+## | `U64`, `I64` | `u64`, `i64` | a whole number |
+## | `F64` | `f64` | a number |
+## | `List(U8)` | `bytes` | a Uint8Array |
+## | `List(U16)` | `u16s` | a list of numbers |
+##
+## A record goes across field by field, and a list as its length and then its
+## items.
+##
+## ## When the two sides disagree
+##
+## Every value has a mark in front that says what kind it is. So reading a
+## `Str` where the JavaScript wrote a `Bool` is an error that says where, not
+## a wrong value. See [Wire.Problem].
+##
+## ## The bytes themselves
+##
+## After its mark, each value is little-endian:
+##
+## - `U8`, `U16`, `U32`, `U64`, `I64`: fixed width.
+## - `F64`: its eight bytes, as IEEE 754 has them.
+## - `Bool`: one byte, 0 or 1.
+## - `Str`: a `U32` byte length, then UTF-8.
+## - bytes: a `U32` length, then the bytes.
+## - `List(U16)`: a `U32` count, then the values.
 Wire := [].{
 
-	## Why a read gave nothing: the bytes ended, or the value there is of
-	## another kind than the one that was read. `value` counts from 1.
+	## Why a read gave nothing. Both mean that the Roc and the JavaScript of an
+	## effect disagree on what is passed.
+	##
+	## - `WireEnded`: the bytes ran out. The JavaScript wrote fewer values than
+	##   the Roc reads.
+	## - `WireMismatch`: the value there is of another kind than the one read.
+	##   `value` says which one, counting from 1, `wanted` what the Roc read and
+	##   `found` what was there.
 	Problem : [WireEnded, WireMismatch({ value : U64, wanted : Str, found : Str })]
 
-	## A problem in words, for a developer to read: it means the Roc and the
-	## JavaScript of an effect disagree on what is passed.
+	## A problem in words, for you to read while you write the two sides.
+	##
+	## ```roc
+	## (language, _) = Wire.reader(answer).str() ? Wire.explain
+	## ```
 	explain : Problem -> Str
 	explain = |problem|
 		match problem {
@@ -40,6 +85,12 @@ Wire := [].{
 			WireMismatch({ value, wanted, found }) => "Value ${value.to_str()} is ${found}, where the Roc reads ${wanted}. The JavaScript and the Roc disagree on what is passed, or on its order."
 		}
 
+	## Writes values, one after another. Start with [Wire.writer], add each value
+	## with the method for its type, and end with `done`:
+	##
+	## ```roc
+	## Wire.writer({}).str("memo").u32(3).bool(Bool.True).done()
+	## ```
 	Writer :: List(U8).{
 		u8 : Wire.Writer, U8 -> Wire.Writer
 		u8 = |w, n| put(w, tag_u8, [n])
@@ -74,7 +125,7 @@ Wire := [].{
 		u16s : Wire.Writer, List(U16) -> Wire.Writer
 		u16s = |w, list| put(w, tag_u16s, le(list.len(), 4).concat(list.map(|n| le(n.to_u64(), 2)).join()))
 
-		## The bytes written.
+		## The bytes written, to hand to [Effect.call], [Effect.send] or [Sub.listen].
 		done : Wire.Writer -> List(U8)
 		done = |w| w.to_list()
 
@@ -82,6 +133,14 @@ Wire := [].{
 		to_list = |Writer.(list)| list
 	}
 
+	## Reads values, one after another, in the order they were written. Start
+	## with [Wire.reader]. Each method gives you the value and a reader for the
+	## rest, or a [Wire.Problem]:
+	##
+	## ```roc
+	## (name, rest) = Wire.reader(answer).str()?
+	## (count, _) = rest.u32()?
+	## ```
 	Reader :: { bytes : List(U8), at : U64, read : U64 }.{
 		u8 : Wire.Reader -> Try((U8, Wire.Reader), Wire.Problem)
 		u8 = |r| {
@@ -137,15 +196,17 @@ Wire := [].{
 			read_u16s(after_count, count, List.with_capacity(count))
 		}
 
-		## What is left unread, as it is: bytes that were not written
-		## through a writer have no kinds to read them by.
+		## What is left unread, as raw bytes. This is for bytes that were not written
+		## through a writer, which have no marks to read them by.
 		remaining : Wire.Reader -> List(U8)
 		remaining = |Reader.({ bytes: all, at, read: _ })| all.drop_first(at)
 	}
 
+	## A writer with nothing written yet.
 	writer : {} -> Wire.Writer
 	writer = |{}| Writer.([])
 
+	## A reader at the start of some bytes.
 	reader : List(U8) -> Wire.Reader
 	reader = |bytes| Reader.({ bytes, at: 0, read: 0 })
 }

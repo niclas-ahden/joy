@@ -1,25 +1,34 @@
-## An effect: an asynchronous action described as *data*, returned from `init`
-## or `update` and executed by the host. The response callback is a real typed
-## function (`... -> msg`), boxed so the host can store and call it without
-## knowing the app's Msg layout.
+## An effect: something your app asks the browser to do, like make a request,
+## start a timer or change the URL.
 ##
-## Why data instead of effectful platform functions: hosted functions are
-## monomorphic C symbols, so they cannot accept a callback that is generic
-## over the app's `msg`. Effects flow through `update`'s return type, where
-## `msg` is properly in scope. Msg-free effects (logging, navigation,
-## modals, timer cancellation) are data too: as data they can be matched
-## on, so a pure test can assert exactly which effects an update produced.
-## The boundary rule: every app entrypoint is pure and the compiler
-## enforces it, every observable effect is an `Effect` value returned from
-## `init` or `update`, and `init` receives the app's flags string, into
-## which the embedder puts any boot data the app needs (time, url,
-## whatever). Recurring event sources are subscriptions (see `Sub`).
+## Your `init` and `update` never do these things themselves. They return
+## effects, and Joy carries them out. When an effect has an answer, it comes
+## back to `update` as a message.
 ##
-## Apps use the platform modules (`Http`, `Time`, `DOM`, `Media`, ...),
-## which are built on `call` and `send`: JavaScript the runtime has under
-## an id, with its arguments and answer as Wire bytes. A custom effect, one an
-## app or a package brings with its own JavaScript, is built the same way.
-## An app's runtime.js holds the JavaScript its wasm uses.
+## ```roc
+## update : Model, Msg -> (Model, List(Effect(Msg)))
+## update = |model, msg|
+##     match msg {
+##         UserClickedSave => (model, [Console.log("Saving")])
+##     }
+## ```
+##
+## You rarely make an `Effect` yourself. The other modules make them:
+## [Http.get], [Time.after], [Navigation.push_url] and so on. What this module adds:
+##
+## - [Effect.map] and [Effect.map_all], for an app split into pages or parts.
+## - [Effect.call], [Effect.send] and [Effect.reply], for a custom effect: a
+##   browser feature Joy lacks, with JavaScript of your own.
+## - [Effect.identity], for tests.
+##
+## ## Why an effect is a value
+##
+## `update` only says what should happen. That keeps it a plain function: the
+## same model and message always give the same result. So a test can call
+## `update` and look at the effects it returned, with no browser.
+##
+## The guide has pages on [effects](../../#effects) and on
+## [custom effects](../../#custom-effects).
 Effect(msg) := [
 	## JavaScript that answers (see Features in the runtime): its id as `Id`
 	## marks it, its arguments (see Wire), on_reply. The reply is a status byte, 0 for done
@@ -33,9 +42,19 @@ Effect(msg) := [
 	Send(Str, List(U8)),
 ].{
 
-	## Re-target an effect to a parent message type: the reply's message is
-	## passed through `f` on its way to `update`, so components can own their
-	## effects too.
+	# Why effects are data and not effectful platform functions: hosted
+	# functions are monomorphic C symbols, so they cannot take a callback
+	# that is generic over the app's `msg`. Effects flow through `update`'s
+	# return type, where `msg` is in scope. The callback is boxed so the host
+	# can store and call it without knowing the app's Msg layout.
+
+	## Turn an effect of one message type into an effect of another. An app split
+	## into pages uses it to wrap a page's messages in its own, so the answer
+	## finds its way back to the page:
+	##
+	## ```roc
+	## Effect.map(Console.log("Hello"), |m| SettingsMsg(m))
+	## ```
 	map : Effect(a), (a -> b) -> Effect(b)
 	map = |cmd, f|
 		match cmd {
@@ -54,18 +73,32 @@ Effect(msg) := [
 			Send(id, args) => Send(id, args)
 		}
 
-	## Re-target every effect of a list, as a page's effects become the
-	## app's: `Effect.map_all(effects, |m| PageMsg(m))`.
+	## [Effect.map] for a whole list, as a page's effects become the app's:
+	##
+	## ```roc
+	## SettingsMsg(page_msg) => {
+	##     (page, effects) = Settings.update(model.page, page_msg)
+	##     (
+	##         { ..model, page },
+	##         Effect.map_all(effects, |m| SettingsMsg(m)),
+	##     )
+	## }
+	## ```
 	map_all : List(Effect(a)), (a -> b) -> List(Effect(b))
 	map_all = |effects, f| effects.map(|effect| effect.map(f))
 
-	## The id of an effect, `joy/media/record` say: what its Roc and its
-	## JavaScript share. It is written as a string, `"my_app/share_link"`,
-	## and only as one: the compiler makes an `Id` of a string literal and of
-	## nothing else, so every id an app uses is in its source and, marked, in
-	## its wasm. That is where a build reads which JavaScript the app needs,
-	## and checks that each id has some.
+	## The name of an effect's JavaScript, like `"my_app/share_link"`. It is what
+	## the Roc and the JavaScript of an effect have in common.
+	##
+	## You write it as a plain string where an `Id` is asked for. It has to be
+	## written out in the code, not put together while the app runs: a build reads
+	## the names out of your app to know which JavaScript it needs, and checks
+	## that each one has some.
 	Id :: Str.{
+
+		## How the compiler turns a string in your code into an `Id`. You do not call
+		## it. It refuses a name that is empty, longer than 100 bytes, or made of
+		## anything but letters, digits and `_ - . /`.
 		from_quote : Str -> Try(Id, [BadQuotedBytes(Str)])
 		from_quote = |raw|
 			if raw.count_utf8_bytes() > 100 {
@@ -78,14 +111,21 @@ Effect(msg) := [
 				Ok(Id.(Str.concat(Str.concat(Str.concat("<joy-", "effect "), raw), ">")))
 			}
 
-		## The id as it was written.
+		## The name as you wrote it.
 		to_str : Id -> Str
 		to_str = |Id.(marked)| plain(marked)
 	}
 
-	## The id and the arguments of an effect, for tests that check what an
-	## `update` returned. A line for the console has no id, and its text as
-	## its arguments.
+	## For tests. What an effect asks for: its name and its arguments. A
+	## `Console.log` has no name, and its text as its arguments.
+	##
+	## ```roc
+	## expect {
+	##     (_, effects) = update(model, UserClickedLoad)
+	##     ids = effects.map(|effect| effect.identity().id)
+	##     ids == ["joy/http/send"]
+	## }
+	## ```
 	identity : Effect(msg) -> { id : Str, args : List(U8) }
 	identity = |effect|
 		match effect {
@@ -94,21 +134,53 @@ Effect(msg) := [
 			ConsoleLog(message) => { id: "", args: message.to_utf8() }
 		}
 
-	## Run the JavaScript of an effect by its id, and hear its reply. Platform
-	## modules like `Media` are built on it, and so is a custom effect, whose
-	## JavaScript is in the .js file beside its Roc module. `args` is what the
-	## JavaScript reads (see Wire), and the reply goes through `reply` on the
-	## way back.
+	## For a custom effect. Run your own JavaScript by its name, and get its
+	## answer.
+	##
+	## `args` is what the JavaScript reads, written with `Wire`. What comes back
+	## goes through [Effect.reply], which says whether it worked.
+	##
+	## ```roc
+	## get : (Try(Info, Str) -> msg) -> Effect(msg)
+	## get = |to_msg|
+	##     Effect.call(
+	##         "my_app/locale_get",
+	##         [],
+	##         |reply| to_msg(info(reply)),
+	##     )
+	## ```
+	##
+	## The JavaScript is in the `.js` file beside the Roc module. The guide's page
+	## on [custom effects](../../#custom-effects) shows both halves.
 	call : Id, List(U8), (List(U8) -> msg) -> Effect(msg)
 	call = |Id.(marked), args, on_reply| Call(marked, args, Box.box(|answer_bytes| Box.box(on_reply(answer_bytes))))
 
-	## Run the JavaScript of an effect that answers nothing, by its id.
+	## For a custom effect. Run your own JavaScript by its name, when it has
+	## nothing to answer.
+	##
+	## ```roc
+	## args = Wire.writer({}).u32(200).done()
+	##
+	## Effect.send("my_app/vibrate", args)
+	## ```
 	send : Id, List(U8) -> Effect(msg)
 	send = |Id.(marked), args| Send(marked, args)
 
-	## An effect's reply: its answer, or why it failed, as the name and the
-	## message of the error its JavaScript threw. A browser that refuses says
-	## `NotAllowedError`, and an id without JavaScript `MissingEffectError`.
+	## For a custom effect. What your JavaScript answered, or why it failed.
+	##
+	## - `Ok(answer)`: the bytes your JavaScript wrote, to read with `Wire`.
+	## - `Err(EffectFailed({ name, message }))`: the error your JavaScript threw.
+	##   A browser that refuses says `NotAllowedError`, and a name with no
+	##   JavaScript behind it says `MissingEffectError`.
+	##
+	## ```roc
+	## info : List(U8) -> Try(Info, Str)
+	## info = |reply| {
+	##     answer = Effect.reply(reply) ? |_| "The browser said no"
+	##     (language, _) = Wire.reader(answer).str() ? Wire.explain
+	##     Ok({ language })
+	## }
+	## ```
 	reply : List(U8) -> Try(List(U8), [EffectFailed({ name : Str, message : Str })])
 	reply = |bytes|
 		match bytes {
@@ -153,8 +225,8 @@ expect {
 
 # The effects with no reply carry no callback: map passes them through.
 expect {
-	match Effect.send("joy/dom/navigate", [1, 2]).map(|s| "${s}!") {
-		Send(marked, args) => plain(marked) == "joy/dom/navigate" and args == [1, 2]
+	match Effect.send("joy/navigation/navigate", [1, 2]).map(|s| "${s}!") {
+		Send(marked, args) => plain(marked) == "joy/navigation/navigate" and args == [1, 2]
 		_ => Bool.False
 	}
 }

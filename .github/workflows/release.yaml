@@ -252,7 +252,7 @@ jobs:
 
       - name: Generate docs
         run: |
-          ${{ steps.setup.outputs.prefix }} roc docs platform/main.roc --output=generated-docs
+          ${{ steps.setup.outputs.prefix }} ./docs.roc --output=generated-docs
           tar -czf docs.tar.gz -C generated-docs .
 
       - name: Draft the release with assets and notes

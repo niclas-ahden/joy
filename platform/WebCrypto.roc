@@ -1,35 +1,55 @@
-## Hashing via the browser's Web Crypto (`crypto.subtle.digest`), as
-## effects: the digest runs asynchronously on the JS side and the hash
-## arrives in `update` as a typed message.
+## Hash data with the browser's Web Crypto.
 ##
-## For bytes you already have, prefer Roc's built-in `Crypto` module
-## (`Crypto.SHA256.hash(bytes)` / `Crypto.BLAKE3.hash(bytes)`): it is pure,
-## synchronous, and needs no effect round-trip. This module earns its keep
-## where the builtin cannot go: hashing a user-picked FILE (see
-## `Attribute.on_file`) whose bytes live on the browser side and never enter
-## wasm memory, and the SHA-1/SHA-384/SHA-512 algorithms the builtin does
-## not provide. For chunked hashing of large files (progress reporting, or a
-## hash-of-chunk-hashes scheme), issue one `digest_file_slice` per chunk and
-## hash the concatenated chunk hashes at the end. The runtime runs at most
-## `navigator.hardwareConcurrency` file digests at once and starts the rest
-## as those finish, so however many chunks you ask for, only that many are
-## in memory. Each digest holds its whole range in memory, which is why
-## `digest_file` on a large file is best avoided.
+## ## When to use it
 ##
-## The callback receives the raw hash bytes (20 for Sha1, 32 for Sha256, 48
-## for Sha384, 64 for Sha512). An EMPTY list means the digest failed (unknown
-## file id, or the file changed on disk after being picked).
+## For bytes your app already holds, Roc's built-in `Crypto` module is the
+## simpler tool: `Crypto.SHA256.hash(bytes)` gives you the hash right away,
+## with no effect. This module is for what the built-in cannot do:
+##
+## - Hash a file the user picked. The browser reads the file where it is, so
+##   its bytes never enter your app.
+## - SHA-1, SHA-384 and SHA-512, which the built-in does not have.
+##
+## A file input tells you about a picked file with `on_file` (in joy-html's
+## `Attribute`), and what it gives you has the file's `id`:
+##
+## ```roc
+## WebCrypto.digest_file(
+##     Sha256,
+##     file.id,
+##     |hash| GotHash(hash),
+## )
+## ```
+##
+## ## What you get back
+##
+## The hash as bytes: 20 for `Sha1`, 32 for `Sha256`, 48 for `Sha384` and 64
+## for `Sha512`. [WebCrypto.to_hex] turns them into the usual text form.
+##
+## An empty list means the hashing failed: the file is not known, or it
+## changed on disk after it was picked.
+##
+## ## Big files
+##
+## [WebCrypto.digest_file] holds the whole file in memory while it hashes. For
+## a big file, hash it a part at a time with [WebCrypto.digest_file_slice],
+## one effect for each part. That also lets you show progress.
+##
+## You can ask for every part at once. Joy hashes as many at a time as the
+## machine has processor cores and starts the rest as those finish, so only
+## that many parts are in memory.
 import Effect
 import Wire
 
 WebCrypto := [].{
 
-	## Web Crypto's supported digest algorithms. Sha1 is broken for
-	## collision resistance; it is here for interop with systems keyed on
-	## it, not for anything security-sensitive.
+	## The kinds of hash Web Crypto can make.
+	##
+	## `Sha1` is no longer safe for anything that guards against tampering. It is
+	## here for systems that already use it.
 	Algorithm : [Sha1, Sha256, Sha384, Sha512]
 
-	## The Web Crypto name of an algorithm ("SHA-256", ...).
+	## An algorithm's name as Web Crypto spells it, like `"SHA-256"`.
 	algorithm_name : Algorithm -> Str
 	algorithm_name = |algorithm|
 		match algorithm {
@@ -39,22 +59,45 @@ WebCrypto := [].{
 			Sha512 => "SHA-512"
 		}
 
-	## Hash bytes: `WebCrypto.digest(Sha384, bytes, |hash| GotHash(hash))`.
-	## (For Sha256, the built-in `Crypto.SHA256.hash` is the better tool.)
+	## Hash bytes your app holds.
+	##
+	## ```roc
+	## WebCrypto.digest(Sha384, bytes, |hash| GotHash(hash))
+	## ```
+	##
+	## For `Sha256`, the built-in `Crypto.SHA256.hash(bytes)` does the same with
+	## no effect.
 	digest : Algorithm, List(U8), (List(U8) -> msg) -> Effect(msg)
 	digest = |algorithm, bytes, on_hash|
 		Effect.call("joy/crypto/digest", Wire.writer({}).str(algorithm_name(algorithm)).bytes(bytes).done(), |reply| on_hash(hash(reply)))
 
-	## Hash a user-picked file by its `Attribute.FileInfo` id.
+	## Hash a file the user picked, by its `id`.
+	##
+	## ```roc
+	## WebCrypto.digest_file(Sha256, file.id, |hash| GotHash(hash))
+	## ```
 	digest_file : Algorithm, U32, (List(U8) -> msg) -> Effect(msg)
 	digest_file = |algorithm, file, on_hash| digest_range(algorithm, file, 0, 0, on_hash)
 
-	## Hash a byte range of a user-picked file (`len` 0 means through the
-	## end). One call per chunk gives chunked hashing with progress.
+	## Hash a part of a file the user picked. `start` and `len` say which bytes,
+	## and a `len` of 0 means all the rest.
+	##
+	## ```roc
+	## WebCrypto.digest_file_slice(
+	##     Sha256,
+	##     { file: file.id, start: 0, len: 1_000_000 },
+	##     |hash| GotPartHash(hash),
+	## )
+	## ```
 	digest_file_slice : Algorithm, { file : U32, start : U64, len : U64 }, (List(U8) -> msg) -> Effect(msg)
 	digest_file_slice = |algorithm, slice, on_hash| digest_range(algorithm, slice.file, slice.start, slice.len, on_hash)
 
-	## The conventional lowercase-hex rendering of a hash.
+	## A hash as text, the way hashes are usually shown: two lowercase hex digits
+	## for each byte.
+	##
+	## ```roc
+	## WebCrypto.to_hex([222, 173, 190, 239]) == "deadbeef"
+	## ```
 	to_hex : List(U8) -> Str
 	to_hex = |bytes| {
 		pairs = bytes.map(

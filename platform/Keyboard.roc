@@ -1,48 +1,91 @@
-## Global (document-level) keyboard subscriptions. Each firing carries the
-## `KeyEvent` record: the key ("a", "Enter", "Escape", ...), the physical
-## code ("KeyA", ...), the modifier flags, and whether it is a held-key
-## auto-repeat. Return one of these from `subscriptions` for as long as it
-## should listen; dropping it from the list removes the document listener.
+## Key presses anywhere on the page.
 ##
-## The key filter and preventDefault decisions are data on the subscription
-## rather than logic in your app: the browser handler applies them without
-## entering the app, and together with the event name they form the
-## subscription's identity for diffing. An empty filter matches every key,
-## and the prevent-default variant suppresses the browser default for
-## exactly the filtered keys.
+## Each function here gives a subscription. It listens for as long as it is
+## in the list `subscriptions` returns.
 ##
-## Keys compare against the event's `key` string exactly, so the match is
-## case-sensitive: Shift makes "a" arrive as "A". List both to catch either.
+## ```roc
+## Msg : [UserPressedEsc]
 ##
-## For keyboard events on a specific element, see `Attribute.on_keydown`.
+## subscriptions = |_model| [
+##     Keyboard.on_down_keys(["Escape"], |_| UserPressedEsc),
+## ]
+## ```
+##
+## ## Which key
+##
+## Your function gets a [Sub.KeyEvent], which says which key it was and
+## whether Ctrl, Shift, Alt or Meta was held.
+##
+## Keys are named the way the browser names them: `"a"`, `"Enter"`,
+## `"Escape"`, `"ArrowLeft"`, and `" "` for the space bar. The match is exact,
+## and capitals count: with Shift held, `"a"` arrives as `"A"`. List both to
+## catch either.
+##
+## ## One element or the whole page
+##
+## These subscriptions hear keys wherever the focus is. For keys typed in one
+## field, put `on_keydown`, `on_keyup` or `on_key` from joy-html's `Attribute`
+## on that element.
+##
+## The guide has [a keyboard example](../../#example-keyboard) to try.
 import Sub
 import Wire
 
 Keyboard := [].{
 
-	## Msg for every keydown.
+	## A message for every key that goes down.
+	##
+	## ```roc
+	## Keyboard.on_down(|event| UserPressedKey(event.key))
+	## ```
 	on_down : (Sub.KeyEvent -> msg) -> Sub(msg)
 	on_down = |to_msg| listen_keys("keydown", [], Bool.False, to_msg)
 
-	## Keydown for these keys only.
+	## A message when one of these keys goes down.
+	##
+	## ```roc
+	## Keyboard.on_down_keys(
+	##     ["ArrowLeft", "ArrowRight"],
+	##     |event| UserPressedArrow(event.key),
+	## )
+	## ```
 	on_down_keys : List(Str), (Sub.KeyEvent -> msg) -> Sub(msg)
 	on_down_keys = |keys, to_msg| listen_keys("keydown", keys, Bool.False, to_msg)
 
-	## Like `on_down_keys`, and preventDefault on the matching events, except a
-	## key typed into a field outside this app, which keeps its default.
+	## Like [Keyboard.on_down_keys], and the browser does not do what it normally
+	## does with those keys. Use it to keep Space from scrolling the page, or Tab
+	## from moving the focus.
+	##
+	## ```roc
+	## Keyboard.on_down_keys_prevent_default(
+	##     [" "],
+	##     |_| UserPressedSpace,
+	## )
+	## ```
+	##
+	## A key typed in a field outside your app keeps its normal effect.
 	on_down_keys_prevent_default : List(Str), (Sub.KeyEvent -> msg) -> Sub(msg)
 	on_down_keys_prevent_default = |keys, to_msg| listen_keys("keydown", keys, Bool.True, to_msg)
 
-	## Msg for every keyup.
+	## A message for every key that comes back up.
+	##
+	## ```roc
+	## Keyboard.on_up(|event| UserReleasedKey(event.key))
+	## ```
 	on_up : (Sub.KeyEvent -> msg) -> Sub(msg)
 	on_up = |to_msg| listen_keys("keyup", [], Bool.False, to_msg)
 
-	## Keyup for these keys only.
+	## A message when one of these keys comes back up.
+	##
+	## ```roc
+	## Keyboard.on_up_keys([" "], |_| UserReleasedSpace)
+	## ```
 	on_up_keys : List(Str), (Sub.KeyEvent -> msg) -> Sub(msg)
 	on_up_keys = |keys, to_msg| listen_keys("keyup", keys, Bool.False, to_msg)
 
-	## Like `on_up_keys`, and preventDefault on the matching events, except a
-	## key typed into a field outside this app, which keeps its default.
+	## Like [Keyboard.on_up_keys], and the browser does not do what it normally
+	## does when those keys come up. A key typed in a field outside your app keeps
+	## its normal effect.
 	on_up_keys_prevent_default : List(Str), (Sub.KeyEvent -> msg) -> Sub(msg)
 	on_up_keys_prevent_default = |keys, to_msg| listen_keys("keyup", keys, Bool.True, to_msg)
 }

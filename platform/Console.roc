@@ -1,22 +1,36 @@
-## Browser console logging as an effect. The app is pure and the
-## compiler enforces it, so logging is data like every other observable
-## effect: return `Console.log(...)` in the effect list from `init` or
-## `update`. Messages queue host-side and the JS runtime drains the queue to
-## `console.log` after each entry call.
+## Write to the browser's console.
 ##
-## There are two console streams. `Console.log` is the intentional app
-## logging effect: you own the message, and it lands in `console.log`. The
-## `dbg expr` statement is the development printf: it is pure to the effect
-## system, so it works anywhere in `init`, `update` or `view`, its output
-## format belongs to the compiler (the inspected value), and it lands in
-## `console.debug`, which files under the Verbose level in devtools.
-## Statement form only, `x = dbg y` is not supported.
+## Logging is an effect, like everything else your app does outside itself.
+## Return it from `init` or `update`:
+##
+## ```roc
+## update = |model, msg|
+##     match msg {
+##         UserClickedSave =>
+##             (model, [Console.log("Saving ${model.title}")])
+##     }
+## ```
+##
+## ## `Console.log` or `dbg`?
+##
+## - `Console.log` is for lines your app means to write. They show up as
+##   ordinary console messages.
+## - `dbg` is Roc's own tool for a quick look at a value while you work, like
+##   `dbg model.count`. It works anywhere, in `view` too, and needs no effect.
+##   Its lines show up at the console's Verbose level, which some browsers
+##   hide until you ask for it. Write `dbg` on a line of its own:
+##   `x = dbg y` is not supported.
+##
+## The guide has [a logging example](../../#example-logging) to try.
 import Effect
 
 Console := [].{
 
-	## Log a message: the message reaches the console queue when the
-	## returned effects run.
+	## Write a line to the console.
+	##
+	## ```roc
+	## Console.log("The app started")
+	## ```
 	log : Str -> Effect(msg)
 	log = |message| ConsoleLog(message)
 }

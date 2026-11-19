@@ -1,13 +1,52 @@
-## HTTP requests as effects. The response arrives as a typed message:
-## `Http.get(url, |result| GotData(result))` calls your function with a
-## `Try(Response, ...)` and feeds the resulting msg to `update`.
+## Make HTTP requests, and get the answers as messages:
 ##
-## Any status the server actually sent is `Ok(response)`, including 4xx and
-## 5xx: an `Err(HttpErr(...))` is reserved for transport failures where no
-## response exists at all. `NetworkError` means the request never completed
-## (network failure, CORS, ...), `Timeout` means the request's `timeout_ms`
-## ran out first. A match on the result covers every outcome without magic
-## status numbers.
+## ```roc
+## Msg : [
+##     UserClickedLoad,
+##     ServerAnswered(Try(Http.Response, [HttpErr([Timeout, NetworkError])])),
+## ]
+##
+## load : Effect(Msg)
+## load = Http.get("/hello", |answer| ServerAnswered(answer))
+##
+## update = |model, msg|
+##     match msg {
+##         UserClickedLoad => (model, [load])
+##
+##         ServerAnswered(Ok(response)) => {
+##             text = Str.from_utf8_lossy(response.body)
+##             ({ ..model, text }, [])
+##         }
+##
+##         ServerAnswered(Err(_)) =>
+##             ({ ..model, text: "No answer" }, [])
+##     }
+## ```
+##
+## A request is an effect: return it from `init` or `update`, with a function
+## that turns the answer into one of your messages.
+##
+## ## What you get back
+##
+## The answer is one of three things:
+##
+## - `Ok(response)`: the server answered. That includes answers like 404 and
+##   500, so look at `response.status` to see how it went.
+## - `Err(HttpErr(NetworkError))`: no answer came. The user may be offline,
+##   or the browser refused to make the request (CORS).
+## - `Err(HttpErr(Timeout))`: no answer came in the time you allowed.
+##
+## ## Reading the body
+##
+## `response.body` is bytes. `Str.from_utf8_lossy(response.body)` gives you
+## its text, and `Json.parse` turns JSON text into the type you ask for:
+##
+## ```roc
+## todos : Try(List({ title : Str, done : Bool }), _)
+## todos = Json.parse(Str.from_utf8_lossy(response.body))
+## ```
+##
+## The guide has [an HTTP example](../../#example-http) to try.
 import Effect
 import Wire
 
@@ -22,10 +61,10 @@ timeout_to_u64 = |t|
 		NoTimeout => 0
 	}
 
-## Decode the response the http feature answers with. Statuses 1-99 are
-## impossible in real HTTP, so it reports transport failures in-band: raw
-## status 0 means the request never completed, raw status 1 means it timed
-## out. Everything else is a response the server actually sent.
+# Decode the response the http feature answers with. Statuses 1-99 are
+# impossible in real HTTP, so it reports transport failures in-band: raw
+# status 0 means the request never completed, raw status 1 means it timed
+# out. Everything else is a response the server actually sent.
 to_try : { status : U16, headers : List({ name : Str, value : Str }), body : List(U8) } -> Try({ status : U16, headers : List({ name : Str, value : Str }), body : List(U8) }, [HttpErr([Timeout, NetworkError])])
 to_try = |raw|
 	if raw.status == 0 {
@@ -38,14 +77,31 @@ to_try = |raw|
 
 Http := [].{
 
-	## An HTTP header, e.g. `{ name: "Content-Type", value: "application/json" }`.
+	## One header of a request or a response, like
+	## `{ name: "Content-Type", value: "application/json" }`.
 	Header : { name : Str, value : Str }
 
-	## An HTTP response. Any status the server sent lands here, 4xx and 5xx
-	## included, while transport failures never produce a `Response` at all.
+	## What the server answered.
+	##
+	## - `status` is the status code: 200 when all went well, 404 when there
+	##   is nothing at that address, and so on.
+	## - `headers` are the headers the server sent along.
+	## - `body` is the content, as bytes. See "Reading the body" at the top of
+	##   this page.
 	Response : { status : U16, headers : List(Header), body : List(U8) }
 
-	## An HTTP request, for `Http.request`.
+	## Everything about a request, for [Http.request]. You rarely write one
+	## from scratch: start from [Http.default_request] and change what you
+	## need.
+	##
+	## - `method` is `GET`, `POST`, `PUT`, `DELETE` and so on.
+	## - `uri` is the address to send it to.
+	## - `headers` are the headers to send along.
+	## - `body` is the content to send, as bytes. `Str.to_utf8` turns text
+	##   into bytes.
+	## - `timeout_ms` is how long to wait for the answer:
+	##   `TimeoutMilliseconds(5000)` gives up after five seconds, and
+	##   `NoTimeout` waits for as long as the browser does.
 	Request : {
 		method : Method,
 		uri : Str,
@@ -54,9 +110,12 @@ Http := [].{
 		timeout_ms : [TimeoutMilliseconds(U64), NoTimeout],
 	}
 
-	## A `GET` request with empty headers/body, no timeout, and an empty URI.
-	## Override the fields you need, e.g.
-	## `{ ..Http.default_request, uri: "https://example.com" }`.
+	## A request to start from: a `GET` with no headers, no body and no
+	## timeout. Change the fields you need:
+	##
+	## ```roc
+	## { ..Http.default_request, uri: "/todos.json" }
+	## ```
 	default_request : Request
 	default_request = {
 		method: GET,
@@ -66,7 +125,7 @@ Http := [].{
 		timeout_ms: NoTimeout,
 	}
 
-	## The request method as it appears on the wire.
+	## A method's name as text, like `"GET"`.
 	method_to_str : Method -> Str
 	method_to_str = |method|
 		match method {
@@ -82,49 +141,122 @@ Http := [].{
 			EXTENSION(ext) => ext
 		}
 
+	## Make a `GET` request.
+	##
+	## ```roc
+	## Http.get("/todos.json", |answer| ServerSentTodos(answer))
+	## ```
+	##
+	## The second argument is how the answer becomes one of your messages.
+	## The top of this page shows what the answer can be.
 	get : Str, (Try(Response, [HttpErr([Timeout, NetworkError])]) -> msg) -> Effect(msg)
 	get = |url, on_result|
 		send("GET", url, [], [], 0, on_result)
 
+	## Make a `POST` request with a body. The body is bytes, and
+	## `Str.to_utf8` turns text into bytes:
+	##
+	## ```roc
+	## body = Str.to_utf8(Json.to_str({ title: "Buy milk" }))
+	##
+	## Http.post("/todos", body, |answer| ServerSavedTodo(answer))
+	## ```
+	##
+	## `post` sends no headers. To tell the server that the body is JSON, or
+	## to use another method, use [Http.request].
 	post : Str, List(U8), (Try(Response, [HttpErr([Timeout, NetworkError])]) -> msg) -> Effect(msg)
 	post = |url, body, on_result|
 		send("POST", url, [], body, 0, on_result)
 
-	## Full control: method, uri, headers, body, timeout.
+	## A request where you decide everything: the method, the headers, the
+	## body and how long to wait. Start from [Http.default_request] and change
+	## what you need:
+	##
+	## ```roc
+	## json = { name: "Content-Type", value: "application/json" }
+	## body = Str.to_utf8(Json.to_str({ title: "Buy milk" }))
+	##
+	## Http.request(
+	##     {
+	##         ..Http.default_request,
+	##         method: POST,
+	##         uri: "/todos",
+	##         headers: [json],
+	##         body,
+	##         timeout_ms: TimeoutMilliseconds(5000),
+	##     },
+	##     |answer| ServerSavedTodo(answer),
+	## )
+	## ```
 	request : Request, (Try(Response, [HttpErr([Timeout, NetworkError])]) -> msg) -> Effect(msg)
 	request = |req, on_result|
 		send(method_to_str(req.method), req.uri, req.headers, req.body, timeout_to_u64(req.timeout_ms), on_result)
 
-	## POST a user-picked file as the request body. The file id comes from
-	## `Attribute.on_file`; the browser streams the File object directly, so
-	## the bytes never enter wasm memory (uploads of any size cost no wasm
-	## heap).
+	## Upload a file the user picked, with a `POST` request. The file is the
+	## body.
+	##
+	## A file input tells you about the file with `on_file` (in joy-html's
+	## `Attribute`), and what it gives you has the file's `id`:
+	##
+	## ```roc
+	## input([type("file"), on_file(|file| UserPickedFile(file))])
+	## ```
+	##
+	## ```roc
+	## Http.post_file(
+	##     "/upload",
+	##     file.id,
+	##     [],
+	##     |answer| ServerTookFile(answer),
+	## )
+	## ```
+	##
+	## The browser sends the file straight from where it is. Your app never
+	## holds its bytes, so a big file costs it no memory.
 	post_file : Str, U32, List(Header), (Try(Response, [HttpErr([Timeout, NetworkError])]) -> msg) -> Effect(msg)
 	post_file = |url, file, headers, on_result|
 		send_file("POST", url, headers, { file, start: 0, len: 0 }, 0, on_result)
 
-	## PUT a user-picked file as the request body (see `post_file`).
+	## The same as [Http.post_file], with a `PUT` request.
 	put_file : Str, U32, List(Header), (Try(Response, [HttpErr([Timeout, NetworkError])]) -> msg) -> Effect(msg)
 	put_file = |url, file, headers, on_result|
 		send_file("PUT", url, headers, { file, start: 0, len: 0 }, 0, on_result)
 
-	## Full control over a file-body request, including a byte range and a
-	## timeout. `start` and `len` slice the file (`len` 0 means through the
-	## end), the building block for chunked uploads of large files.
+	## Upload a file, or a part of one, where you decide everything: the
+	## method, the headers and how long to wait.
+	##
+	## `start` and `len` say which bytes of the file to send, and a `len` of
+	## 0 means all the rest. Sending a big file a part at a time is how you
+	## show progress, or go on after the connection dropped.
+	##
+	## ```roc
+	## Http.request_file(
+	##     {
+	##         method: PUT,
+	##         uri: "/upload/part/1",
+	##         headers: [],
+	##         file: file.id,
+	##         start: 0,
+	##         len: 1_000_000,
+	##         timeout_ms: NoTimeout,
+	##     },
+	##     |answer| ServerTookPart(answer),
+	## )
+	## ```
 	request_file : { method : Method, uri : Str, headers : List(Header), file : U32, start : U64, len : U64, timeout_ms : [TimeoutMilliseconds(U64), NoTimeout] }, (Try(Response, [HttpErr([Timeout, NetworkError])]) -> msg) -> Effect(msg)
 	request_file = |req, on_result|
 		send_file(method_to_str(req.method), req.uri, req.headers, { file: req.file, start: req.start, len: req.len }, timeout_to_u64(req.timeout_ms), on_result)
 }
 
-## A request with a body: method, url, headers, the body, then the timeout
-## (0 for none).
+# A request with a body: method, url, headers, the body, then the timeout
+# (0 for none).
 send : Str, Str, List(Http.Header), List(U8), U64, (Try(Http.Response, [HttpErr([Timeout, NetworkError])]) -> msg) -> Effect(msg)
 send = |method, url, headers, body, timeout, on_result|
 	Effect.call("joy/http/send", request_head(method, url, headers).bytes(body).u64(timeout).done(), |reply| on_result(to_try(raw_response(reply))))
 
-## A request with a byte range of a browser-held file as its body: method,
-## url, headers, the file, its range (`len` 0 for through the end), then the
-## timeout.
+# A request with a byte range of a browser-held file as its body: method,
+# url, headers, the file, its range (`len` 0 for through the end), then the
+# timeout.
 send_file : Str, Str, List(Http.Header), { file : U32, start : U64, len : U64 }, U64, (Try(Http.Response, [HttpErr([Timeout, NetworkError])]) -> msg) -> Effect(msg)
 send_file = |method, url, headers, { file, start, len }, timeout, on_result|
 	Effect.call(
@@ -137,9 +269,9 @@ request_head : Str, Str, List(Http.Header) -> Wire.Writer
 request_head = |method, url, headers|
 	headers.fold(Wire.writer({}).str(method).str(url).u32(headers.len().to_u32_wrap()), |w, h| w.str(h.name).str(h.value))
 
-## The answer's status, headers and body. A reply that is not an answer (a
-## runtime.js without the http feature, say) is a request that never
-## completed.
+# The answer's status, headers and body. A reply that is not an answer (a
+# runtime.js without the http feature, say) is a request that never
+# completed.
 raw_response : List(U8) -> Http.Response
 raw_response = |reply|
 	match Effect.reply(reply) {

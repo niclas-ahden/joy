@@ -1,29 +1,63 @@
-## The system clipboard, as an effect. The browser only lets a secure page
-## (HTTPS, or localhost) write to it, and most browsers also want the write
-## to follow the user's click or key press, so return it from the `update`
-## for that message.
+## Copy text to the clipboard.
+##
+## ```roc
+## Msg : [UserClickedCopy, Copied(Try({}, Clipboard.Problem))]
+##
+## copy : Str -> Effect(Msg)
+## copy = |text| Clipboard.write_text(text, |r| Copied(r))
+##
+## update = |model, msg|
+##     match msg {
+##         UserClickedCopy => (model, [copy(model.link)])
+##         Copied(Ok({})) => ({ ..model, note: "Copied!" }, [])
+##         Copied(Err(_)) => ({ ..model, note: "Failed" }, [])
+##     }
+## ```
+##
+## ## When the browser says no
+##
+## A browser lets a page write to the clipboard only when both of these hold:
+##
+## - The page is served over HTTPS, or from localhost.
+## - The write follows a click or a key press. So return the effect from the
+##   `update` for that click's message, not later.
+##
+## Anything else comes back as an `Err` with a [Clipboard.Problem].
 import Effect
 import Wire
 
 Clipboard := [].{
 
-	## Why the browser said no. `NotAllowed` is the browser refusing, most
-	## often because no click or key press led to the write or the page
-	## does not have focus. `Insecure` is a page that is not HTTPS (or
-	## localhost), and `Unsupported` a browser without the clipboard API.
-	## `NotFound` is `write_text_of` given a selector nothing matches.
+	## Why the text was not copied.
+	##
+	## - `NotAllowed`: the browser refused. Most often no click or key press led
+	##   to the write, or the page did not have focus.
+	## - `Insecure`: the page is not served over HTTPS (or from localhost).
+	## - `Unsupported`: the browser has no clipboard to write to.
+	## - `NotFound`: [Clipboard.write_text_of] was given a selector that matches
+	##   nothing.
+	## - `Other(name)`: anything else, with the browser's name for the error.
 	Problem : [NotAllowed, Insecure, Unsupported, NotFound, Other(Str)]
 
-	## Put text on the clipboard (`navigator.clipboard.writeText`). The
-	## message says whether it worked, so a "Copy" button can say "Copied",
-	## or tell the user to copy by hand when it did not.
+	## Put a text on the clipboard. Your message says whether it worked, so a
+	## Copy button can say "Copied", or ask the user to copy by hand.
+	##
+	## ```roc
+	## Clipboard.write_text("roc build", |r| Copied(r))
+	## ```
 	write_text : Str, (Try({}, Clipboard.Problem) -> msg) -> Effect(msg)
 	write_text = |text, on_done| Effect.call("joy/clipboard/write_text", Wire.writer({}).str(text).done(), |reply| on_done(done(reply)))
 
-	## Put the text of the element matching this CSS selector on the
-	## clipboard (its `textContent`). For text the app does not hold, such
-	## as a code block in the page's own HTML around the app's root. The
-	## selector looks in this app's own view first.
+	## Put the text of an element on the clipboard: the element a CSS selector
+	## matches. This is for text your app does not hold, like a code block in the
+	## page around your app.
+	##
+	## ```roc
+	## Clipboard.write_text_of("#install-command", |r| Copied(r))
+	## ```
+	##
+	## The selector looks in your app's own view first, and then in the rest of
+	## the page.
 	write_text_of : Str, (Try({}, Clipboard.Problem) -> msg) -> Effect(msg)
 	write_text_of = |selector, on_done| Effect.call("joy/clipboard/write_text_of", Wire.writer({}).str(selector).done(), |reply| on_done(done(reply)))
 }
