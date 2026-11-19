@@ -1,5 +1,8 @@
+import /Topic/Examples as TopicExamples
+
 ## Every topic of the guide in reading order, and what the index knows of
-## each. A topic's body is in Topic/, one module per topic (see Guide).
+## each. A topic's body is in Topic/, one module per topic (see Guide). The
+## examples are topics too, one each, all from Topic/Examples.
 Topics := [].{
 	Topic : [
 		Welcome,
@@ -10,7 +13,9 @@ Topics := [].{
 		Subscriptions,
 		Flags,
 		Install,
+		Ports,
 		CustomEffects,
+		Example(TopicExamples.Example),
 	]
 
 	## What the index shows of a topic, and finds it by: its #anchor, the part
@@ -27,8 +32,9 @@ Topics := [].{
 		Subscriptions,
 		Flags,
 		Install,
+		Ports,
 		CustomEffects,
-	]
+	].concat(TopicExamples.all.map(|example| Example(example)))
 
 	info : Topic -> Info
 	info = |topic|
@@ -41,7 +47,12 @@ Topics := [].{
 			Subscriptions => { id: "subscriptions", part: "Start here", title: "Subscriptions", keywords: "sub time every keyboard on_down_keys listen map" }
 			Flags => { id: "flags", part: "Start here", title: "Flags", keywords: "flags init mount json parse javascript start data" }
 			Install => { id: "install", part: "Installation", title: "Joy on your machine", keywords: "install installation setup get started roc nightly init template spa new project joy dev hot reload build dist" }
-			CustomEffects => { id: "custom-effects", part: "Reference", title: "Custom effects", keywords: "custom effects own javascript js browser api package effects folder effect call send sub listen wire defineEffect defineSubscription operation id share network online offline interop ffi port" }
+			Ports => { id: "ports", part: "JavaScript interop", title: "Ports", keywords: "ports port javascript js send listen onPort sendPort joy:mount joy:mounted interop page script" }
+			Example(example) => {
+				shown = TopicExamples.info(example)
+				{ id: shown.id, part: "Examples", title: shown.title, keywords: shown.keywords }
+			}
+			CustomEffects => { id: "custom-effects", part: "JavaScript interop", title: "Custom effects", keywords: "custom effects own javascript js browser api package effects folder effect call send sub listen wire defineEffect defineSubscription operation id share network online offline interop ffi port" }
 		}
 
 	## Where a topic is in reading order, counting from 0.

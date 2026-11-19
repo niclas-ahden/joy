@@ -1,9 +1,11 @@
 // The guide's editors. Each [data-editor] block (see Doc.editor)
-// becomes an editor beside the running app. The Roc compiler, built for the
-// browser, runs in one worker that every editor on the page shares, and
-// Joy's own runtime mounts what it builds, the way a page mounts a bundle. An
-// edit hot reloads the app, so it keeps its state, and a report from roc
-// covers the app until the code compiles again.
+// becomes an editor beside the running app, with two files to edit: the app
+// and the page it is on. The Roc compiler, built for the browser, runs in one
+// worker that every editor on the page shares. The app runs in a frame built
+// from its page, the way a browser runs a project's page, and the frame is
+// locked, so the page's scripts cannot reach the guide. An edit of the app
+// hot reloads it, so it keeps its state, an edit of the page starts the page
+// over, and a report from roc covers the app until the code compiles again.
 //
 // Nothing loads until an editor comes into view: the compiler is a large
 // download, and most visits never reach one.
@@ -45,8 +47,9 @@ const compile = (source) => ask({ source, hot: true });
 // The source the way `roc format` leaves it.
 const format = (source) => ask({ format: source });
 
-let runtime = null;
-const loadRuntime = () => (runtime ??= import(new URL('runtime-hot.js', BASE).href));
+// What runs an app in a frame of its own, which comes with the compiler's files.
+let frames = null;
+const loadFrames = () => (frames ??= import(new URL('frame.js', BASE).href));
 
 let editorLib = null;
 function loadEditor() {
@@ -68,8 +71,13 @@ function loadEditor() {
     // A plain text area stands in when the editor cannot load. Without
     // show-hint the editor works and suggests nothing.
     script(`${CODEMIRROR}/codemirror.min.js`)
-      .then(() => script(`${CODEMIRROR}/mode/elm/elm.min.js`))
+      // Roc's mode comes with the compiler's files. Elm's, the closest of
+      // CodeMirror's own, stands in where those files have none.
+      .then(() => script(new URL('roc-mode.js', BASE).href).catch(() => script(`${CODEMIRROR}/mode/elm/elm.min.js`)))
       .then(() => script(`${CODEMIRROR}/addon/hint/show-hint.min.js`).catch(() => {}))
+      // What colours the page. Without it the page is plain text.
+      .then(() => Promise.all(['xml/xml', 'javascript/javascript', 'css/css'].map((mode) => script(`${CODEMIRROR}/mode/${mode}.min.js`)))
+        .then(() => script(`${CODEMIRROR}/mode/htmlmixed/htmlmixed.min.js`)).catch(() => {}))
       .then(() => resolve(globalThis.CodeMirror), () => resolve(null));
   });
   return editorLib;
@@ -389,8 +397,10 @@ function suggestIn(cm, modules) {
 // --- One editor ---
 
 async function start(block) {
-  const original = block.querySelector('code').textContent;
-  const file = block.querySelector('.file')?.textContent ?? 'main.roc';
+  // The app's code, and its page when the block brings one (see Doc.with_page).
+  const [rocBlock, pageBlock] = block.querySelectorAll('.code');
+  const original = rocBlock.querySelector('code').textContent;
+  const file = rocBlock.querySelector('.file')?.textContent ?? 'main.roc';
 
   const status = el('span', 'ed-status', 'Loading the compiler...');
   const formatButton = el('button', 'ed-button', 'Format');
@@ -400,7 +410,20 @@ async function start(block) {
   reset.type = 'button';
   const open = el('a', 'ed-open', 'Open full screen');
   open.target = '_blank';
-  const editorPane = el('div', 'ed-code');
+  const tab = (label) => {
+    const button = el('button', 'ed-tab', label);
+    button.type = 'button';
+    button.setAttribute('role', 'tab');
+    return button;
+  };
+  const rocTab = tab(file);
+  const pageTab = tab('index.html');
+  const tabs = el('div', 'ed-tabs', rocTab, pageTab);
+  tabs.setAttribute('role', 'tablist');
+  tabs.setAttribute('aria-label', 'Files');
+  const rocPane = el('div', 'ed-file');
+  const pagePane = el('div', 'ed-file');
+  const editorPane = el('div', 'ed-code', rocPane, pagePane);
   const appPane = el('div', 'ed-app');
   const report = el('pre', 'ed-report');
   report.setAttribute('aria-live', 'polite');
@@ -408,16 +431,18 @@ async function start(block) {
   const split = el('div', 'ed-split');
   const body = el('div', 'ed-body', editorPane, split, output);
   const ui = el('div', 'ed',
-    el('div', 'code-head ed-head', el('span', 'file', file), status, formatButton, reset, open),
+    el('div', 'code-head ed-head', tabs, status, formatButton, reset, open),
     body);
 
   // The static block stays until the editor can take its place.
-  const [CodeMirror] = await Promise.all([loadEditor(), loadRuntime()]);
+  const [CodeMirror, { start: startFrames, PAGE }] = await Promise.all([loadEditor(), loadFrames()]);
+  const originalPage = pageBlock?.querySelector('code').textContent ?? PAGE;
   block.replaceChildren(ui);
 
   let editor;
+  let page;
   if (CodeMirror) {
-    const cm = CodeMirror(editorPane, { value: original, mode: 'elm', lineNumbers: true, indentUnit: 4, tabSize: 4, viewportMargin: Infinity });
+    const cm = CodeMirror(rocPane, { value: original, mode: CodeMirror.modes.roc ? 'roc' : 'elm', lineNumbers: true, indentUnit: 4, tabSize: 4, viewportMargin: Infinity });
     // A folded editor (see Doc.editor_folded) shows the app's header
     // as one button, which opens it, as does moving the cursor into it. The
     // code is whole all along, so the line numbers are those of a report.
@@ -445,57 +470,82 @@ async function start(block) {
       // Keeps the cursor and the scroll, and Ctrl+Z takes it back. A header
       // that was folded stays folded.
       replace: (v) => { const at = cm.getCursor(); const { left, top } = cm.getScrollInfo(); const folded = Boolean(header?.find()); cm.setValue(v); if (folded) fold(); cm.setCursor(at); cm.scrollTo(left, top); } };
+    const pageCm = CodeMirror(pagePane, { value: originalPage, mode: CodeMirror.modes.htmlmixed ? 'htmlmixed' : null, lineNumbers: true, indentUnit: 2, tabSize: 2, viewportMargin: Infinity });
+    page = { get: () => pageCm.getValue(), set: (v) => pageCm.setValue(v), onChange: (f) => pageCm.on('change', f), refresh: () => pageCm.refresh() };
   } else {
-    const area = el('textarea', 'ed-textarea');
-    area.value = original;
-    area.spellcheck = false;
-    area.setAttribute('aria-label', 'Roc source');
-    editorPane.append(area);
-    editor = { get: () => area.value, set: (v) => { area.value = v; }, onChange: (f) => area.addEventListener('input', f), refresh: () => {}, mark: () => {},
-      replace: (v) => { const at = area.selectionStart; area.value = v; area.selectionStart = area.selectionEnd = at; area.dispatchEvent(new Event('input')); } };
+    const area = (value, label) => {
+      const text = el('textarea', 'ed-textarea');
+      text.value = value;
+      text.spellcheck = false;
+      text.setAttribute('aria-label', label);
+      return text;
+    };
+    const rocArea = area(original, 'Roc source');
+    rocPane.append(rocArea);
+    editor = { get: () => rocArea.value, set: (v) => { rocArea.value = v; }, onChange: (f) => rocArea.addEventListener('input', f), refresh: () => {}, mark: () => {},
+      replace: (v) => { const at = rocArea.selectionStart; rocArea.value = v; rocArea.selectionStart = rocArea.selectionEnd = at; rocArea.dispatchEvent(new Event('input')); } };
+    const pageArea = area(originalPage, 'The page');
+    pagePane.append(pageArea);
+    page = { get: () => pageArea.value, set: (v) => { pageArea.value = v; pageArea.dispatchEvent(new Event('input')); }, onChange: (f) => pageArea.addEventListener('input', f), refresh: () => {} };
   }
 
-  resizable(split, body, ui, editor);
+  // The two files as tabs, one shown at a time. The pane keeps the height of
+  // the taller file it has shown, so the page below does not jump.
+  const files = [{ tab: rocTab, pane: rocPane, file: editor }, { tab: pageTab, pane: pagePane, file: page }];
+  const showFile = (shown) => {
+    for (const one of files) {
+      one.tab.setAttribute('aria-selected', String(one === shown));
+      one.pane.hidden = one !== shown;
+    }
+    shown.file.refresh();
+    // Measured with only this file showing. The height already holds the
+    // minimum set before, so it never shrinks.
+    editorPane.style.minHeight = `${editorPane.offsetHeight}px`;
+  };
+  for (const one of files) one.tab.addEventListener('click', () => showFile(one));
+  showFile(files[0]);
 
-  const { mount } = await loadRuntime();
-  let app = null;
+  resizable(split, body, ui, { refresh: () => { editor.refresh(); page.refresh(); } });
+
+  // The app runs in a frame built from the page (see frame.js beside the
+  // compiler), the way a browser runs a project's page.
+  const frame = await startFrames({ hot: true, host: appPane });
   let busy = false;
   let again = false;
+  // Whether the page was edited since the frame was built from it.
+  let pageChanged = false;
 
-  async function fresh(wasm) {
-    app?.unmount();
-    const root = document.createElement('div');
-    appPane.replaceChildren(root);
-    return mount({ wasm, root, flags: '' });
-  }
+  const crashed = (err) => {
+    report.textContent = `The app crashed while starting.\n\n${err?.stack ?? err}`;
+    report.classList.add('shown');
+    status.textContent = 'The app crashed';
+  };
+  const running = () => {
+    report.classList.remove('shown');
+    report.textContent = '';
+  };
+  const link = () => {
+    const html = page.get();
+    open.href = `${new URL('index.html', BASE).href}#code=${encode(forCompiler(editor.get()))}${html === PAGE ? '' : `&page=${encode(html)}`}`;
+  };
 
   async function run() {
     if (busy) { again = true; return; }
     busy = true;
     status.textContent = 'Compiling...';
     const source = forCompiler(editor.get());
-    open.href = `${new URL('index.html', BASE).href}#code=${encode(source)}`;
+    link();
     const result = await compile(source);
     if (result.ok) {
       editor.mark([]);
+      const startOver = pageChanged;
+      pageChanged = false;
       try {
-        if (app?.reload) {
-          try {
-            await app.reload(result.wasm, { replay: 'skip' });
-          } catch (err) {
-            console.warn('Joy guide: the hot reload failed, so the app starts over', err);
-            app = await fresh(result.wasm);
-          }
-        } else {
-          app = await fresh(result.wasm);
-        }
-        report.classList.remove('shown');
-        report.textContent = '';
+        await frame.show(result.wasm, page.get(), startOver);
+        running();
         status.textContent = `Compiled in ${result.ms.toFixed(0)} ms`;
       } catch (err) {
-        report.textContent = `The app crashed while starting.\n\n${err?.stack ?? err}`;
-        report.classList.add('shown');
-        status.textContent = 'The app crashed';
+        crashed(err);
       }
     } else {
       editor.mark(problems(result.report || '', source));
@@ -507,9 +557,31 @@ async function start(block) {
     if (again) { again = false; run(); }
   }
 
+  // The page was edited: start it over with the build there is, as a browser
+  // would on a reload. Before the first build there is nothing to start, and
+  // that build takes the page as it is by then.
+  async function repage() {
+    pageChanged = true;
+    link();
+    if (busy) { again = true; return; }
+    if (!frame.built) return;
+    busy = true;
+    pageChanged = false;
+    try {
+      await frame.restart(page.get());
+      running();
+      status.textContent = 'Page loaded';
+    } catch (err) {
+      crashed(err);
+    }
+    busy = false;
+    if (again) { again = false; run(); }
+  }
+
   let timer = null;
-  const soon = () => { clearTimeout(timer); timer = setTimeout(run, 400); };
-  editor.onChange(soon);
+  let pageTimer = null;
+  editor.onChange(() => { clearTimeout(timer); timer = setTimeout(run, 400); });
+  page.onChange(() => { clearTimeout(pageTimer); pageTimer = setTimeout(repage, 400); });
   ui.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); clearTimeout(timer); run(); }
   });
@@ -528,11 +600,13 @@ async function start(block) {
   ui.addEventListener('keydown', (event) => {
     if (event.code === 'KeyF' && event.shiftKey && event.altKey) { event.preventDefault(); tidy(); }
   });
+  // Both files as they were, and the page started over.
   reset.addEventListener('click', () => {
-    app?.unmount();
-    app = null;
+    page.set(originalPage);
     editor.set(original);
     clearTimeout(timer);
+    clearTimeout(pageTimer);
+    pageChanged = true;
     run();
   });
 

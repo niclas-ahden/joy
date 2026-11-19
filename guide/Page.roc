@@ -19,20 +19,25 @@ Page := [].{
 ## A topic with links to the ones before and after it.
 topic_section : Topics.Topic -> Html([])
 topic_section = |topic| {
-	before = Topics.neighbour(topic, Before).map_ok(|t| pager_link(t, "Previous", "prev")) ?? text("")
-	after = Topics.neighbour(topic, After).map_ok(|t| pager_link(t, "Next", "next")) ?? text("")
+	before = Topics.neighbour(topic, Before).map_ok(|t| pager_link(topic, t, "Previous", "prev")) ?? text("")
+	after = Topics.neighbour(topic, After).map_ok(|t| pager_link(topic, t, "Next", "next")) ?? text("")
 	pager = nav([class("pager"), aria("label", "Previous and next topic")], [before, after])
 	body : Doc.Body
 	body = Guide.body(topic)
 	section([class("topic"), id(Topics.info(topic).id)], body.append(pager))
 }
 
-pager_link : Topics.Topic, Str, Str -> Html([])
-pager_link = |topic, direction, cls|
+## A link from one topic to a neighbour. One in another part of the guide
+## names that part too, as in "Examples: Hello".
+pager_link : Topics.Topic, Topics.Topic, Str, Str -> Html([])
+pager_link = |from, topic, direction, cls| {
+	to = Topics.info(topic)
+	name = if (to.part == Topics.info(from).part) to.title else "${to.part}: ${to.title}"
 	a(
-		[href("#${Topics.info(topic).id}"), class(cls)],
-		[span([class("dir")], [text(direction)]), span([class("name")], [text(Topics.info(topic).title)])],
+		[href("#${to.id}"), class(cls)],
+		[span([class("dir")], [text(direction)]), span([class("name")], [text(name)])],
 	)
+}
 
 put : Str, Str, Str -> Try(Str, [NoMarker(Str)])
 put = |page, marker, html|

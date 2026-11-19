@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Joy TodoMVC</title>
+  <link rel="stylesheet" href="./examples/todomvc.css">
+</head>
+<body>
+  <div id="app" data-joy-bundle="app"></div>
+  <script>
+    // The app shows the filter its address names, so we pass in the URL as its
+    // flags. Setting them here is safe: this script runs as the page is read,
+    // and joy.js is a module, which runs once the whole page has been read. A
+    // server that renders this page writes the URL straight into
+    // data-joy-flags, and needs no script.
+    document.getElementById("app").dataset.joyFlags = location.href;
+  </script>
+  <script type="module" src="./joy.js"></script>
+</body>
+</html>

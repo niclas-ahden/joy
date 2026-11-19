@@ -88,7 +88,7 @@ Welcome := [].{
 			[
 				text("You may recognize this as "),
 				a([href("https://guide.elm-lang.org/architecture/")], [text("The Elm Architecture")]),
-				text(", which is how Joy's front-end works. For the back-end you can use any architecture you'd like, and there are examples to help you get going. This guide covers the front-end for now, and the pages about the back-end come with the next release of Joy."),
+				text(", which is how Joy's front-end works. For the back-end you can use any architecture you'd like, and the next release of Joy, 0.36.0, will bring examples to help you get going."),
 			],
 		),
 		h2([], [text("What kind of apps can I build with Joy?")]),

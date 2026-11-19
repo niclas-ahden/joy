@@ -6,7 +6,7 @@ import /Doc
 CustomEffects := [].{
 	body : Doc.Body
 	body = [
-		p([class("eyebrow")], [text("Reference")]),
+		p([class("eyebrow")], [text("JavaScript interop")]),
 		h1([], [text("Custom effects")]),
 		p(
 			[class("lead")],

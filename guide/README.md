@@ -56,13 +56,15 @@ still missing.
 
 ## What it covers
 
-Three parts, 9 topics:
+Four parts, 24 topics:
 
 - **Start here**: what Joy is, a first app, effects, views, a recap of the
   loop, subscriptions and flags.
 - **Installation**: Joy on your machine, from installing Roc to a running
   project.
-- **Reference**: custom effects.
+- **JavaScript interop**: ports and custom effects.
+- **Examples**: one page for each example in `examples/` that runs in the
+  page, with the example itself in an editor.
 
 Where the guide and the code in this repository disagree, the code is right
 and the guide needs updating.

@@ -47,7 +47,7 @@ const significant = (lines) => lines.map((l) => l.trim()).filter((l) => l !== ''
 // A release's URL is not known here, so a platform's name stands for any platform,
 // on a line of its own or in a header written on one line.
 const anyPlatform = (line) => line.replace(/pf: platform "[^"]*"/, 'pf: platform "*"');
-const corpus = [...rocFiles('examples'), ...rocFiles('cli/templates'), ...rocFiles('guide/samples')].map((path) => ({ path, lines: significant(readFileSync(path, 'utf8').split('\n')) }));
+const corpus = [...rocFiles('examples'), ...rocFiles('guide/samples')].map((path) => ({ path, lines: significant(readFileSync(path, 'utf8').split('\n')) }));
 
 // The lines of `sample` that `file` lacks, in order, once those before them matched.
 const missing = (sample, file) => {

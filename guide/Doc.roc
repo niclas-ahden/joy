@@ -45,6 +45,36 @@ Doc := [].{
 	editor_folded : Html([]) -> Html([])
 	editor_folded = |block| div([class("editor"), data("editor", "folded")], [block])
 
+	## One of the examples, whole, to edit and run.
+	example : Str, Str -> Html([])
+	example = |file, roc| Doc.editor(Doc.code(Roc, file, roc))
+
+	## How a sample names Joy's platform. The Deploy docs workflow writes the
+	## release's own URL in its place.
+	platform_line : Str
+	platform_line = "pf: platform \"https://github.com/niclas-ahden/joy/releases/download/VERSION/HASH.tar.zst\""
+
+	## Joy's command line in a release, as `roc run` takes it. The Deploy docs
+	## workflow writes the release's own URL in its place.
+	cli_url : Str
+	cli_url = "https://github.com/niclas-ahden/joy/releases/download/VERSION/CLI.tar.zst"
+
+	## A command line whose text is put together in Roc. One written out is a
+	## Doc.code.
+	command : Str -> Html([])
+	command = |line| Doc.code(Sh, "", line)
+
+	## The oldest Roc release Joy builds with.
+	roc_version : Str
+	roc_version = "0.1.0-rc1"
+
+	## A whole app with the page it is on, for an app whose page matters:
+	## its flags, its stylesheet or its own JavaScript. `file` and `roc` are
+	## the app, `page` its index.html, which the editor shows beside it.
+	with_page : Str, Str, Str -> Html([])
+	with_page = |file, roc, page|
+		div([class("editor"), data("editor", "")], [Doc.code(Roc, file, roc), Doc.code(Html, "index.html", page)])
+
 	## A code block whose Roc cannot compile, like two rival definitions shown side
 	## by side, so tests/check_guide.mjs leaves it alone.
 	sketch : Lang, Str, Str -> Html([])

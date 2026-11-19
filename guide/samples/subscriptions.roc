@@ -14,7 +14,7 @@ Model : { level : I64, paused : Bool }
 Msg : [Tick(I64), UserToggledPause]
 
 init : Str -> (Model, List(Effect(Msg)))
-init = |_flags| ({ level: 0, paused: False }, [])
+init = |_flags| ({ level: 8983, paused: False }, [])
 
 update : Model, Msg -> (Model, List(Effect(Msg)))
 update = |model, msg|

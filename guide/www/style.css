@@ -280,9 +280,8 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
   tab-size: 4;
 }
 .code pre code { background: none; padding: 0; font-size: inherit; color: inherit; }
-/* An editor colours Roc with CodeMirror's Elm mode, which gives
-   types and every symbol the keywords' colour. The code blocks do the same,
-   so the two look alike. */
+/* An editor gives types and every symbol the keywords' colour. The code
+   blocks do the same, so the two look alike. */
 .k { color: var(--syn-kw); }
 .t { color: var(--syn-kw); }
 .s { color: var(--syn-lit); }
@@ -365,8 +364,16 @@ td code { white-space: nowrap; }
   margin-left: calc((100% - var(--ed-width)) / 2);
   background: var(--block-bg);
   border: 1px solid var(--violet-border);
+  --ed-max: max(20rem, calc(100vh - 9rem));
 }
-.ed-head { padding-bottom: 8px; gap: 12px; }
+.ed-head { padding-bottom: 0; gap: 12px; align-items: flex-end; }
+.ed-head > :not(.ed-tabs) { margin-bottom: 8px; }
+/* The app and the page it is on, one shown at a time. */
+.ed-tabs { display: flex; gap: 4px; min-width: 0; }
+.ed-tab { font: inherit; color: var(--faded); background: none; border: 0; border-bottom: 2px solid transparent; padding: 2px 8px 6px; cursor: pointer; white-space: nowrap; }
+.ed-tab:hover { color: var(--violet); }
+.ed-tab[aria-selected="true"] { color: var(--violet); border-bottom-color: var(--violet); }
+.ed-file[hidden] { display: none; }
 .ed-status { margin-left: auto; white-space: nowrap; }
 .ed-open { white-space: nowrap; }
 .ed-body { display: grid; grid-template-columns: minmax(0, var(--ed-split, 55%)) 9px minmax(0, 1fr); min-height: 20rem; }
@@ -397,18 +404,27 @@ td code { white-space: nowrap; }
   font-size: var(--font-sm);
   line-height: 1.6;
 }
+/* An editor is never taller than the window has room for. Longer code
+   scrolls in its own pane, so the app beside it stays in view. */
+.ed-code .CodeMirror-scroll { max-height: var(--ed-max); }
 .ed-code .CodeMirror-gutters { background: var(--block-bg); border-right: 0; }
 .ed-code .CodeMirror-linenumber { color: var(--faded); }
 .ed-code .CodeMirror-cursor { border-left-color: var(--block-ink); }
 .ed-code .CodeMirror-selected { background: var(--violet-border) !important; }
-.ed .ed-code .cm-keyword, .ed .ed-code .cm-builtin, .ed .ed-code .cm-variable-2 { color: var(--syn-kw); }
+.ed .ed-code .cm-keyword, .ed .ed-code .cm-builtin, .ed .ed-code .cm-operator, .ed .ed-code .cm-variable-2 { color: var(--syn-kw); }
 .ed .ed-code .cm-string, .ed .ed-code .cm-number { color: var(--syn-lit); }
 .ed .ed-code .cm-comment { color: var(--syn-com); }
 .ed .ed-code .cm-def, .ed .ed-code .cm-variable { color: var(--block-ink); }
+/* The page: tags as keywords, the rest as in the Roc beside it. */
+.ed .ed-code .cm-tag, .ed .ed-code .cm-bracket { color: var(--syn-kw); }
+.ed .ed-code .cm-attribute, .ed .ed-code .cm-property { color: var(--block-ink); }
+.ed .ed-code .cm-atom { color: var(--syn-lit); }
+.ed .ed-code .cm-meta { color: var(--syn-com); }
 .ed-textarea {
   width: 100%;
   height: 100%;
   min-height: 20rem;
+  max-height: var(--ed-max);
   border: 0;
   padding: 8px 16px;
   resize: vertical;
@@ -420,8 +436,9 @@ td code { white-space: nowrap; }
   tab-size: 4;
 }
 .ed-output { position: relative; min-width: 0; overflow: auto; background: var(--body-bg); }
-.ed-app { padding: 16px; }
-.ed-app button { font: inherit; font-size: var(--font-lg); min-width: 2.5rem; margin: 0 8px; cursor: pointer; }
+/* The app runs in a frame that fills the pane. */
+.ed-app { position: absolute; inset: 0; }
+.joy-frame { display: block; width: 100%; height: 100%; border: 0; }
 .ed-report {
   display: none;
   position: absolute;
@@ -666,10 +683,11 @@ td code { white-space: nowrap; }
   }
   .code { margin-inline: -16px; }
   .features { grid-template-columns: minmax(0, 1fr); }
-  .ed { --ed-width: calc(100% + 32px); border-inline: 0; }
+  .ed { --ed-width: calc(100% + 32px); border-inline: 0; --ed-max: max(16rem, 60vh); }
   .ed-head { flex-wrap: wrap; row-gap: 6px; }
   .ed-body { grid-template-columns: minmax(0, 1fr); }
   .ed-code { border-bottom: 1px solid var(--violet-border); }
   .ed-split { display: none; }
-  .ed-output { min-height: 12rem; }
+  /* The app is in a frame, which does not grow with what is in it. */
+  .ed-output { min-height: 24rem; }
 }

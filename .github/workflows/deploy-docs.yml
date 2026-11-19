@@ -7,6 +7,7 @@ on:
     paths:
       - 'platform/**'
       - 'guide/**'
+      - 'docs.roc'
   # Re-deploy when a release is published. Its docs.tar.gz was attached while
   # the release was still a draft (see release.yaml), so it is already there
   # to serve.
@@ -71,7 +72,7 @@ jobs:
           echo "${latest:-main}" > /tmp/latest-docs
 
       - name: Build docs for the main branch
-        run: ${{ steps.setup.outputs.prefix }} roc docs platform/main.roc --output=site/main
+        run: ${{ steps.setup.outputs.prefix }} ./docs.roc --output=site/main
 
       # The guide's topics are Roc modules, rendered into its page.
       - name: Build the guide
@@ -81,7 +82,9 @@ jobs:
       # name the platform as VERSION/HASH, which becomes the platform bundle
       # of the same release, so a sample that is copied builds. A release
       # labels that asset "platform". Older ones have one bundle and no
-      # label. With no release to name, the samples stay as they are written.
+      # label. The install command names Joy's command line as VERSION/CLI,
+      # which becomes the asset labelled "cli". With no release to name, both
+      # stay as they are written.
       - name: Add the guide
         env:
           GH_TOKEN: ${{ github.token }}
@@ -89,20 +92,30 @@ jobs:
           latest=$(cat /tmp/latest-docs)
           cp guide/www/style.css site/
           platform=""
+          cli=""
           if [ "$latest" != "main" ]; then
             assets=$(gh release view "$latest" --repo "${{ github.repository }}" --json assets \
               -q '.assets[] | select(.name | endswith(".tar.zst")) | "\(.label) \(.url)"' 2>/dev/null || true)
             platform=$(printf '%s\n' "$assets" | sed -n 's|^platform ||p' | head -1)
             [ -n "$platform" ] || platform=$(printf '%s\n' "$assets" | sed -n 's|^ ||p' | head -1)
+            cli=$(printf '%s\n' "$assets" | sed -n 's|^cli ||p' | head -1)
           fi
           placeholder="https://github.com/niclas-ahden/joy/releases/download/VERSION/HASH.tar.zst"
+          cli_placeholder="https://github.com/niclas-ahden/joy/releases/download/VERSION/CLI.tar.zst"
+          edits=(-e "s|LATESTVERSION|$latest|g")
           if [ -n "$platform" ]; then
-            sed -e "s|LATESTVERSION|$latest|g" -e "s|$placeholder|$platform|g" guide/www/index.html > site/index.html
+            edits+=(-e "s|$placeholder|$platform|g")
             echo "the guide's samples name $platform"
           else
-            sed "s|LATESTVERSION|$latest|g" guide/www/index.html > site/index.html
             echo "no platform bundle to name, the guide's samples keep VERSION/HASH"
           fi
+          if [ -n "$cli" ]; then
+            edits+=(-e "s|$cli_placeholder|$cli|g")
+            echo "the guide's install command runs $cli"
+          else
+            echo "::warning::no command line bundle on $latest, so the guide's install command keeps VERSION/CLI"
+          fi
+          sed "${edits[@]}" guide/www/index.html > site/index.html
           echo "the guide links to the docs for $latest"
 
       # The guide's editors compile the reader's code in the page, with a

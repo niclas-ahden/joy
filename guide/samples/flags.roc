@@ -32,6 +32,6 @@ update = |model, _msg| (model, [])
 view : Model -> Html(Msg)
 view = |model|
 	match model {
-		Human({ name, .. }) => text(name)
-		FailedToParseFlags(flags) => text(flags)
+		Human({ name, karma }) => text("${name} has ${karma.to_str()} karma")
+		FailedToParseFlags(flags) => text("Could not read these flags: ${flags}")
 	}

@@ -1,6 +1,8 @@
 import html.Html exposing [a, code, em, h1, h2, p, text]
 import html.Attribute exposing [class, href]
 import /Doc
+import "../samples/flags.roc" as flags_app : Str
+import "../pages/flags.html" as flags_page : Str
 
 ## The topic "Flags".
 Flags := [].{
@@ -80,6 +82,15 @@ Flags := [].{
 			\\        )
 			\\    }
 		),
+		p(
+			[],
+			[
+				text("Here's the whole app. Open "),
+				code([], [text("index.html")]),
+				text(" and change the flags: the page starts over, and your app with it 👇"),
+			],
+		),
+		Doc.with_page("flags.roc", flags_app.replace_first("pf: platform \"../../platform/main.roc\"", Doc.platform_line), flags_page),
 		h2([], [text("Partial model from your flags")]),
 		p(
 			[],

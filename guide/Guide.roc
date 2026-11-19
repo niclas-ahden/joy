@@ -7,6 +7,8 @@ import /Topic/Subscriptions as TopicSubscriptions
 import /Topic/Flags as TopicFlags
 import /Topic/Install as TopicInstall
 import /Topic/CustomEffects as TopicCustomEffects
+import /Topic/Examples as TopicExamples
+import /Topic/Ports as TopicPorts
 import html.Html
 import /Doc
 import /Topics
@@ -25,5 +27,7 @@ Guide := [].{
 			Flags => TopicFlags.body
 			Install => TopicInstall.body
 			CustomEffects => TopicCustomEffects.body
+			Ports => TopicPorts.body
+			Example(example) => TopicExamples.body(example)
 		}
 }

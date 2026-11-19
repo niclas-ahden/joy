@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Ports</title>
+</head>
+<body>
+  <div id="app" data-joy-bundle="app"></div>
+  <p>JavaScript heard: <output id="heard">nothing yet</output></p>
+  <p>👈 Open index.html in the top-left and make it tick faster</p>
+  <script>
+    // Before the app starts: say what to do with what it sends.
+    document.addEventListener('joy:mount', (event) => {
+      event.detail.setup = (app) => {
+        app.onPort('cheer', (text) => {
+          document.getElementById('heard').textContent = text;
+        });
+      };
+    });
+
+    // Once it runs: send it something every second.
+    document.addEventListener('joy:mounted', (event) => {
+      setInterval(() => event.detail.app.sendPort('tick', ''), 1000);
+    });
+  </script>
+  <script type="module" src="./joy.js"></script>
+</body>
+</html>
