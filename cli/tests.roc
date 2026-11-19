@@ -18,7 +18,7 @@
 ## host must be built, and joy-html must be reachable or in roc's cache.
 app [main!] {
 	http: "https://github.com/roc-lang/http/releases/download/2.0.0/6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst",
-	pf: platform "../../joy-cli-platform/platform/main.roc",
+	pf: platform "https://github.com/growthagent/joy-cli-platform/releases/download/0.1.0-rc3/76mLk9Kjva78hsKESyupPDauSmSZYmA7HMk9oUqYPNyZ.tar.zst",
 }
 
 import pf.Cmd
@@ -257,14 +257,8 @@ tests = [
 
 html_package = "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst"
 
-## The platform of the fixture servers at server/main.roc in `ctx`: the
-## joy-cli-platform checkout beside Joy's, which ./joy is built on until that
-## platform is released for this Roc.
-cli_platform : Ctx -> Str
-cli_platform = |ctx| {
-	depth = "${ctx.dir}/server/main.roc".split_on("/").drop_if(|part| part.is_empty()).len() - 1
-	"${Str.repeat("../", depth)}${ctx.joy_root.drop_prefix("/")}/../joy-cli-platform/platform/main.roc"
-}
+## The platform of the fixture servers, the one ./joy is built on.
+cli_platform = "https://github.com/growthagent/joy-cli-platform/releases/download/0.1.0-rc3/76mLk9Kjva78hsKESyupPDauSmSZYmA7HMk9oUqYPNyZ.tar.zst"
 
 ## A small Joy app that renders `label`, importing `imports`, with `extra`
 ## at the end of the file.
@@ -333,17 +327,17 @@ files_in! = |ctx, dir|
 
 ## A small server on joy-cli-platform that answers every request with
 ## `body`, on the port in $PORT, and prints what $JOY_ASSETS_JSON says.
-server_source : Ctx, Str -> Str
-server_source = |ctx, body| server_answering(ctx, 200, body)
+server_source : Str -> Str
+server_source = |body| server_answering(200, body)
 
 ## [server_source] with another status than 200.
-server_answering : Ctx, U16, Str -> Str
-server_answering = |ctx, status, body| {
+server_answering : U16, Str -> Str
+server_answering = |status, body| {
 	Str.join_with(
 		[
 			"app [main!] {",
 			"\thttp: \"https://github.com/roc-lang/http/releases/download/2.0.0/6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst\",",
-			"\tpf: platform \"${cli_platform(ctx)}\",",
+			"\tpf: platform \"${cli_platform}\",",
 			"}",
 			"",
 			"import pf.Env",
@@ -1009,13 +1003,13 @@ build_mixed_releases! = |ctx| {
 build_server! : Ctx => Try({}, [Failed(Str)])
 build_server! = |ctx| {
 	bundle!(ctx, "client/app.roc", "app")?
-	write!(ctx, "server/main.roc", server_source(ctx, "built"))?
+	write!(ctx, "server/main.roc", server_source("built"))?
 	out = joy_ok!(ctx, ["build", "--server-opt", "dev"], 0)?
 	contains(out, "Built 1 bundle and the server into dist/")?
 	check(exists!(ctx, "dist/server/main"), "dist/server/main is missing")?
 	_ = joy_ok!(ctx, ["build", "--no-server"], 0)?
 	check(!exists!(ctx, "dist/server"), "--no-server built the server")?
-	write!(ctx, "server/main.roc", "${server_source(ctx, "built")}\nbroken = ")?
+	write!(ctx, "server/main.roc", "${server_source("built")}\nbroken = ")?
 	failed = joy_ok!(ctx, ["build", "--server-opt", "dev"], 1)?
 	contains(failed, "server failed:")
 }
@@ -1024,7 +1018,7 @@ build_server! = |ctx| {
 ## no loader and no runtime, and assets.json still names its assets.
 build_server_alone! : Ctx => Try({}, [Failed(Str)])
 build_server_alone! = |ctx| {
-	write!(ctx, "server/main.roc", server_source(ctx, "built"))?
+	write!(ctx, "server/main.roc", server_source("built"))?
 	write!(ctx, "assets/css/site.css", "h1 { color: teal }\n")?
 	write!(ctx, "public/robots.txt", "User-agent: *\n")?
 	out = joy_ok!(ctx, ["build", "--server-opt", "dev"], 0)?
@@ -1045,7 +1039,7 @@ build_server_alone! = |ctx| {
 build_caches! : Ctx => Try({}, [Failed(Str)])
 build_caches! = |ctx| {
 	bundle!(ctx, "client/app.roc", "app")?
-	write!(ctx, "server/main.roc", server_source(ctx, "built"))?
+	write!(ctx, "server/main.roc", server_source("built"))?
 	_ = joy_with!(ctx, ["build", "--server-opt", "dev"], 0, [("ROC_CACHE_DIR", "${ctx.dir}/given")])?
 	check(exists!(ctx, "given/joy/servers"), "the server did not build in its cache below ROC_CACHE_DIR")?
 	check(exists!(ctx, "given/joy/bundles"), "the bundles did not build in their cache below ROC_CACHE_DIR")?
@@ -1491,7 +1485,7 @@ dev_next_port! = |ctx| {
 dev_server! : Ctx => Try({}, [Failed(Str)])
 dev_server! = |ctx| {
 	bundle!(ctx, "client/app.roc", "app")?
-	write!(ctx, "server/main.roc", server_source(ctx, "version one"))?
+	write!(ctx, "server/main.roc", server_source("version one"))?
 	dev = start_dev!(ctx, [], [("PORT", "0")])?
 	dev1 = wait_for!(dev, "app listening on", 1)?
 	contains(dev1.out, "with ${ctx.dir}/.joy/dev/assets.json")?
@@ -1502,14 +1496,14 @@ dev_server! = |ctx| {
 	page = get!("http://localhost:${dev_port}/")?
 	check(Response.status(page) == 404, "the dev server serves pages beside the project's server")?
 	events = expect_event!(listen!(dev_port)?, "hello", 1)?
-	write!(ctx, "server/main.roc", server_source(ctx, "version two"))?
+	write!(ctx, "server/main.roc", server_source("version two"))?
 	dev2 = wait_for!(dev1, "app listening on", 2)?
 	events2 = expect_event!(events, "server", 1)?
 	contains(events2.seen, "data: server")?
 	app_port2 = port_after(dev2.out.split_last("Started server").map_ok(|{ after, .. }| after) ?? dev2.out, "[server] app listening on")?
 	two = get!("http://localhost:${app_port2}/")?
 	check(body_of(two) == "version two", "the restarted server answered ${body_of(two)}")?
-	write!(ctx, "server/main.roc", "${server_source(ctx, "version three")}\nbroken = ")?
+	write!(ctx, "server/main.roc", "${server_source("version three")}\nbroken = ")?
 	dev3 = wait_for!(dev2, "server failed", 1)?
 	still = get!("http://localhost:${app_port2}/")?
 	check(body_of(still) == "version two", "a failed server build stopped the running server")?
@@ -1519,7 +1513,7 @@ dev_server! = |ctx| {
 	contains(out, "Stopped")?
 	# The next run asks for the same dev server port first.
 	again = start_dev!(ctx, [], [("PORT", "0")])?
-	write!(ctx, "server/main.roc", server_source(ctx, "version four"))?
+	write!(ctx, "server/main.roc", server_source("version four"))?
 	again1 = wait_for!(again, "The dev server sends events", 1)?
 	check(port_after(again1.out, "The dev server sends events on http://localhost")? == dev_port, "the remembered port was not reused")?
 	_ = stop_dev!(again1)?
@@ -1529,7 +1523,7 @@ dev_server! = |ctx| {
 dev_no_server! : Ctx => Try({}, [Failed(Str)])
 dev_no_server! = |ctx| {
 	bundle!(ctx, "client/app.roc", "app")?
-	write!(ctx, "server/main.roc", server_source(ctx, "never started"))?
+	write!(ctx, "server/main.roc", server_source("never started"))?
 	dev = start_dev!(ctx, ["--no-server"], [])?
 	dev1 = wait_for!(dev, "built app", 1)?
 	lacks(dev1.out, "Started server")?
@@ -1544,7 +1538,7 @@ dev_no_server! = |ctx| {
 dev_ctrl_c! : Ctx => Try({}, [Failed(Str)])
 dev_ctrl_c! = |ctx| {
 	bundle!(ctx, "client/app.roc", "app")?
-	write!(ctx, "server/main.roc", server_source(ctx, "running"))?
+	write!(ctx, "server/main.roc", server_source("running"))?
 	dev = start_dev!(ctx, [], [("PORT", "0")])?
 	dev1 = wait_for!(dev, "app listening on", 1)?
 	app_port = port_after(dev1.out, "[server] app listening on")?
@@ -1659,7 +1653,7 @@ page_says! = |url, text| {
 dev_server_not_up! : Ctx => Try({}, [Failed(Str)])
 dev_server_not_up! = |ctx| {
 	bundle!(ctx, "client/app.roc", "app")?
-	write!(ctx, "server/main.roc", "${server_source(ctx, "version one")}\nbroken = ")?
+	write!(ctx, "server/main.roc", "${server_source("version one")}\nbroken = ")?
 	dev = start_dev!(ctx, ["--port", "0"], [("JOY_SERVE_FILES", "1")])?
 	dev1 = wait_for!(dev, "Building 2,", 1)?
 	port = port_after(dev1.out, "Starting on http://localhost")?
@@ -1687,7 +1681,7 @@ dev_server_not_up! = |ctx| {
 	lacks(body_of(plain), "<html")?
 
 	# Once it builds and answers, the pages are ready, and only then.
-	write!(ctx, "server/main.roc", server_source(ctx, "version one"))?
+	write!(ctx, "server/main.roc", server_source("version one"))?
 	dev3 = wait_for!(dev2, "Ready on http://localhost:${port}/", 1)?
 	page = open_page!(url)?
 	check(Response.status(page) == 200 and body_of(page) == "version one", "a ready page got ${Response.status(page).to_str()}: ${body_of(page)}")?
@@ -1698,7 +1692,7 @@ dev_server_not_up! = |ctx| {
 dev_server_exits! : Ctx => Try({}, [Failed(Str)])
 dev_server_exits! = |ctx| {
 	bundle!(ctx, "client/app.roc", "app")?
-	write!(ctx, "server/main.roc", "app [main!] { pf: platform \"${cli_platform(ctx)}\" }\n\nimport pf.OsStr\n\nmain! : List(OsStr) => Try({}, _)\nmain! = |_args| Ok({})\n")?
+	write!(ctx, "server/main.roc", "app [main!] { pf: platform \"${cli_platform}\" }\n\nimport pf.OsStr\n\nmain! : List(OsStr) => Try({}, _)\nmain! = |_args| Ok({})\n")?
 	dev = start_dev!(ctx, ["--port", "0"], [("JOY_SERVE_FILES", "1")])?
 	dev1 = wait_for!(dev, "server exited", 1)?
 	port = port_after(dev1.out, "Starting on http://localhost")?
@@ -1840,12 +1834,12 @@ dev_bad_mount! = |ctx| {
 
 ## A server on joy-cli-platform that names generated/, reads assets.json
 ## through `Names`, and prints what it found. With `stay`, it keeps running.
-names_server_source : Ctx, Bool -> Str
-names_server_source = |ctx, stay| {
+names_server_source : Bool -> Str
+names_server_source = |stay| {
 	Str.join_with(
 		[
 			"app [main!] {",
-			"\tpf: platform \"${cli_platform(ctx)}\",",
+			"\tpf: platform \"${cli_platform}\",",
 			"\tgen: \"../generated/main.roc\",",
 			"}",
 			"",
@@ -1900,7 +1894,7 @@ generated_only_when_named! = |ctx| {
 	write!(ctx, "assets/css/site.css", "body {}")?
 	_ = joy_ok!(ctx, ["build"], 0)?
 	check(!exists!(ctx, "generated"), "generated/ was written though no header names it")?
-	write!(ctx, "server/main.roc", names_server_source(ctx, False))?
+	write!(ctx, "server/main.roc", names_server_source(False))?
 	bundle!(ctx, "client/Checkout/cart.roc", "cart")?
 	write!(ctx, "public/robots.txt", "User-agent: *")?
 	_ = joy_ok!(ctx, ["build", "--server-opt", "dev"], 0)?
@@ -1936,7 +1930,7 @@ generated_build! : Ctx => Try({}, [Failed(Str)])
 generated_build! = |ctx| {
 	write!(ctx, "client/app.roc", asset_bundle_source(ctx, "client/app.roc", "css/site.css"))?
 	write!(ctx, "assets/css/site.css", "body { color: teal }")?
-	write!(ctx, "server/main.roc", names_server_source(ctx, False))?
+	write!(ctx, "server/main.roc", names_server_source(False))?
 	_ = joy_ok!(ctx, ["build", "--server-opt", "dev", "--client-url", "/static"], 0)?
 	json = read!(ctx, "dist/assets.json")?
 	css = files_in!(ctx, "dist/client/css").first() ?? "?"
@@ -1965,7 +1959,7 @@ generated_refuses! : Ctx => Try({}, [Failed(Str)])
 generated_refuses! = |ctx| {
 	write!(ctx, "client/app.roc", asset_bundle_source(ctx, "client/app.roc", "css/site.css"))?
 	write!(ctx, "assets/css/site.css", "body {}")?
-	write!(ctx, "server/main.roc", names_server_source(ctx, False))?
+	write!(ctx, "server/main.roc", names_server_source(False))?
 	_ = joy_ok!(ctx, ["build", "--server-opt", "dev"], 0)?
 	# A server compiled with the build's hashed names, given plain ones.
 	write!(ctx, "plain.json", "{ \"roots\": {}, \"joy\": \"joy.js\", \"bundles\": { \"app\": \"app/app.wasm\" }, \"assets\": { \"css/site.css\": \"css/site.css\" }, \"public\": [] }")?
@@ -2017,7 +2011,7 @@ generated_dev! : Ctx => Try({}, [Failed(Str)])
 generated_dev! = |ctx| {
 	write!(ctx, "client/app.roc", asset_bundle_source(ctx, "client/app.roc", "css/site.css"))?
 	write!(ctx, "assets/css/site.css", "body {}")?
-	write!(ctx, "server/main.roc", names_server_source(ctx, True))?
+	write!(ctx, "server/main.roc", names_server_source(True))?
 	dev = start_dev!(ctx, [], [])?
 	dev1 = wait_for!(dev, "[server] wasm app/app.wasm", 1)?
 	contains(dev1.out, "[server] css css/site.css")?
@@ -2080,7 +2074,7 @@ dev_behind_proxy! : Ctx => Try({}, [Failed(Str)])
 dev_behind_proxy! = |ctx| {
 	bundle!(ctx, "client/app.roc", "app")?
 	write!(ctx, "public/robots.txt", "User-agent: *")?
-	write!(ctx, "server/main.roc", server_source(ctx, "from the server"))?
+	write!(ctx, "server/main.roc", server_source("from the server"))?
 	api = echo_backend!("api")?
 	# No $PORT, so ./joy picks one and starts the server with it.
 	dev = start_dev!(
@@ -2112,7 +2106,7 @@ dev_behind_proxy! = |ctx| {
 dev_server_without_files! : Ctx => Try({}, [Failed(Str)])
 dev_server_without_files! = |ctx| {
 	bundle!(ctx, "client/app.roc", "app")?
-	write!(ctx, "server/main.roc", server_answering(ctx, 404, "no such page"))?
+	write!(ctx, "server/main.roc", server_answering(404, "no such page"))?
 	# A port that was free a moment ago, for the project's server.
 	probe = echo_backend!("probe")?
 	port = probe.port().to_str()
