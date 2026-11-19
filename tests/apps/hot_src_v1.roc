@@ -6,11 +6,11 @@ app [Model, Msg, init, subscriptions, update, view] {
 import html.Html exposing [div, input, p, text]
 import html.Attribute exposing [id, on_file, on_key, on_pointer_down, on_visible, type]
 import pf.Effect
+import pf.Keyboard
+import pf.Navigation
+import pf.Port
 import pf.Sub
 import pf.Time
-import pf.Keyboard
-import pf.Port
-import pf.DOM
 
 # A message from each kind of source tests/check_hot.mjs does not get from
 # hot_v1.roc: a key handler, a pointer handler, a file input, a visibility
@@ -29,7 +29,7 @@ subscriptions = |_model| [
 	Time.every(1000, |_| Ticked),
 	Keyboard.on_down_keys(["Escape"], |e| Escaped(e.key)),
 	Port.listen("ping", |word| Pinged(word)),
-	DOM.on_url_change(|url| Moved(url)),
+	Navigation.on_url_change(|url| Moved(url)),
 ]
 
 init : Str -> (Model, List(Effect(Msg)))

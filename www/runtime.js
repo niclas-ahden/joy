@@ -2529,9 +2529,9 @@ export const browserDom = {
   // The URL rewritten in place without a word to the apps, for a replay
   // that ends where the session was.
   restoreUrl: (url) => history.replaceState(null, '', url),
-  // Every change of the URL: Back and Forward, which fire popstate on
-  // window (it does not reach document listeners), and pushUrl and
-  // replaceUrl above, by any app on the page.
+  // Every change of the URL: Back, Forward and a link to a #fragment of the
+  // page, which fire popstate on window (it does not reach document
+  // listeners), and pushUrl and replaceUrl above, by any app on the page.
   onUrlChange: (fn) => {
     urlListeners.add(fn);
     window.addEventListener('popstate', fn);
@@ -2558,7 +2558,7 @@ export const browserDom = {
       e.preventDefault();
       if (urlListeners.size === 0 && !warnedNoUrlListener) {
         warnedNoUrlListener = true;
-        console.warn('Joy: the app takes over its links with on_link_click, but nothing hears the URL change. Subscribe to DOM.on_url_change too.');
+        console.warn('Joy: the app takes over its links with on_link_click, but nothing hears the URL change. Subscribe to Navigation.on_url_change too.');
       }
       fn(url.href);
     };

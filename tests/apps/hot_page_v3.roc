@@ -8,6 +8,7 @@ import html.Attribute exposing [id, on_click, on_file, on_input, on_key, on_poin
 import pf.DOM
 import pf.Effect
 import pf.Http
+import pf.Navigation
 import pf.Time
 
 # hot_page_v1.roc crashing on the second Inc.
@@ -60,7 +61,7 @@ update = |model, msg|
 		Pointed(x) => ({ ..model, x }, [])
 		Picked(file) => ({ ..model, file }, [])
 		Open => (model, [DOM.show_modal("#dlg")])
-		Move => (model, [DOM.push_url("/moved")])
+		Move => (model, [Navigation.push_url("/moved")])
 		Moved(_) => (model, [])
 	}
 

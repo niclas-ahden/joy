@@ -62,7 +62,7 @@ const isDebounce = (e) => e.kind === CALL && e.effect === 'joy/time/debounce';
 const isCancel = (e) => e.kind === SEND && e.effect === 'joy/time/cancel';
 const isDialog = (e) => e.kind === SEND && (e.effect === 'joy/dom/show_modal' || e.effect === 'joy/dom/close_modal');
 const isTitle = (e) => e.kind === SEND && e.effect === 'joy/dom/set_title';
-const isUrl = (e) => e.kind === SEND && (e.effect === 'joy/dom/push_url' || e.effect === 'joy/dom/replace_url');
+const isUrl = (e) => e.kind === SEND && (e.effect === 'joy/navigation/push_url' || e.effect === 'joy/navigation/replace_url');
 const isPortSend = (e) => e.kind === SEND && e.effect === 'joy/port/send';
 const isFocus = (e) => e.kind === SEND && e.effect === 'joy/dom/focus';
 const isScroll = (e) => e.kind === SEND && e.effect === 'joy/dom/scroll_to';
@@ -926,7 +926,7 @@ function instrument(rt) {
         if (msgs.length === rec.msgs.length) ran.add(i);
         // Back and Forward change the URL without the app asking, and say so
         // through this subscription: the URL is the one the event names.
-        if (msgs.length > 0 && rec.via === 'joy/dom/url_changed' && rec.inputs?.[0]) replaying.url = reader(rec.inputs[0]).str();
+        if (msgs.length > 0 && rec.via === 'joy/navigation/url_changed' && rec.inputs?.[0]) replaying.url = reader(rec.inputs[0]).str();
         replayed += msgs.length;
       }
       if (!stopped && replaying.stopAfter) {

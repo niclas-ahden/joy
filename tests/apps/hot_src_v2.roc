@@ -6,11 +6,11 @@ app [Model, Msg, init, subscriptions, update, view] {
 import html.Html exposing [div, input, p, text]
 import html.Attribute exposing [id, on_file, on_key, on_pointer_down, on_visible, type]
 import pf.Effect
+import pf.Keyboard
+import pf.Navigation
+import pf.Port
 import pf.Sub
 import pf.Time
-import pf.Keyboard
-import pf.Port
-import pf.DOM
 
 # hot_src_v1.roc with three sources that no longer hear what they heard
 # there: the key handler hears Tab rather than Enter, the key subscription q
@@ -25,7 +25,7 @@ subscriptions = |_model| [
 	Time.every(1000, |_| Ticked),
 	Keyboard.on_down_keys(["q"], |e| Escaped(e.key)),
 	Port.listen("pong", |word| Pinged(word)),
-	DOM.on_url_change(|url| Moved(url)),
+	Navigation.on_url_change(|url| Moved(url)),
 ]
 
 init : Str -> (Model, List(Effect(Msg)))

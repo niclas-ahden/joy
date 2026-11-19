@@ -13,6 +13,7 @@ import html.Attribute exposing [id, on_click]
 import pf.Clipboard
 import pf.DOM
 import pf.Effect
+import pf.Navigation
 import pf.Port
 import pf.Sub
 
@@ -37,13 +38,13 @@ update = |model, msg|
 		UserClickedTell => ({ ..model, told: model.told + 1 }, [Port.send("page", "note ${model.told.to_str()}")])
 		UserClickedFocus => (model, [DOM.focus("#field")])
 		UserClickedScroll => (model, [DOM.scroll_to({ x: 0, y: 40 + model.told })])
-		UserClickedGo(path) => ({ ..model, path }, [DOM.push_url(path)])
+		UserClickedGo(path) => ({ ..model, path }, [Navigation.push_url(path)])
 		UserWentBackOrForward(path) => ({ ..model, path }, [])
 		UserClickedCopy => (model, [Clipboard.write_text("copied text", |wrote| ClipboardWrote(wrote))])
 		ClipboardWrote(_) => ({ ..model, copied: model.copied + 1 }, [])
 	}
 
-subscriptions = |_model| [DOM.on_url_change(|path| UserWentBackOrForward(path))]
+subscriptions = |_model| [Navigation.on_url_change(|path| UserWentBackOrForward(path))]
 
 view : Model -> Html(Msg)
 view = |model|

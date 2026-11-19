@@ -1,6 +1,5 @@
 // The page beyond the app's own view, for the platform's DOM module: focus,
-// <dialog> modals, navigation, the browser's back and forward buttons, the
-// page title and scrolling.
+// <dialog> modals, clicks on the document, the page title and scrolling.
 //
 // Sections as in media.js: an app's runtime.js holds the ones its wasm uses.
 
@@ -30,27 +29,6 @@ defineEffect('joy/dom/focus', (args, host) => {
   const selector = args.str();
   if (!host.dom.focus(selector, host.root())) warnUnmatched('DOM.focus', selector);
 });
-
-//// effect joy/dom/navigate
-defineEffect('joy/dom/navigate', (args, host) => host.dom.navigate(args.str()));
-
-//// effect joy/dom/push_url
-defineEffect('joy/dom/push_url', (args, host) => host.dom.pushUrl(args.str()));
-
-//// effect joy/dom/replace_url
-defineEffect('joy/dom/replace_url', (args, host) => host.dom.replaceUrl(args.str()));
-
-//// subscription joy/dom/url_changed
-// The page's whole address each time the URL changes: by Back
-// and Forward, and by a push_url or replace_url of any app on the page.
-defineSubscription('joy/dom/url_changed', (args, host, emit) =>
-  host.dom.onUrlChange(() => emit(new WireWriter().str(host.dom.currentUrl()))));
-
-//// subscription joy/dom/link_clicks
-// The whole address of a link of this site clicked inside the
-// app, which the app then answers for (see onLinkClick).
-defineSubscription('joy/dom/link_clicks', (args, host, emit) =>
-  host.dom.onLinkClick(host.root(), (url) => emit(new WireWriter().str(url))));
 
 //// subscription joy/dom/document_clicks
 // The attribute's value on the clicked element, or on its nearest ancestor

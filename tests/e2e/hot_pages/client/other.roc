@@ -6,8 +6,8 @@ app [Model, Msg, init, subscriptions, update, view] {
 
 import html.Html exposing [button, div, span, text]
 import html.Attribute exposing [id, on_click]
-import pf.DOM
 import pf.Effect
+import pf.Navigation
 
 Model : I64
 
@@ -22,7 +22,7 @@ update : Model, Msg -> (Model, List(Effect(Msg)))
 update = |model, msg|
 	match msg {
 		Inc => (model + 1, [])
-		Move => (model, [DOM.push_url("/moved")])
+		Move => (model, [Navigation.push_url("/moved")])
 	}
 
 view : Model -> Html(Msg)
