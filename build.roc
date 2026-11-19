@@ -124,14 +124,15 @@ write_runtime! = |src, opt, core, features| {
 	}
 }
 
-# Apps live in two directories, both built the same way into
+# Apps live in three directories, all built the same way into
 # build/<opt>/<name>.wasm: examples/ holds the user-facing ones the README
-# points at,
+# points at, examples/templates/ the projects ./joy init starts from, and
 # tests/apps/ the fixtures the harnesses in tests/ drive. Those fixtures assert
 # on internals (which nodes the diff reused, how many listeners are bound,
 # render cost as a grid grows) instead of demonstrating anything, so they are
-# not examples. Names must stay unique across both, since the output is flat.
-app_dirs = ["examples", "tests/apps"]
+# not examples. Names must stay unique across all three, since the output is
+# flat.
+app_dirs = ["examples", "examples/templates", "tests/apps"]
 
 # The named app, in whichever directory holds it. `counter`,
 # `examples/counter.roc`, `tests/apps/vdom.roc` and `examples/spa-todomvc` all
@@ -154,8 +155,8 @@ find_source! = |name| {
 
 # Every app in every source directory. A flat app is one <dir>/<name>.roc
 # file; an app that brings a page, styles or tests of its own is a directory,
-# <dir>/<name>/, built from its app.roc (see examples/pages/), or from its
-# client/app.roc when it is a ./joy project (see examples/spa-todomvc/).
+# <dir>/<name>/, built from its app.roc (see tests/apps/hydrate_lab/), or from
+# its client/app.roc when it is a ./joy project (see examples/spa-todomvc/).
 list_sources! = ||
 	app_dirs
 		.map_try!(|dir| sources_in!(dir))
@@ -169,9 +170,12 @@ sources_in! = |dir| {
 				display = Path.display(entry)
 				if display.ends_with(".roc") {
 					Ok([entry])
-				} else {
+				} else if entry.is_dir!()? {
 					nested = [Path.utf8("${display}/app.roc"), Path.utf8("${display}/client/app.roc")]
 					nested.keep_if_try!(|path| path.is_file!())
+				} else {
+					# A file that is no app, like a README.
+					Ok([])
 				}
 			},
 		)

@@ -136,7 +136,7 @@ asset_source = |assets, client_url| {
 	Str.join_with(
 		[
 			"## The files in assets/. A name in quotes where an `Asset` is expected is\n",
-			"## checked while compiling, `\"css/site.css\"`, and a file that does not exist\n",
+			"## checked while compiling, `\"css/style.css\"`, and a file that does not exist\n",
 			"## is a compile error. Written by ./joy: do not edit.\n",
 			"Asset := [Asset(Str, Str)].{\n",
 			"\tfrom_quote : Str -> Try(Asset, [BadQuotedBytes(Str)])\n",

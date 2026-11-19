@@ -2127,7 +2127,7 @@ init_template! = |ctx| {
 	out = joy_ok!(ctx, ["init", "my-app", "--template", "spa-pages", "--joy-checkout", ctx.joy_root], 0)?
 	contains(out, "Started a project from the spa-pages template")?
 	contains(out, "    cd my-app\n    ./joy dev")?
-	for file in ["client/app.roc", "client/Route.roc", "client/Page/Home.roc", "public/index.html", "assets/css/site.css", "README.md"] {
+	for file in ["client/app.roc", "client/Route.roc", "client/Page/Home.roc", "public/index.html", "assets/css/style.css", "README.md"] {
 		check(exists!(ctx, "my-app/${file}"), "init did not write ${file}")?
 	}
 	ignored = read!(ctx, "my-app/.gitignore")?
@@ -2226,6 +2226,7 @@ init_no_input! : Ctx => Try({}, [Failed(Str)])
 init_no_input! = |ctx| {
 	asked = joy_ok!(ctx, ["init", "my-app", "--no-input", "--joy-checkout", ctx.joy_root], 1)?
 	contains(asked, "Which template? Name one with --template:\n  spa-minimal         A single file with a counter example.\n  spa-pages           Routing")?
+	contains(asked, "Want to see the templates? https://github.com/niclas-ahden/joy/tree/main/examples/templates")?
 	check(!exists!(ctx, "my-app"), "init made a folder before a template was chosen")?
 	no_checkout = joy_with!(ctx, ["init", "my-app", "--template", "spa-pages"], 1, [("JOY_CHECKOUT", "")])?
 	contains(no_checkout, "init needs a Joy checkout: --joy-checkout <dir>, or JOY_CHECKOUT.")?

@@ -2,8 +2,8 @@ import /Notebook
 import /Route
 import html.Html exposing [a, button, div, h1, p, text]
 import html.Attribute exposing [href, on_click]
-import pf.DOM
 import pf.Effect
+import pf.Navigation
 
 ## Show a single note, with a button to remove it.
 ##
@@ -21,14 +21,14 @@ Note := { id : U64 }.{
 	## to the list. To navigate we only change the URL. The app notices (see
 	## `on_url_change` in app.roc) and shows the page.
 	##
-	## `DOM.replace_url` is like `DOM.push_url`, but it takes the place of
+	## `Navigation.replace_url` is like `Navigation.push_url`, but it takes the place of
 	## the current URL in the history. That way Back doesn't lead to the note
 	## we just removed.
 	update : Note, Msg, Notebook -> (Note, Notebook, List(Effect(Msg)))
 	update = |model, msg, notebook|
 		match msg {
 			UserClickedRemove =>
-				(model, notebook.remove(model.id), [DOM.replace_url(Route.to_path(Notes))])
+				(model, notebook.remove(model.id), [Navigation.replace_url(Route.to_path(Notes))])
 		}
 
 	view : Note, Notebook -> Html(Msg)

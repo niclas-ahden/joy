@@ -11,6 +11,7 @@ import html.Html exposing [a, div, header, nav, text]
 import html.Attribute exposing [aria, href]
 import pf.DOM
 import pf.Effect
+import pf.Navigation
 import pf.Sub
 
 ## `notebook` holds your notes. It belongs to the app, so the notes remain
@@ -42,11 +43,11 @@ update = |model, msg|
 	match msg {
 		UserClickedLink(url) =>
 			match Route.parse(url) {
-				Ok(_) => (model, [DOM.push_url(url)])
+				Ok(_) => (model, [Navigation.push_url(url)])
 
 				# Not one of our pages, e.g. a file in public/. Let the browser
 				# load it like any other link.
-				Err(NotFound) => (model, [DOM.navigate(url)])
+				Err(NotFound) => (model, [Navigation.navigate(url)])
 			}
 
 		UrlChanged(url) => {
@@ -69,8 +70,8 @@ update = |model, msg|
 subscriptions : Model -> List(Sub(Msg))
 subscriptions = |model|
 	[
-		DOM.on_link_click(|url| UserClickedLink(url)),
-		DOM.on_url_change(|url| UrlChanged(url)),
+		Navigation.on_link_click(|url| UserClickedLink(url)),
+		Navigation.on_url_change(|url| UrlChanged(url)),
 	].concat(Sub.map_all(model.page.subscriptions(), |m| PageMsg(m)))
 
 view : Model -> Html(Msg)

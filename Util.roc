@@ -53,8 +53,9 @@ Util :: [].{
 	}
 
 	## The app name in `examples/counter.roc`, `counter.roc` or `counter`,
-	## and for directory examples in `examples/pages`, `examples/pages/` or
-	## `examples/pages/app.roc`: the last path segment that is not `app.roc`,
+	## and for directory apps in `tests/apps/hydrate_lab`,
+	## `tests/apps/hydrate_lab/` or `tests/apps/hydrate_lab/app.roc`: the
+	## last path segment that is not `app.roc`,
 	## without the `.roc`. An example that is a ./joy project keeps its app in
 	## client/, so `examples/spa-todomvc/client/app.roc` is `spa-todomvc`.
 	## build.roc and watch.roc both take an app in any of those forms, and

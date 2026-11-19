@@ -13,6 +13,7 @@ import html.Attribute exposing [aria, href]
 import pf.DOM
 import pf.Effect
 import pf.Http
+import pf.Navigation
 import pf.Sub
 
 Model : {
@@ -58,11 +59,11 @@ update = |model, msg|
 	match msg {
 		UserClickedLink(url) =>
 			match Route.parse(url) {
-				Ok(_) => (model, [DOM.push_url(url)])
+				Ok(_) => (model, [Navigation.push_url(url)])
 
 				# Not one of our pages, e.g. a file in public/. Let the browser
 				# load it like any other link.
-				Err(NotFound) => (model, [DOM.navigate(url)])
+				Err(NotFound) => (model, [Navigation.navigate(url)])
 			}
 
 		UrlChanged(url) => {
@@ -97,8 +98,8 @@ ask_for_quote = |model|
 
 subscriptions : Model -> List(Sub(Msg))
 subscriptions = |_model| [
-	DOM.on_link_click(|url| UserClickedLink(url)),
-	DOM.on_url_change(|url| UrlChanged(url)),
+	Navigation.on_link_click(|url| UserClickedLink(url)),
+	Navigation.on_url_change(|url| UrlChanged(url)),
 ]
 
 view : Model -> Html(Msg)

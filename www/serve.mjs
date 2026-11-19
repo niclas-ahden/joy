@@ -5,8 +5,7 @@
 // ./runtime.js, and there are no query strings, no injected globals and no
 // repo paths. That page is what someone copies into their own project, so it
 // must not know anything about this repo's layout. Everything that has to know
-// lives here instead. A directory example that brings a page of its own
-// (examples/<app>/www/index.html, equally copyable) gets it by name.
+// lives here instead.
 //
 // Two modes, both naming the optimization level whose build/<opt>/ tree to
 // serve:
@@ -47,11 +46,10 @@ const isAppName = (app) => /^[a-z0-9_-]+$/i.test(app);
 function routeFor(app, rest) {
   switch (rest) {
     // A server-rendered page from the app's build comes first (see
-    // render_pages! in build.roc). Then a directory example with a page of
-    // its own, like examples/pages/, gets it, and every other app shares
-    // the plain shell. Both of those are complete copyable pages.
+    // render_pages! in build.roc), and every other app shares the plain
+    // shell.
     case '/':
-      return { files: [`build/${opt}/ssr/${app}/index.html`, `examples/${app}/www/index.html`, 'www/index.html'], type: 'text/html' };
+      return { files: [`build/${opt}/ssr/${app}/index.html`, 'www/index.html'], type: 'text/html' };
     // watch.roc gets the runtime.js with every feature, which never falls
     // behind the wasm it rebuilds. e2e.roc gets the app's own, the core plus
     // the feature code its wasm calls, so the tests run what an app ships.
@@ -65,17 +63,14 @@ function routeFor(app, rest) {
     case '/app.wasm':
       return { file: `build/${opt}/${app}.wasm`, type: 'application/wasm' };
     default:
-      // An app with a URL per page, like examples/pages/, gets its page for
-      // every one-segment path under it, so /clock boots the same page as /
-      // and the app reads the path from location. Only an app that brings a
-      // page of its own opts in: the shared shell is not a candidate here,
-      // so for every other app, and for a prefix that names no app at all,
-      // a missing file stays a missing file. So do deeper paths and
-      // anything with an extension.
       // An app whose build renders pages on the server side (see
-      // render_pages! in build.roc) gets the page by that name first.
+      // render_pages! in build.roc) gets the page a one-segment path under
+      // it names. The shared shell is not a candidate here, so for every
+      // other app, and for a prefix that names no app at all, a missing
+      // file stays a missing file. So do deeper paths and anything with an
+      // extension.
       return /^\/[a-z0-9_-]+$/i.test(rest)
-        ? { files: [`build/${opt}/ssr/${app}${rest}.html`, `examples/${app}/www/index.html`], type: 'text/html' }
+        ? { file: `build/${opt}/ssr/${app}${rest}.html`, type: 'text/html' }
         : null;
   }
 }
@@ -114,7 +109,7 @@ http
       return;
     }
 
-    // The one non-file route: the upload example streams its picked file to
+    // The one non-file route: tests/apps/upload.roc streams its picked file to
     // POST /upload (an absolute path, so it lands here in both modes). The
     // body is drained and dropped, the example only shows the status. Without
     // this the demo dead-ends in a 404, and a POST must never hit the
@@ -143,8 +138,7 @@ http
       return;
     }
 
-    // A route names one file, or candidates tried in order for the per-app
-    // page override above.
+    // A route names one file, or candidates tried in order.
     for (const file of route.files ?? [route.file]) {
       try {
         const body = await readFile(path.join(rootDir, file));

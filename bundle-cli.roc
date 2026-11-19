@@ -7,9 +7,10 @@
 # whose platform is at --platform-url. `roc run --opt=speed <its url> init`
 # then starts a project on that release. Run from the repo root.
 #
-# The bundle is a copy of cli/ with tools/runtime inside it, since a bundle
-# holds one folder, and with cli/Release.roc naming the release, so init
-# writes the release's platform URL into the projects it starts.
+# The bundle is a copy of cli/ with tools/runtime and the templates of
+# examples/templates/ inside it, since a bundle holds one folder, and with
+# cli/Release.roc naming the release, so init writes the release's platform
+# URL into the projects it starts.
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.32.0/3MnQnCrtfe6XS5qx58MnAGU6iWk8i1N24MYfoejcWeax.tar.zst",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.10.2/7CdYzjBAJmprmnK45oTpmH6BXt76ZASN2Ck5uZQEoWsK.tar.zst",
@@ -33,7 +34,7 @@ main! = |args| {
 	run!("mkdir", ["-p", "${stage}/runtime"])?
 	# Only the files Template.roc builds into ./joy. A template that was run
 	# where it is holds a ./joy, builds and a database beside them.
-	template_files = "sed -n 's|^import \\\"\\(templates/[^\\\"]*\\)\\\" as .*|\\1|p' cli/Template.roc | while read -r file; do mkdir -p \"${stage}/$(dirname \"$file\")\" && cp \"cli/$file\" \"${stage}/$file\" || exit 1; done"
+	template_files = "sed -n 's|^import \\\"\\.\\./examples/\\(templates/[^\\\"]*\\)\\\" as .*|\\1|p' cli/Template.roc | while read -r file; do mkdir -p \"${stage}/$(dirname \"$file\")\" && cp \"examples/$file\" \"${stage}/$file\" || exit 1; done"
 	run!("bash", ["-c", "cp cli/*.roc '${stage}/' && rm '${stage}/tests.roc' && cp -r cli/generated '${stage}/' && cp tools/runtime/*.roc '${stage}/runtime/' && ${template_files}"])?
 
 	main_path = Path.utf8("${stage}/main.roc")
@@ -46,6 +47,14 @@ main! = |args| {
 		fail!("cli/main.roc names its platform by a path, which only works beside a joy-cli-platform checkout. A release needs that platform's release URL there")?
 	}
 	main_path.write_utf8!(main_source.replace_each(in_checkout, "joy_runtime: \"runtime/main.roc\""))?
+
+	template_path = Path.utf8("${stage}/Template.roc")
+	template_source = template_path.read_utf8!() ?? fail!("could not read ${stage}/Template.roc")?
+	in_checkout_templates = "import \"../examples/templates/"
+	if !template_source.contains(in_checkout_templates) {
+		fail!("cli/Template.roc no longer has ${in_checkout_templates}, so the bundle would miss the templates")?
+	}
+	template_path.write_utf8!(template_source.replace_each(in_checkout_templates, "import \"templates/"))?
 
 	release = Path.utf8("${stage}/Release.roc")
 	release_source = release.read_utf8!() ?? fail!("could not read ${stage}/Release.roc")?

@@ -2,7 +2,7 @@
 // a missing trailing slash, the no-store headers a watch loop needs, and the
 // app-name guard that keeps a request from naming a file of its own. The
 // server runs as a real child process and is driven over HTTP, one process
-// per mode and one more pinned to an app with page urls.
+// per mode and one more pinned to an app with server-rendered pages.
 // Run from the repo root: node tests/check_serve.mjs
 import { spawn } from 'node:child_process';
 import http from 'node:http';
@@ -17,7 +17,7 @@ const opt = optLevel();
 const servers = [
   spawn('node', ['www/serve.mjs', String(prefixPort), opt]),
   spawn('node', ['www/serve.mjs', String(pinnedPort), opt, 'counter']),
-  spawn('node', ['www/serve.mjs', String(pagesPort), opt, 'pages']),
+  spawn('node', ['www/serve.mjs', String(pagesPort), opt, 'hydrate_lab']),
 ];
 process.on('exit', () => { for (const s of servers) s.kill(); });
 
@@ -53,11 +53,11 @@ expect('page content type', res.headers.get('content-type'), 'text/html');
 expect('watch loops need no-store', res.headers.get('cache-control'), 'no-store');
 expect('the page is the plain shell', (await res.text()).includes('./runtime.js'), true);
 
-// The per-app page override: pages commits a page of its own and gets it by
-// name. Every other app keeps the shell, and none has styles of its own.
-res = await get(prefixPort, '/pages/');
-expect('per-app page served', res.status, 200);
-expect('per-app page is its own', (await res.text()).includes('<title>Joy pages</title>'), true);
+// An app whose build rendered its page gets that page in place of the shell.
+// Every other app keeps the shell, and none has styles of its own.
+res = await get(prefixPort, '/hydrate_lab/');
+expect('server-rendered page served', res.status, 200);
+expect('server-rendered page is its own', (await res.text()).includes('<title>Joy hydration lab</title>'), true);
 expect('apps without styles 404 them', (await get(prefixPort, '/counter/style.css')).status, 404);
 
 res = await get(prefixPort, '/counter/runtime.js');
@@ -73,16 +73,17 @@ expect('wasm is wasm', new Uint8Array(await res.arrayBuffer()).slice(0, 4).join(
 expect('unknown path within an app 404s', (await get(prefixPort, '/counter/host.rs')).status, 404);
 expect('app that was never built 404s', (await get(prefixPort, '/nonexistent_app/app.wasm')).status, 404);
 
-// A URL per page: an app that brings a page of its own gets it for every
-// one-segment path under it, so /pages/clock boots the same page as /pages/.
-// An app on the shared shell has not opted in, and neither has a prefix that
-// names no app, which is what the fetch fixture's /missing/quote relies on.
-res = await get(prefixPort, '/pages/clock');
-expect('page url serves the app page', res.status, 200);
+// A URL per page: an app whose build rendered several pages gets each by
+// its name, a one-segment path under the app. An app on the shared shell has
+// no such pages, and neither has a prefix that names no app, which is what
+// the fetch fixture's /missing/quote relies on.
+res = await get(prefixPort, '/hydrate_lab/bare');
+expect('page url serves the rendered page', res.status, 200);
 expect('page url content type', res.headers.get('content-type'), 'text/html');
-expect('page url is the page at the root', await res.text(), await (await get(prefixPort, '/pages/')).text());
-expect('deeper page paths 404', (await get(prefixPort, '/pages/clock/laps')).status, 404);
-expect('page paths with an extension 404', (await get(prefixPort, '/pages/clock.html')).status, 404);
+expect('page url is its own page', await res.text() !== await (await get(prefixPort, '/hydrate_lab/')).text(), true);
+expect('a page that was not rendered 404s', (await get(prefixPort, '/hydrate_lab/nope')).status, 404);
+expect('deeper page paths 404', (await get(prefixPort, '/hydrate_lab/bare/laps')).status, 404);
+expect('page paths with an extension 404', (await get(prefixPort, '/hydrate_lab/bare.html')).status, 404);
 expect('apps on the shared shell have no page urls', (await get(prefixPort, '/counter/clock')).status, 404);
 expect('unknown prefixes have no page urls', (await get(prefixPort, '/missing/quote')).status, 404);
 
@@ -130,9 +131,10 @@ expect('pinned app under its own prefix', (await get(pinnedPort, '/counter/')).s
 expect('pinned wasm under its own prefix', (await get(pinnedPort, '/counter/app.wasm')).status, 200);
 expect('other prefixes still 404', (await get(pinnedPort, '/modal/')).status, 404);
 
-// Pinned with page urls, which is how watch.roc serves examples/pages/.
-expect('pinned page url serves the app page', (await get(pagesPort, '/clock')).status, 200);
-expect('pinned page url under its own prefix', (await get(pagesPort, '/pages/clock')).status, 200);
-expect('pinned deeper page paths 404', (await get(pagesPort, '/clock/laps')).status, 404);
+// Pinned with page urls, which is how watch.roc serves an app with
+// server-rendered pages.
+expect('pinned page url serves the rendered page', (await get(pagesPort, '/bare')).status, 200);
+expect('pinned page url under its own prefix', (await get(pagesPort, '/hydrate_lab/bare')).status, 200);
+expect('pinned deeper page paths 404', (await get(pagesPort, '/bare/laps')).status, 404);
 
 for (const s of servers) s.kill();

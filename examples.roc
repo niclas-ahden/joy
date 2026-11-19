@@ -6,9 +6,9 @@
 #
 # To run the own suite of every Joy project in the repo that has one: a
 # directory example (examples/<name>/tests.roc) and a template ./joy init
-# starts from (cli/templates/<name>/tests.roc), each from its own folder, the
-# way someone working on it would run it. A project builds with ./joy, so
-# each gets one first, built from this checkout's cli/main.roc. A new
+# starts from (examples/templates/<name>/tests.roc), each from its own
+# folder, the way someone working on it would run it. A project builds with
+# ./joy, so each gets one first, built from this checkout's cli/main.roc. A new
 # example or template with a tests.roc is picked up without a change here.
 # Every suite runs even when an earlier one fails, and the run fails if any
 # of them did. The browser tests run in Chromium, or in the engine
@@ -26,7 +26,7 @@ import pf.Stdout
 import Util exposing [fail!, run!]
 
 # Where the projects are.
-project_dirs = ["examples", "cli/templates"]
+project_dirs = ["examples", "examples/templates"]
 
 main! = |args| {
 	asked = args.map(OsStr.display).find_first(|arg| arg.starts_with("--browser=")).map_ok(|arg| arg.drop_prefix("--browser=")) ?? "chromium"

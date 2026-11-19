@@ -80,7 +80,7 @@ Init :: [].{
 				Published(release) => OnRelease(release)
 				Unreleased => return Build.fail!("This CLI is not from a Joy release, so init needs a Joy checkout: --joy-checkout <dir>, or JOY_CHECKOUT.")
 			}
-		template = template!(options)?
+		template = template!(options, templates_url(source))?
 		if existed {
 			var $clashes = []
 			for (file, _) in template.files {
@@ -161,16 +161,26 @@ checkout! = |given| {
 	Ok(Some(real))
 }
 
+## Where the templates can be read before one is picked: on GitHub, as they
+## are in this CLI's release, or on the main branch for a checkout.
+templates_url = |source|
+	match source {
+		OnRelease(release) => "${release.notes_url.replace_first("/releases/tag/", "/tree/")}/examples/templates"
+		Checkout(_) => "https://github.com/niclas-ahden/joy/tree/main/examples/templates"
+	}
+
 ## The template `--template` names, or the one the person picks. Without a
-## terminal, with CI set or with --no-input, init never asks.
-template! : Init.Options => Try(Template.Template, _)
-template! = |options| {
+## terminal, with CI set or with --no-input, init never asks. `url` is where
+## the templates can be read first.
+template! : Init.Options, Str => Try(Template.Template, _)
+template! = |options, url| {
 	name =
 		match Args.given(options.template) {
 			Some(given) => given
 			None =>
 				if asks!(options.no_input) {
 					choices = Template.all.map(|template| { name: template.name, description: template.description })
+					Stdout.line!("Want to see the templates? ${url}\n")?
 					match Prompt.choose!("What kind of app?", choices) {
 						Ok(choice) => choice.name
 						Err(_) => return Err(Exit(130))
@@ -178,7 +188,7 @@ template! = |options| {
 				} else {
 					longest = Template.all.map(|template| template.name.count_utf8_bytes()).max() ?? 0
 					listed = Template.all.map(|template| "  ${template.name}${Str.repeat(" ", longest - template.name.count_utf8_bytes())}  ${template.description}")
-					return Build.fail!("Which template? Name one with --template:\n${Str.join_with(listed, "\n")}")
+					return Build.fail!("Which template? Name one with --template:\n${Str.join_with(listed, "\n")}\nWant to see the templates? ${url}")
 				}
 		}
 	match Template.all.find_first(|template| template.name == name) {
