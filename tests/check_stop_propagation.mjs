@@ -17,7 +17,7 @@ const bytes = readFileSync(wasmPath('stop_propagation'));
 const root = new El('#root');
 await mount({ wasm: bytes, root, flags: '', dom: fakeDom });
 
-expect('init', htmlBare(root).includes('outer 0, inner 0'), true);
+expect('init', htmlBare(root).includes('Outer 0, inner 0'), true);
 
 const outer = root.children[0];
 expect('outer div listens for click', outer.listenerCount('click'), 1);
@@ -31,21 +31,21 @@ const clickThrough = (label) => {
 };
 
 // The plain on_click lets the event travel on, so both counters move.
-const bubbled = clickThrough('bubbles');
+const bubbled = clickThrough('Bubbles');
 expect('plain handler leaves the event alone', bubbled.stopped, false);
-expect('bubbled click reaches both', htmlBare(root).includes('outer 1, inner 1'), true);
+expect('bubbled click reaches both', htmlBare(root).includes('Outer 1, inner 1'), true);
 
 // The flagged on_click swallows the event, so the div never hears about it.
-const stopped = clickThrough('stops');
+const stopped = clickThrough("Doesn't bubble");
 expect('flagged handler stops the event', stopped.stopped, true);
-expect('stopped click moves only inner', htmlBare(root).includes('outer 1, inner 2'), true);
+expect('stopped click moves only inner', htmlBare(root).includes('Outer 1, inner 2'), true);
 
 // The flag is per handler, so the plain button still bubbles afterwards.
-const again = clickThrough('bubbles');
+const again = clickThrough('Bubbles');
 expect('plain handler still bubbles', again.stopped, false);
-expect('counts after the mix', htmlBare(root).includes('outer 2, inner 3'), true);
+expect('counts after the mix', htmlBare(root).includes('Outer 2, inner 3'), true);
 
 // A click on the div itself moves only the outer counter.
 const ev = { stopped: false, stopPropagation() { this.stopped = true; } };
 outer.listeners.click(ev);
-expect('direct outer click', htmlBare(root).includes('outer 3, inner 3'), true);
+expect('direct outer click', htmlBare(root).includes('Outer 3, inner 3'), true);

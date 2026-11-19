@@ -93,11 +93,11 @@ const html = () => htmlBare(root);
 
 expect('nothing is opened before Record', opened.length, 0);
 find(root, 'Record').listeners.click();
-expect('Record asks for the microphone', await settled(() => html().includes('recording')), true);
+expect('Record asks for the microphone', await settled(() => html().includes('Recording')), true);
 expect('only audio is asked for', JSON.stringify(opened[0]?.constraints), '{"audio":true,"video":false}');
 expect('a recorder runs on the opened stream', FakeRecorder.made[0]?.stream === opened[0].stream, true);
 expect('a browser recording below the floor is raised to it', FakeRecorder.made.at(-1).audioBitsPerSecond, 128000);
-expect('levels arrive in thousandths', await settled(() => html().includes('level 500')), true);
+expect('levels arrive in thousandths', await settled(() => html().includes('Level 500')), true);
 
 find(root, 'Stop').listeners.click();
 expect('the take comes back as a file', await settled(() => html().includes('memo.webm, 4 bytes')), true);
@@ -125,10 +125,10 @@ const denied = new Error('Permission denied');
 denied.name = 'NotAllowedError';
 answer = denied;
 find(root, 'Record').listeners.click();
-expect('a refused microphone arrives as NotAllowed', await settled(() => html().includes('failed: microphone not allowed')), true);
+expect('a refused microphone arrives as NotAllowed', await settled(() => html().includes('Failed: microphone not allowed')), true);
 
 // A page that is not secure has no mediaDevices at all.
 Object.defineProperty(globalThis.navigator, 'mediaDevices', { value: undefined, configurable: true });
 globalThis.isSecureContext = false;
 find(root, 'Record').listeners.click();
-expect('an insecure page arrives as Insecure', await settled(() => html().includes('failed: needs a secure page')), true);
+expect('an insecure page arrives as Insecure', await settled(() => html().includes('Failed: needs a secure page')), true);

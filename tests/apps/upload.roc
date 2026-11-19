@@ -1,6 +1,6 @@
 app [Model, Msg, init, subscriptions, update, view] {
 	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
-	pf: platform "../platform/main.roc",
+	pf: platform "../../platform/main.roc",
 }
 
 import html.Html exposing [button, div, input, p, text]
@@ -9,6 +9,7 @@ import pf.Effect
 import pf.Http
 import pf.WebCrypto
 
+# Fixture for check_upload.mjs and the upload browser test.
 # The file pipeline: a file input's `on_file` delivers a typed `FileInfo`
 # whose id is a handle to the browser-held File object, so the bytes never
 # enter wasm memory. The id feeds `WebCrypto.digest_file` (hash it where the

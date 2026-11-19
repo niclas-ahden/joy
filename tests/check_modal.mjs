@@ -22,17 +22,17 @@ expect('no modal calls yet', modalCalls.length, 0);
 find(root, 'Delete everything').listeners.click();
 expect('show_modal reached the dialog', dialogs[0].open, true);
 expect('show call recorded', JSON.stringify(modalCalls[0]), JSON.stringify({ kind: 'show', selector: '#confirm' }));
-expect('model updated alongside', htmlBare(root).includes('opened 1, confirmed 0'), true);
+expect('model updated alongside', htmlBare(root).includes('Opened 1, confirmed 0'), true);
 
 // Confirm: closes and counts.
 find(root, 'Yes, delete').listeners.click();
 expect('close_modal closed the dialog', !!dialogs[0].open, false);
-expect('confirm counted', htmlBare(root).includes('opened 1, confirmed 1'), true);
+expect('confirm counted', htmlBare(root).includes('Opened 1, confirmed 1'), true);
 
 // Dismiss: update keeps the model unchanged, but the close effect still runs.
 find(root, 'Delete everything').listeners.click();
 expect('reopened', dialogs[0].open, true);
 find(root, 'Keep it').listeners.click();
 expect('dismiss closed the dialog despite unchanged model', !!dialogs[0].open, false);
-expect('dismiss changed no counts', htmlBare(root).includes('opened 2, confirmed 1'), true);
+expect('dismiss changed no counts', htmlBare(root).includes('Opened 2, confirmed 1'), true);
 

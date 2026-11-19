@@ -34,7 +34,7 @@ init = |flags| {
 	#
 	# Without flags the clock stays 0 until the first tick fills it in, so the
 	# example still works when opened without them.
-	({ level: 0, now: Json.parse(flags) ?? 0, remembered: [], paused: Bool.False }, [])
+	({ level: 8983, now: Json.parse(flags) ?? 0, remembered: [], paused: Bool.False }, [])
 }
 
 update : Model, Msg -> (Model, List(Effect(Msg)))

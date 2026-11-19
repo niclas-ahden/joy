@@ -34,26 +34,26 @@ main! = |_args| {
 	assert!(page.find("#record").is_visible())?
 
 	page.find("#record").click!()?
-	assert!(page.find("#status").has_text("recording"))?
+	assert!(page.find("#status").has_text("Recording"))?
 
 	# The fake microphone plays a tone, so the meter moves off zero.
-	assert!(page.find("#level").matches_text("level [1-9]"))?
+	assert!(page.find("#level").matches_text("Level [1-9]"))?
 
 	Sleep.millis!(1500)?
 	page.find("#stop").click!()?
 
 	# A file of the container Chromium records, decoded to about the time
 	# recorded, with the twenty peaks asked for.
-	assert!(page.find("#status").has_text("idle"))?
+	assert!(page.find("#status").has_text("Idle"))?
 	assert!(page.find("#memo-info").matches_text("memo\\.webm, [1-9][0-9]* bytes, [1-9][0-9]{2,} ms, 20 peaks"))?
 	assert!(page.find("#waveform").matches_text("[▂▃▄▅▆▇█]"))?
 
 	# Playback moves the position, and rewinding brings it back.
 	page.find("#play").click!()?
-	assert!(page.find("#position").matches_text("at [1-9][0-9]* ms"))?
+	assert!(page.find("#position").matches_text("At [1-9][0-9]* ms"))?
 	page.find("#pause").click!()?
 	page.find("#rewind").click!()?
-	assert!(page.find("#position").has_text("at 0 ms"))?
+	assert!(page.find("#position").has_text("At 0 ms"))?
 
 	browser.close!()?
 	Ok({})

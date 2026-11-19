@@ -10,9 +10,6 @@ Model : Str
 
 Msg : []
 
-# No recurring event sources.
-subscriptions = |_model| []
-
 init : Str -> (Model, List(Effect(Msg)))
 init = |_| ("Roc", [])
 
@@ -22,3 +19,6 @@ update = |model, _msg| (model, [])
 view : Model -> Html(Msg)
 view = |model|
 	div([], [text("Hello, ${model}!")])
+
+# No subs needed for this example!
+subscriptions = |_model| []

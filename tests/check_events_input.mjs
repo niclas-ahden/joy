@@ -2,7 +2,7 @@
 // app's boxed Str -> Msg decoder, and the Console.log command reaches the console.
 // Run from the repo root: node tests/check_events_input.mjs
 import { readFileSync } from 'node:fs';
-import { El, byRole, fakeDom, find, findTag, htmlBare } from './fakedom.mjs';
+import { El, byId, byRole, fakeDom, find, findTag, htmlBare } from './fakedom.mjs';
 import { appRuntime, expect, wasmPath } from './harness.mjs';
 
 const { mount } = await appRuntime('events_input');
@@ -24,7 +24,7 @@ expect('textarea attrs', `${ta.attrs.get('rows')},${ta.attrs.get('cols')}`, '10,
 console.log = (...args) => { logged.push(args.join(' ')); };
 ta.listeners.input({ target: { value: 'Hello diary' } });
 console.log = realLog;
-const p = findTag(root, 'p');
+const p = byId(root, 'draft');
 expect('typed text rendered', p.children[0]?.text, 'Hello diary');
 expect('Console.log drained to console', logged.includes('User typed: Hello diary'), true);
 
@@ -32,7 +32,7 @@ expect('Console.log drained to console', logged.includes('User typed: Hello diar
 console.log = (...args) => { logged.push(args.join(' ')); };
 ta.listeners.input({ target: { value: 'Dear diary, today I crossed the boundary — twice! ✨' } });
 console.log = realLog;
-expect('long/unicode value round-trips', findTag(root, 'p').children[0]?.text, 'Dear diary, today I crossed the boundary — twice! ✨');
+expect('long/unicode value round-trips', byId(root, 'draft').children[0]?.text, 'Dear diary, today I crossed the boundary — twice! ✨');
 
 // on_submit: the msg dispatches AND the browser default (page reload) is
 // suppressed, whether submission came from Enter or the submit button.

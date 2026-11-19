@@ -27,8 +27,6 @@ Model : { clicks : I64 }
 
 Msg : [UserClicked]
 
-subscriptions = |_model| []
-
 init : Str -> (Model, List(Effect(Msg)))
 init = |_| ({ clicks: 0 }, [Console.log("The app booted")])
 
@@ -53,3 +51,6 @@ view = |model|
 			text("Clicks: ${model.clicks.to_str()}"),
 		],
 	)
+
+# No subs needed for this example!
+subscriptions = |_model| []

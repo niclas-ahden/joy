@@ -1,7 +1,7 @@
-# Real-browser E2E: the navigation app (tests/apps) in Chromium, against the
+# Real-browser E2E: the url_query app (tests/apps) in Chromium, against the
 # real History API the fake DOM only records calls to: replace_url rewrites
 # the address bar without adding entries, push_url adds one, Back fires a
-# real popstate that DOM.on_url_change turns into a message, and navigate is
+# real popstate that Navigation.on_url_change turns into a message, and navigate is
 # a genuine page load that boots the app afresh. The URL claims read the
 # address bar the browser reports. evaluate! remains only for history.back(),
 # which has no built-in.
@@ -16,7 +16,7 @@ import Browser
 query = "#query"
 
 main! = |_args| {
-	{ browser, page } = Browser.open!("navigation", "#search")?
+	{ browser, page } = Browser.open!("url_query", "#search")?
 
 	# Typing replaces the URL in place, percent-encoded.
 	page.find("#search").fill!("first")?
@@ -34,7 +34,7 @@ main! = |_args| {
 	page.find("#search").fill!("second")?
 
 	# ...then Back: a real popstate lands on the first entry (last replaced to
-	# ?q=hats%20on) and DOM.on_url_change re-derives the query from it.
+	# ?q=hats%20on) and Navigation.on_url_change re-derives the query from it.
 	_ = page.evaluate!("(history.back(), 'ok')")?
 	assert!(page.find(query).has_text("Current query: hats on"))?
 	assert!(page.url_contains("?q=hats%20on"))?
@@ -44,6 +44,12 @@ main! = |_args| {
 	page.find("#reload").click!()?
 	assert!(page.find(query).has_text("Current query:"))?
 	assert!(page.url_contains("?reloaded=1"))?
+
+	# A change of the fragment alone is the browser's own, as a click on a
+	# link to `#top` is, and the app hears of it too: it reads the query the
+	# URL has by then, which was put there behind its back.
+	_ = page.evaluate!("(history.replaceState(null, '', '?q=behind'), location.hash = '#top', 'ok')")?
+	assert!(page.find(query).has_text("Current query: behind"))?
 
 	browser.close!()?
 	Ok({})

@@ -17,7 +17,10 @@ TodoPage :: [].{
 	## The URL under test comes from E2E_URL, which run.roc sets to its
 	## worker's server. Without it, a test run on its own
 	## (`roc e2e/add_test.roc`) targets ./joy dev on its default port.
-	open! = |{}| {
+	open! = |{}| open_at!("/")
+
+	## The same, at a path of the app, like `/#/active`.
+	open_at! = |path| {
 		browser_type = match Env.var_str!("JOY_BROWSER") ?? "chromium" {
 			"firefox" => Firefox
 			"webkit" => WebKit
@@ -28,7 +31,7 @@ TodoPage :: [].{
 			{ browser_type, timeout: TimeoutMilliseconds(10000) },
 		)?
 		base = Env.var_str!("E2E_URL") ?? "http://localhost:8000"
-		page.navigate!("${base}/")?
+		page.navigate!("${base}${path}")?
 		assert!(page.find(".new-todo").is_visible())?
 		Ok({ browser, page })
 	}

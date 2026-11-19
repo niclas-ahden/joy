@@ -132,11 +132,11 @@ view : Model -> Html.Html(Msg)
 view = |model| {
 	status =
 		match model.status {
-			Idle => "idle"
-			Asking => "asking for the microphone"
-			Recording(_) => "recording"
-			Finishing => "finishing"
-			Failed(why) => "failed: ${why}"
+			Idle => "Idle"
+			Asking => "Asking for the microphone"
+			Recording(_) => "Recording"
+			Finishing => "Finishing"
+			Failed(why) => "Failed: ${why}"
 		}
 
 	recording_controls =
@@ -167,7 +167,7 @@ view = |model| {
 					button([id("play"), on_click(UserClickedPlay)], [text("Play")]),
 					button([id("pause"), on_click(UserClickedPause)], [text("Pause")]),
 					button([id("rewind"), on_click(UserClickedRewind)], [text("Rewind")]),
-					p([id("position")], [text("at ${model.position_ms.to_str()} ms")]),
+					p([id("position")], [text("At ${model.position_ms.to_str()} ms")]),
 				]
 		}
 
@@ -175,7 +175,7 @@ view = |model| {
 		[],
 		[
 			p([id("status")], [text(status)]),
-			p([id("level")], [text("level ${model.level.to_str()}")]),
+			p([id("level")], [text("Level ${model.level.to_str()}")]),
 		]
 			.concat(recording_controls)
 			.concat(memo_view),

@@ -7,20 +7,21 @@ app [Model, Msg, init, subscriptions, update, view] {
 import html.Html exposing [a, button, div, h1, h2, input, p, text]
 import html.Attribute exposing [href, id, on_click, on_input, placeholder]
 import pf.Effect
-import pf.DOM
+import pf.Navigation
 import url.Uri
 
-# This example shows the three ways to change the URL from a Joy app:
+# Fixture for check_url_query.mjs and the url_query browser test: the three
+# ways to change the URL from a Joy app, with a query the URL holds:
 #
-#   DOM.replace_url  rewrite the URL in place, no reload, no history entry
-#   DOM.push_url     change the URL, no reload, adds a history entry
-#   DOM.navigate     a full page load (leaves the current page)
+#   Navigation.replace_url  rewrite the URL in place, no reload, no history entry
+#   Navigation.push_url     change the URL, no reload, adds a history entry
+#   Navigation.navigate     a full page load (leaves the current page)
 #
 # and the two subscriptions that complete the loop:
 #
-#   DOM.on_url_change  fires each time the URL changes: by Back and Forward,
+#   Navigation.on_url_change  fires each time the URL changes: by Back and Forward,
 #                      and by push_url and replace_url
-#   DOM.on_link_click  hands the app the clicks on its own links, so a link
+#   Navigation.on_link_click  hands the app the clicks on its own links, so a link
 #                      can change the URL without loading a page
 #
 # Type in the search box and watch the address bar: the "?q=..." follows what
@@ -42,8 +43,8 @@ Msg : [
 # The URL is where the query lives. Each change of it arrives as a Str, and
 # the decoder pulls the query back out of it before update runs.
 subscriptions = |_model| [
-	DOM.on_url_change(|url| UrlChanged(query_from_search(url))),
-	DOM.on_link_click(|url| UserClickedLink(url)),
+	Navigation.on_url_change(|url| UrlChanged(query_from_search(url))),
+	Navigation.on_link_click(|url| UserClickedLink(url)),
 ]
 
 init : Str -> (Model, List(Effect(Msg)))
@@ -72,23 +73,23 @@ update = |model, msg|
 			# safe in the URL, then sync it into the address bar without
 			# growing history.
 			encoded = Uri.percent_encode(query)
-			(query, [DOM.replace_url("?q=${encoded}")])
+			(query, [Navigation.replace_url("?q=${encoded}")])
 		}
 
 		UserClickedPush =>
 		# Adds a history entry, so Back returns to where you were. The
 		# query goes along, as the URL is where it is read from.
-			(model, [DOM.push_url("?q=${Uri.percent_encode(model)}&demo=push")])
+			(model, [Navigation.push_url("?q=${Uri.percent_encode(model)}&demo=push")])
 
 		UserClickedLink(url) =>
 		# A link of our own: go there without loading a page.
-			(model, [DOM.push_url(url)])
+			(model, [Navigation.push_url(url)])
 
 		UserClickedReload =>
 		# A full page load. The query you typed is lost because init
 		# runs again, unlike the two effects above which keep the Model
 		# intact.
-			(model, [DOM.navigate("?reloaded=1")])
+			(model, [Navigation.navigate("?reloaded=1")])
 
 		UrlChanged(query) => {
 			# The URL changed, by Back or Forward or by one of the effects
@@ -110,7 +111,7 @@ view = |model|
 			p([], [text("The address bar shows ?q=... as you type, but Back does not record every keystroke.")]),
 			h2([], [text("push_url: adds a history entry")]),
 			button([id("push"), on_click(UserClickedPush)], [text("Push ?demo=push")]),
-			p([], [text("Changes the URL without reloading and lets Back return here. DOM.on_url_change keeps the view in sync when you do.")]),
+			p([], [text("Changes the URL without reloading and lets Back return here. Navigation.on_url_change keeps the view in sync when you do.")]),
 			h2([], [text("on_link_click: a link without a page load")]),
 			p([], [a([id("link"), href("?q=linked")], [text("Search for linked")])]),
 			h2([], [text("navigate: full page load")]),

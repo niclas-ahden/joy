@@ -20,9 +20,6 @@ Model : [
 
 Msg : []
 
-# No recurring event sources
-subscriptions = |_model| []
-
 init : Str -> (Model, List(Effect(Msg)))
 init = |flags| {
 	# `Json.parse` is really smart. It'll figure out the shape of the JSON you're expecting based on
@@ -103,3 +100,6 @@ error_view = |flags|
 				],
 			)
 	}
+
+# No subs needed for this example!
+subscriptions = |_model| []

@@ -4,7 +4,7 @@ app [Model, Msg, init, subscriptions, update, view] {
 }
 
 import html.Html exposing [button, div, form, h1, input, label, p, text, textarea]
-import html.Attribute exposing [checked, cols, id, on_check, on_input, on_submit, rows, type]
+import html.Attribute exposing [checked, cols, id, on_check, on_input, on_submit, rows, style, type]
 import pf.Effect
 import pf.Console
 
@@ -15,8 +15,6 @@ Msg : [
 	UserSavedEntry,
 	UserToggledSecret(Bool),
 ]
-
-subscriptions = |_model| []
 
 init : Str -> (Model, List(Effect(Msg)))
 init = |_| ({ draft: "", saved: "", secret: Bool.False }, [])
@@ -50,7 +48,7 @@ view = |model| {
 						[rows(10), cols(30), on_input(|s| UserTypedSomething(s))],
 						[],
 					),
-					button([type("submit")], [text("Save entry")]),
+					button([type("submit"), style([("display", "block"), ("margin", "8px 0")])], [text("Save entry")]),
 				],
 			),
 			label(
@@ -65,3 +63,6 @@ view = |model| {
 		],
 	)
 }
+
+# No subs needed for this example!
+subscriptions = |_model| []

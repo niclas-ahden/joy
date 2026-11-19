@@ -21,9 +21,6 @@ Msg : [
 	UserClickedIncrement([Left, Middle, Right]),
 ]
 
-# No recurring event sources.
-subscriptions = |_model| []
-
 init : Str -> (Model, List(Effect(Msg)))
 init = |_| (
 	{
@@ -111,3 +108,6 @@ counter = |variant, value|
 			),
 		],
 	)
+
+# No subs needed for this example!
+subscriptions = |_model| []

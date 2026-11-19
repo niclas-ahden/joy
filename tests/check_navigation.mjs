@@ -1,51 +1,39 @@
-// Node harness for navigation: flags seed the query, typing replaces the URL
-// in place, the buttons push and navigate.
+// Node harness for the navigation example: a link pushes its URL, the page
+// on screen follows the URL, also on Back, and the two buttons ask for a
+// replace and for a full page load.
 // Run from the repo root: node tests/check_navigation.mjs
 import { readFileSync } from 'node:fs';
-import { El, fakeDom, find, findTag, htmlBare, linkClick, navigations, popstate, activeUrlListeners } from './fakedom.mjs';
+import { El, byId, fakeDom, fakeLocation, htmlBare, linkClick, navigations, popstate } from './fakedom.mjs';
 import { appRuntime, expect, wasmPath } from './harness.mjs';
 
 const { mount } = await appRuntime('navigation');
 
-const bytes = readFileSync(wasmPath('navigation'));
-
+const site = 'http://localhost';
+fakeLocation.url = `${site}/`;
 const root = new El('#root');
-const app = await mount({ wasm: bytes, root, flags: '?q=hats%20on', dom: fakeDom });
-expect('flags decode percent-encoded query', htmlBare(root).includes('Current query: hats on'), true);
+await mount({ wasm: readFileSync(wasmPath('navigation')), root, flags: '', dom: fakeDom });
 
-// Typing percent-encodes and replaces the URL without history entries.
-const box = findTag(root, 'input');
-box.listeners.input({ target: { value: 'hats off' } });
-expect('typed query rendered', htmlBare(root).includes('Current query: hats off'), true);
-expect('replace_url! called with encoding', navigations.some((n) => n.kind === 'replace' && n.url === '?q=hats%20off'), true);
+const shown = (id) => htmlBare(byId(root, id)).replace(/<[^>]+>/g, '');
+const asked = (kind) => navigations.filter((n) => n.kind === kind).map((n) => n.url).join(',');
 
-// The two buttons.
-find(root, 'Push ?demo=push').listeners.click();
-expect('push_url! called', navigations.some((n) => n.kind === 'push' && n.url === '?q=hats%20off&demo=push'), true);
-find(root, 'Reload with ?reloaded=1').listeners.click();
-expect('navigate! called', navigations.some((n) => n.kind === 'navigate' && n.url === '?reloaded=1'), true);
+expect('starts on Home', shown('page'), 'Home');
+expect('one page opened', shown('opened'), 'Pages opened: 1');
 
-// The push is told to the app, which reads the query back from the URL.
-expect('query survives the buttons', htmlBare(root).includes('Current query: hats off'), true);
+linkClick(root, `${site}/about`);
+expect('a link pushed its URL', asked('push'), `${site}/about`);
+expect('the pushed URL opened its page', shown('page'), 'About');
+expect('and was counted', shown('opened'), 'Pages opened: 2');
 
-// DOM.on_link_click: a click on a link of the app's is handed to it, and its
-// push_url is heard like any other change of the URL.
-linkClick(root, 'http://localhost/diary?q=linked');
-expect('a link click reached update, which pushed its URL', navigations.some((n) => n.kind === 'push' && n.url === 'http://localhost/diary?q=linked'), true);
-expect('the pushed URL was told to the app', htmlBare(root).includes('Current query: linked'), true);
-const pushes = navigations.filter((n) => n.kind === 'push').length;
-linkClick(root, 'http://localhost/diary?q=linked');
-expect('the URL already showing adds no history', navigations.filter((n) => n.kind === 'push').length, pushes);
+popstate(`${site}/`);
+expect('Back opened the page before', shown('page'), 'Home');
 
-// DOM.on_url_change: Back/Forward (popstate) delivers the new URL to the
-// subscription, whose decoder re-derives the query for update.
-expect('one URL listener from the subscription', activeUrlListeners().length, 1);
-popstate('/diary?q=hats%20on');
-expect('Back re-filled the query from the URL', htmlBare(root).includes('Current query: hats on'), true);
-popstate('/diary');
-expect('a URL without ?q clears the query', htmlBare(root).includes('Current query: '), true);
+byId(root, 'skip').listeners.click();
+expect('the button replaced the URL', asked('replace'), '/contact');
+expect('the replaced URL opened its page', shown('page'), 'Contact');
+expect('with no new step in the history', asked('push'), `${site}/about`);
 
-// Unmount stops the subscription like any other.
-app.unmount();
-expect('unmount removed the URL listener', activeUrlListeners().length, 0);
+linkClick(root, `${site}/nope`);
+expect('a URL that is no page says so', shown('page'), 'Not found');
 
+byId(root, 'reload').listeners.click();
+expect('the other button asked for a full page load', asked('navigate'), '/');

@@ -19,9 +19,9 @@ main! = |_args| {
 	{ browser, page } = Browser.open!("time", level)?
 
 	# The subscription ticks by itself: within a few seconds the level leaves
-	# 0. The not_ claim re-checks until the text changes away, so it is the
+	# 8983. The not_ claim re-checks until the text changes away, so it is the
 	# wait.
-	assert!(page.find(level).not_has_text("Your excitement level for Roc: 0"))?
+	assert!(page.find(level).not_has_text("Your excitement level for Roc: 8983"))?
 
 	# Remembering a moment reuses the time the last tick delivered, which on a
 	# real clock is a genuine timestamp, not the 0 the model boots with

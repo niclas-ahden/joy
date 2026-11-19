@@ -21,18 +21,18 @@ main! = |_args| {
 	# claim rides out the debounce window, since assert! re-checks until it
 	# holds.
 	page.key_type!("#search", "joy")?
-	assert!(page.find("#searches").has_text("searches: 1"))?
-	assert!(page.find("#searched").has_text("searched for: joy"))?
+	assert!(page.find("#searches").has_text("Searches: 1"))?
+	assert!(page.find("#searched").has_text("Searched for: joy"))?
 
 	# The timer fired once. Well past another debounce window it must not
 	# have fired again.
 	Sleep.millis!(300)?
-	assert!(page.find("#searches").has_text("searches: 1"))?
+	assert!(page.find("#searches").has_text("Searches: 1"))?
 
 	# The key is reusable: another keystroke arms a fresh timer.
 	page.key_type!("#search", "x")?
-	assert!(page.find("#searches").has_text("searches: 2"))?
-	assert!(page.find("#searched").has_text("searched for: joyx"))?
+	assert!(page.find("#searches").has_text("Searches: 2"))?
+	assert!(page.find("#searched").has_text("Searched for: joyx"))?
 
 	browser.close!()?
 	Ok({})

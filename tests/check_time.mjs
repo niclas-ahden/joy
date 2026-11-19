@@ -28,13 +28,13 @@ await mount({ wasm: readFileSync(wasmPath('time')), root, flags: String(T0), dom
 
 expect('one interval started from the subscription', intervals.length, 1);
 expect('interval period', intervals[0].ms, 1000);
-expect('initial level', find(root, 'Your excitement level for Roc: 0') !== null, true);
+expect('initial level', find(root, 'Your excitement level for Roc: 8983') !== null, true);
 
 // Three seconds pass, but only one tick fires: the level counts ticks, not
 // wall clock seconds, which is what makes pausing hold it still below.
 nowMs = T0 + 3000;
 intervals[0].fn();
-expect('level after tick', find(root, 'Your excitement level for Roc: 1') !== null, true);
+expect('level after tick', find(root, 'Your excitement level for Roc: 8984') !== null, true);
 
 // Remember a moment: pure update reuses the time carried by the last Tick
 // msg, so a click between ticks records the tick's time, not the click's.
@@ -42,14 +42,14 @@ nowMs = T0 + 3500;
 find(root, 'Remember this moment').listeners.click();
 expect(
   'remembered moment shows the last tick time',
-  find(root, `Level 1, reached at ${T0 + 3000}`) !== null,
+  find(root, `Level 8984, reached at ${T0 + 3000}`) !== null,
   true,
 );
 
 nowMs = T0 + 5000;
 intervals[0].fn();
-expect('level keeps climbing', find(root, 'Your excitement level for Roc: 2') !== null, true);
-expect('remembered moment preserved', find(root, `Level 1, reached at ${T0 + 3000}`) !== null, true);
+expect('level keeps climbing', find(root, 'Your excitement level for Roc: 8985') !== null, true);
+expect('remembered moment preserved', find(root, `Level 8984, reached at ${T0 + 3000}`) !== null, true);
 
 // Calm down: the subscription leaves the declared list; the host must stop
 // the interval (cancellation by omission).
@@ -59,7 +59,7 @@ expect('calming down clears the interval', cleared.length, 1);
 // A late fire from the (now cleared) interval is a no-op host-side too.
 nowMs = T0 + 7000;
 intervals[0].fn();
-expect('no tick while paused', find(root, 'Your excitement level for Roc: 2') !== null, true);
+expect('no tick while paused', find(root, 'Your excitement level for Roc: 8985') !== null, true);
 
 // Getting excited again: re-declaring the subscription starts a fresh
 // interval.
@@ -68,7 +68,7 @@ expect('resume starts a new interval', intervals.length, 2);
 expect('resumed period', intervals[1].ms, 1000);
 nowMs = T0 + 9000;
 intervals[1].fn();
-expect('ticks again after resume', find(root, 'Your excitement level for Roc: 3') !== null, true);
+expect('ticks again after resume', find(root, 'Your excitement level for Roc: 8986') !== null, true);
 
 Date.now = realNow;
 globalThis.setInterval = realSetInterval;

@@ -4,9 +4,11 @@ app [Model, Msg, init, subscriptions, update, view] {
 }
 
 import html.Html exposing [a, button, div, footer, h1, header, input, label, li, p, section, span, strong, text, ul]
-import html.Attribute exposing [autofocus, checked, class, class_list, for_, id, on, on_check, on_click, on_input, on_key, placeholder, type, value]
+import html.Attribute exposing [aria, autofocus, checked, class, class_list, for_, href, id, on, on_check, on_click, on_input, on_key, placeholder, type, value]
 import pf.DOM
 import pf.Effect
+import pf.Navigation
+import pf.Sub
 
 # TodoMVC (https://todomvc.com) as a client-side Joy app. All state lives in
 # the model, so a page reload starts you over. The page is public/index.html,
@@ -35,7 +37,7 @@ Msg : [
 	UserToggledTodo(U64, Bool),
 	UserClickedDestroy(U64),
 	UserToggledAll(Bool),
-	UserClickedFilter(Filter),
+	UrlChanged(Str),
 	UserClickedClearCompleted,
 	UserDoubleClickedTodo(U64, Str),
 	UserTypedEdit(Str),
@@ -43,11 +45,39 @@ Msg : [
 	UserCancelledEdit,
 ]
 
-subscriptions = |_model| []
+# The filters are links to `#/`, `#/active` and `#/completed`, which the
+# browser follows on its own. We hear of the new URL here, and of Back and
+# Forward too.
+subscriptions : Model -> List(Sub(Msg))
+subscriptions = |_model| [Navigation.on_url_change(|url| UrlChanged(url))]
 
+# `url` is the URL the page was opened at. public/index.html passes it in as
+# the flags, so that a refresh or a shared link opens the right filter.
 init : Str -> (Model, List(Effect(Msg)))
-init = |_flags|
-	({ todos: [], draft: "", filter: All, next_id: 1, editing: NotEditing }, [])
+init = |url|
+	({ todos: [], draft: "", filter: filter_in(url), next_id: 1, editing: NotEditing }, [])
+
+# The filter a URL names. Anything but `#/active` and `#/completed` shows
+# every todo.
+filter_in : Str -> Filter
+filter_in = |url| {
+	fragment =
+		match url.split_first("#") {
+			Ok(split) => split.after
+			Err(_) => ""
+		}
+	match fragment {
+		"/active" => Active
+		"/completed" => Completed
+		_ => All
+	}
+}
+
+expect filter_in("http://localhost:8000/") == All
+expect filter_in("http://localhost:8000/#/") == All
+expect filter_in("http://localhost:8000/#/active") == Active
+expect filter_in("http://localhost:8000/#/completed") == Completed
+expect filter_in("http://localhost:8000/#/nope") == All
 
 update : Model, Msg -> (Model, List(Effect(Msg)))
 update = |model, msg|
@@ -87,7 +117,7 @@ update = |model, msg|
 		UserToggledAll(now) =>
 			({ ..model, todos: model.todos.map(|t| ({ ..t, done: now })) }, [])
 
-		UserClickedFilter(filter) => ({ ..model, filter: filter }, [])
+		UrlChanged(url) => ({ ..model, filter: filter_in(url) }, [])
 
 		UserClickedClearCompleted =>
 			({ ..model, todos: model.todos.keep_if(|t| !t.done) }, [])
@@ -186,7 +216,7 @@ view_main = |model, visible| {
 				on_check(|now| UserToggledAll(now)),
 			]),
 			label([for_("toggle-all")], [text("Mark all as complete")]),
-			ul([class("todo-list")], visible.map(|t| view_todo(t, model.editing))),
+			ul([class("todo-list")], visible.map(|t| Html.keyed(t.id.to_str(), view_todo(t, model.editing)))),
 		],
 	)
 }
@@ -225,7 +255,7 @@ view_todo = |todo, editing| {
 						[on("dblclick", UserDoubleClickedTodo(todo.id, todo.title))],
 						[text(todo.title)],
 					),
-					button([class("destroy"), on_click(UserClickedDestroy(todo.id))], []),
+					button([class("destroy"), aria("label", "Delete ${todo.title}"), on_click(UserClickedDestroy(todo.id))], []),
 				],
 			),
 			input([
@@ -269,26 +299,28 @@ view_footer = |model| {
 			ul(
 				[class("filters")],
 				[
-					view_filter("All", All, model.filter),
-					view_filter("Active", Active, model.filter),
-					view_filter("Completed", Completed, model.filter),
+					view_filter("All", "#/", All, model.filter),
+					view_filter("Active", "#/active", Active, model.filter),
+					view_filter("Completed", "#/completed", Completed, model.filter),
 				],
 			),
 		].concat(clear),
 	)
 }
 
-view_filter : Str, Filter, Filter -> Html(Msg)
-view_filter = |label_text, filter, current|
+# A filter is a real link, so it can be reached with the keyboard, opened in
+# a new tab and shared. The one that's on gets `aria-current`, which screen
+# readers read out, next to the class the stylesheet highlights it with.
+view_filter : Str, Str, Filter, Filter -> Html(Msg)
+view_filter = |label_text, url, filter, current| {
+	on = if (filter == current) [aria("current", "page")] else []
 	li(
 		[],
 		[
 			a(
-				[
-					class_list([("selected", filter == current)]),
-					on_click(UserClickedFilter(filter)),
-				],
+				[href(url), class_list([("selected", filter == current)])].concat(on),
 				[text(label_text)],
 			),
 		],
 	)
+}

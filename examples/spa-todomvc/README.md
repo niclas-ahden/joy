@@ -33,12 +33,12 @@ A full run ends with a smoke pass over the loop you work in: it starts `./joy de
 ## Structure
 
 * `client/app.roc` is the app: model, messages, update and view. This is the file to play with. A Joy app in `client/` is a bundle, and `./joy` builds every one it finds there.
-* `public/index.html` is the page. The element with `data-joy-bundle="app"` is where the app mounts, and `joy.js` is Joy's loader.
+* `public/index.html` is the page. The element with `data-joy-bundle="app"` is where the app mounts, and `joy.js` is Joy's loader. The page hands the app its address, which is how a link to `#/active` opens with that filter on.
 * `assets/css/style.css` is the stylesheet. A build gives a file in `assets/` a hashed name and puts that name in the page.
 * `tests.roc` and `e2e/` drive the app through a real Chromium, then smoke test `./joy dev`.
 
 ## Learn more
 
-* [Joy's documentation](https://niclas-ahden.github.io/joy) for the platform API.
+* [The Joy guide](https://niclas-ahden.github.io/joy/), which teaches Joy step by step and links to the API docs.
 * [More Joy examples](https://github.com/niclas-ahden/joy/tree/main/examples), most of them a single file.
 * [A tour of Roc's syntax](https://github.com/roc-lang/roc/blob/main/docs/mini-tutorial-new-compiler.md) if the language is new to you.

@@ -21,8 +21,6 @@ Msg : [
 	UserDismissed,
 ]
 
-subscriptions = |_model| []
-
 init : Str -> (Model, List(Effect(Msg)))
 init = |_| ({ opened: 0, confirmed: 0 }, [])
 
@@ -45,7 +43,7 @@ view = |model|
 		[],
 		[
 			button([id("open"), on_click(UserOpened)], [text("Delete everything")]),
-			p([id("counts")], [text("opened ${model.opened.to_str()}, confirmed ${model.confirmed.to_str()}")]),
+			p([id("counts")], [text("Opened ${model.opened.to_str()}, confirmed ${model.confirmed.to_str()}")]),
 			dialog(
 				[id("confirm")],
 				[
@@ -56,3 +54,6 @@ view = |model|
 			),
 		],
 	)
+
+# No subs needed for this example!
+subscriptions = |_model| []

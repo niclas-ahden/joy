@@ -18,8 +18,6 @@ Msg : [
 	GotQuote(Try(Http.Response, [HttpErr([Timeout, NetworkError])])),
 ]
 
-subscriptions = |_model| []
-
 init : Str -> (Model, List(Effect(Msg)))
 init = |_| ({ quote: NotRequestedYet }, [])
 
@@ -103,3 +101,6 @@ update = |_model, msg|
 		GotQuote(Err(HttpErr(NetworkError))) =>
 			({ quote: Error("The request never completed") }, [])
 	}
+
+# No subs needed for this example!
+subscriptions = |_model| []

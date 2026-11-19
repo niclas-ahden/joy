@@ -1,15 +1,21 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Joy TodoMVC</title>
-  <link rel="stylesheet" href="./css/style.css" />
+  <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-  <!-- The bundle client/app.roc mounts here. data-joy-flags, when you add
-       it, is the string the app's `init` receives. -->
   <div id="app" data-joy-bundle="app"></div>
-  <script type="module" src="./joy.js"></script>
+  <script>
+    // The app shows the filter its address names, so we pass in the URL as its
+    // flags. Setting them here is safe: this script runs as the page is read,
+    // and joy.js is a module, which runs once the whole page has been read. A
+    // server that renders this page writes the URL straight into
+    // data-joy-flags, and needs no script.
+    document.getElementById("app").dataset.joyFlags = location.href;
+  </script>
+  <script type="module" src="/joy.js"></script>
 </body>
 </html>

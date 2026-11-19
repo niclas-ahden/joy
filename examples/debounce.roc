@@ -21,8 +21,6 @@ Msg : [
 	UserCanceled,
 ]
 
-subscriptions = |_model| []
-
 init : Str -> (Model, List(Effect(Msg)))
 init = |_| ({ typed: "", searched: "", searches: 0 }, [])
 
@@ -48,7 +46,10 @@ view = |model|
 		[
 			input([id("search"), placeholder("Search..."), on_input(|s| UserTyped(s))]),
 			button([id("cancel"), on_click(UserCanceled)], [text("Cancel")]),
-			p([id("searched")], [text("searched for: ${model.searched}")]),
-			p([id("searches")], [text("searches: ${model.searches.to_str()}")]),
+			p([id("searched")], [text("Searched for: ${model.searched}")]),
+			p([id("searches")], [text("Searches: ${model.searches.to_str()}")]),
 		],
 	)
+
+# No subs needed for this example!
+subscriptions = |_model| []

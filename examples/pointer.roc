@@ -27,8 +27,6 @@ Msg : [
 	UserReleased,
 ]
 
-subscriptions = |_model| []
-
 init : Str -> (Model, List(Effect(Msg)))
 init = |_|
 	({ x: 0.0, y: 0.0, dragging: Bool.False, moves: 0, shift_clicks: 0 }, [])
@@ -76,7 +74,7 @@ view = |model| {
 					on_pointer("pointermove", |e| UserDragged(e)).prevent_default(),
 					on_pointer_up(|_| UserReleased),
 				],
-				[text("Draw here")],
+				[text("Click and drag here")],
 			),
 			p([id("position")], [text("At ${model.x.to_str()}, ${model.y.to_str()} (${dragging_status})")]),
 			p([id("moves")], [text("Moves: ${model.moves.to_str()}")]),
@@ -84,3 +82,6 @@ view = |model| {
 		],
 	)
 }
+
+# No subs needed for this example!
+subscriptions = |_model| []

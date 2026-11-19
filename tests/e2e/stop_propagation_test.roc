@@ -17,14 +17,14 @@ main! = |_args| {
 	# A plain on_click: the button's handler runs and the click travels on to
 	# the outer div, so both counters move.
 	page.find("#bubbles").click!()?
-	assert!(page.find("#counts").has_text("outer 1, inner 1"))?
+	assert!(page.find("#counts").has_text("Outer 1, inner 1"))?
 
 	# stop_propagation: the button's own handler still runs, but the outer
 	# div never sees the click, so only the inner counter moves. This is the
 	# assertion that fails if the flag is dropped anywhere along the way
 	# (Roc constructor, host command buffer, or runtime.js).
 	page.find("#stops").click!()?
-	assert!(page.find("#counts").has_text("outer 1, inner 2"))?
+	assert!(page.find("#counts").has_text("Outer 1, inner 2"))?
 
 	browser.close!()?
 	Ok({})

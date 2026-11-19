@@ -25,9 +25,6 @@ Msg : [
 	UserClickedReverse,
 ]
 
-# No recurring event sources.
-subscriptions = |_model| []
-
 init : Str -> (Model, List(Effect(Msg)))
 init = |_| ({ items: ["apple", "banana", "cherry", "date"], next_id: 1 }, [])
 
@@ -59,13 +56,16 @@ view = |model|
 	div(
 		[],
 		[
-			button([on_click(UserClickedRotate)], [text("rotate")]),
-			button([on_click(UserClickedPrepend)], [text("prepend")]),
-			button([on_click(UserClickedRemoveSecond)], [text("remove second")]),
-			button([on_click(UserClickedReverse)], [text("reverse")]),
+			button([on_click(UserClickedRotate)], [text("Rotate")]),
+			button([on_click(UserClickedPrepend)], [text("Prepend")]),
+			button([on_click(UserClickedRemoveSecond)], [text("Remove second")]),
+			button([on_click(UserClickedReverse)], [text("Reverse")]),
 			ul(
 				[],
 				model.items.map(|item| Html.keyed(item, li([], [text(item)]))),
 			),
 		],
 	)
+
+# No subs needed for this example!
+subscriptions = |_model| []

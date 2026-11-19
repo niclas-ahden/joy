@@ -24,7 +24,7 @@ main! = |_args| {
 	page.find("#yes").click!()?
 	assert!(page.find("#prompt").is_hidden())?
 
-	assert!(page.find("#counts").has_text("opened 1, confirmed 1"))?
+	assert!(page.find("#counts").has_text("Opened 1, confirmed 1"))?
 
 	browser.close!()?
 	Ok({})

@@ -104,8 +104,8 @@ await compare('spa-todomvc', [
   (p) => p.text('Eggs').listeners.dblclick({}),
   (p) => type(p.cls('edit'), 'Tea'),
   (p) => enter(p.cls('edit')),
-  (p) => click(p.text('Active')),
-  (p) => click(p.text('All')),
+  () => popstate('http://localhost/#/active'),
+  () => popstate('http://localhost/#/'),
   (p) => click(p.cls('clear-completed')),
 ], (p) => click(p.cls('destroy')));
 

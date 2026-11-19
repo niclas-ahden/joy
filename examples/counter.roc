@@ -11,8 +11,6 @@ Model : { count : I64 }
 
 Msg : [Increment, Decrement]
 
-subscriptions = |_model| []
-
 init : Str -> (Model, List(Effect(Msg)))
 init = |_| ({ count: 0 }, [])
 
@@ -33,3 +31,6 @@ update = |model, msg|
 		Increment => ({ count: model.count + 1 }, [])
 		Decrement => ({ count: model.count - 1 }, [])
 	}
+
+# No subs needed for this example!
+subscriptions = |_model| []

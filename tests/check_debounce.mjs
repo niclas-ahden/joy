@@ -23,22 +23,22 @@ const type = (s) => { input.value = s; input.listeners.input({ target: input });
 type('j');
 type('jo');
 type('joy');
-expect('nothing fires while typing', htmlBare(root).includes('searches: 0'), true);
+expect('nothing fires while typing', htmlBare(root).includes('Searches: 0'), true);
 await sleep(350);
-expect('one search after the pause', htmlBare(root).includes('searches: 1'), true);
-expect('searched with the final text', htmlBare(root).includes('searched for: joy'), true);
+expect('one search after the pause', htmlBare(root).includes('Searches: 1'), true);
+expect('searched with the final text', htmlBare(root).includes('Searched for: joy'), true);
 
 // A second burst works the same (the key is reusable).
 type('joy!');
 await sleep(350);
-expect('second burst fired once', htmlBare(root).includes('searches: 2'), true);
-expect('second text landed', htmlBare(root).includes('searched for: joy!'), true);
+expect('second burst fired once', htmlBare(root).includes('Searches: 2'), true);
+expect('second text landed', htmlBare(root).includes('Searched for: joy!'), true);
 
 // Cancel discards the pending timer: no search ever fires.
 type('never');
 find(root, 'Cancel').listeners.click();
 await sleep(350);
-expect('canceled timer never fired', htmlBare(root).includes('searches: 2'), true);
+expect('canceled timer never fired', htmlBare(root).includes('Searches: 2'), true);
 expect('cancel with nothing pending is a no-op', (find(root, 'Cancel').listeners.click(), true), true);
 
 // A pending timer at unmount is cleaned up and must not re-enter wasm.

@@ -1,4 +1,4 @@
-# Real-browser E2E: the upload example in Chromium, the whole file pipeline
+# Real-browser E2E: the upload app (tests/apps) in Chromium, the whole file pipeline
 # on the real APIs the fake DOM stubs out: set_input_files! puts an actual
 # File behind the input, on_file's FileInfo reflects it, WebCrypto.digest_file
 # hashes it with the browser's own crypto.subtle, and Http.post_file streams
