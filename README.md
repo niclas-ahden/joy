@@ -16,24 +16,11 @@ Joy should provide:
 
 Joy is fun to play with, but it's in early development, not production-ready. Here be dragons!
 
-You can already build single-page applications in it but the functionality is limited. Have a look at the [examples](https://github.com/niclas-ahden/joy/tree/main/examples) to get a grasp on what's currently supported. See [Joy TodoMVC](https://github.com/niclas-ahden/joy/tree/main/examples/spa-todomvc) for a complete front-end example.
+Try it out and build some single-page applications to get started: [Joy guide](https://niclas-ahden.github.io/joy/). Later on, in Joy 0.36.0, we'll add a guide and examples for full-stack applications too!
 
-As an app grows, split it into pages: each page is a module with its own `Model`, `Msg`, `init`, `update` and `view`, and the app wraps them with `Html.map`, `Effect.map` and `Sub.map`. The [pages example](https://github.com/niclas-ahden/joy/tree/main/examples/pages) gives every page its own URL and holds only the page on screen, the shape of a server-rendered app, and the [spa_pages example](https://github.com/niclas-ahden/joy/tree/main/examples/spa_pages) switches pages in place and keeps every page's state.
-
-Joy also does hydration: serve a page rendered with [`joy-html`](https://www.github.com/niclas-ahden/joy-html) and mount with `hydrate: true`, and the client's first render claims the server-rendered DOM (attaching event handlers) instead of rebuilding it.
-
-Joy shares the page with whatever else is on it. Browser extensions and embedded widgets put nodes of their own among the app's (a speed control next to a video, a password manager's icon next to a field, a map drawn into an empty container), and Joy leaves them alone: it keeps track of its own nodes itself and never goes by their position in the DOM. That holds while a server-rendered page waits for its app to load, too, with one difference: nodes an extension puts in place of the page's own in that time (a translation for a text, a wrapper around a video) give way to the app's nodes when it starts, so the page never shows both.
-
-Joy reaches into the browser where an app needs it. `Media` records from the microphone or camera, reports loudness while recording, hands the recording over as an ordinary file (the same kind a file input gives, so it uploads and hashes like one) and plays audio and video: see the [voice memo example](https://github.com/niclas-ahden/joy/tree/main/examples/voice_memo.roc). A capture is a subscription, so the microphone is open exactly while the app subscribes to it and closes on its own when it stops.
-
-A released app's `runtime.js` carries the browser code of exactly the platform functions it calls. Everything past rendering is a browser feature: HTTP, timers, the keyboard, ports, navigation and dialogs, Web Crypto and media. The compiler drops the functions an app never calls, and the build reads which feature operations are left in the app's wasm and adds just their code to Joy's core (see `tools/runtime`), so an app that only plays audio ships no recording code and one that uses no browser features ships the core alone. During development `runtime.js` holds every feature instead, because the wasm changes on nearly every edit and a pruned runtime would have to be rebuilt in step with it. A browser feature is a platform module built on `Effect.call`, `Effect.send` and `Sub.listen`, whose arguments and answers are a few bytes in a fixed order (see `Wire`), plus its JavaScript in `www/features/`, with no change to the host: see Features in `www/runtime.js`.
+*Psst! If you're at the edge of your seat for full-stack apps, use [`roc-lang/basic-webserver`](https://www.github.com/roc-lang/basic-webserver) and [`joy-html`](https://www.github.com/niclas-ahden/joy-html) to serve HTML from the back-end. Mount your Joy app with `hydrate: true` to take over the server-rendered page.*
 
 Have fun and expect breaking changes!
-
-### Known issues
-
-- Known issue: on a server-rendered page, a node an extension or another script adds before Joy's script has called `mount` cannot be told apart from the server's markup. Hydration removes it when it sits in front of a node the app expects (and warns about a mismatch), or takes it for the app's own when its tag matches. Nodes added from the `mount` call on are left alone.
-- Known issue: an extension that replaces the app's text with nodes of its own, the way a page translator does, leaves Joy updating the original text nodes off the page, so later changes to that text do not show. Extensions that add nodes next to the app's are fine, and so are ones that wrap them once the app is running.
 
 ## Example
 
@@ -52,8 +39,6 @@ import pf.Effect
 Model : { count : I64 }
 
 Msg : [Increment, Decrement]
-
-subscriptions = |_model| []
 
 init : Str -> (Model, List(Effect(Msg)))
 init = |_| ({ count: 0 }, [])
@@ -75,38 +60,18 @@ view = |model|
             button([on_click(Decrement)], [text("-")]),
         ],
     )
+
+subscriptions = |_model| []
 ```
 
-[See more examples](https://github.com/niclas-ahden/joy/tree/main/examples) | [TodoMVC](https://github.com/niclas-ahden/joy/tree/main/examples/spa-todomvc)
+[Run it in your browser](https://niclas-ahden.github.io/joy/#example-counter) | [See more examples](https://github.com/niclas-ahden/joy/tree/main/examples) | [TodoMVC](https://github.com/niclas-ahden/joy/tree/main/examples/spa-todomvc)
 
 ## Getting started
 
-First install [Roc](https://www.roc-lang.org/). Joy follows Roc's nightly builds, and each release names the nightly it is tested with in its notes. The latest release is tested with [`roc nightly-2026-11-18-a520eed`](https://github.com/roc-lang/nightlies/releases/tag/nightly-2026-11-18-a520eed). Another Roc can fail to build Joy's command line with an error that says nothing about versions.
+[The Joy guide](https://niclas-ahden.github.io/joy/) gets you going step by step, and everything in it runs right in your browser.
 
-Then make a folder for your project, and run Joy's command line in it:
-
-```sh
-mkdir my-app
-cd my-app
-roc run <cli url> init
-```
-
-Take `<cli url>` from the [latest release](https://github.com/niclas-ahden/joy/releases/latest). It takes a few seconds, most of them roc downloading the command line's packages. `init` asks what kind of app you want, writes it into the folder, and installs `./joy`, the command you use from then on:
-
-```sh
-./joy dev      # work on the app, and the page takes each change as you save
-./joy build    # build what you deploy into dist/
-```
-
-Everything after the URL goes to the command line: `--template <name>` after `init` picks a template without asking, and `./joy init --help` lists them. `./joy` is built for your machine, so it stays out of git. After a fresh clone, the same command installs it and leaves the app as it is, and the project's README shows that command.
-
-To build against a clone of this repository instead of a release, run the command line from the clone, with the Roc its [development setup](#dependencies) names, and name the clone:
-
-```sh
-roc run ~/src/joy/cli/main.roc init --joy-checkout ~/src/joy
-```
-
-For a complete front-end app to read, see [Joy TodoMVC](https://github.com/niclas-ahden/joy/tree/main/examples/spa-todomvc).
+* New to Joy? [Start from the beginning](https://niclas-ahden.github.io/joy/#welcome).
+* Already know Joy? [Go straight to installation](https://niclas-ahden.github.io/joy/#install).
 
 ## Performance
 
@@ -122,6 +87,11 @@ Joy is tracked against the [js-framework-benchmark](https://github.com/krausest/
 Bundle is the brotli-compressed transfer of everything the page loads, so for Joy that covers the WASM, the JS runtime, and the HTML. The WASM is the bulk of it at 22.1 KB, and the minified JS runtime is 5.0 KB.
 
 Every framework in the table was measured in one session on a machine running NixOS, x86, AMD 9950X. Hopefully we can get Joy into the official benchmark soon!
+
+## Known issues
+
+- On a server-rendered page, hydration may remove or adopt a node that an extension or another script adds before `mount` is called.
+- An extension that replaces the app's text with its own nodes, the way a page translator does, hides later changes to that text.
 
 ## Contributing
 
@@ -139,7 +109,7 @@ $ nix develop # Oh, lord, have mercy! This is great!
 
 If you don't want to use Nix then please install:
 
-* `roc` built from source at the commit `flake.nix` pins in `roc-src.url`. The nightly under [Getting started](#getting-started) is the one the latest release is tested with, and main can need a newer Roc than that.
+* `roc` built from source at the commit `flake.nix` pins in `roc-src.url`. The latest release is tested with [`roc nightly-2026-11-18-a520eed`](https://github.com/roc-lang/nightlies/releases/tag/nightly-2026-11-18-a520eed), and main can need a newer Roc than that.
 * `rustc` (v1.94 + `wasm32-unknown-unknown`)
 * `node` (v22)
 * `watchexec`
@@ -147,9 +117,17 @@ If you don't want to use Nix then please install:
 
 That route is also the Windows one (Nix does not run there). The scripts in the repo root are Roc programs: on Linux and macOS their shebang runs them (`./tests.roc --opt=speed`), on Windows hand them to roc (`roc ./tests.roc --opt=speed`), which works everywhere.
 
+### Starting a project from your clone
+
+To start a project that builds against your clone instead of a release, run the command line from the clone and name the clone:
+
+```sh
+$ roc run ~/src/joy/cli/main.roc init --joy-checkout ~/src/joy
+```
+
 ### Running an example
 
-Pick an [example](https://github.com/niclas-ahden/joy/tree/main/examples) and run it like so:
+To serve an [example](https://github.com/niclas-ahden/joy/tree/main/examples) from your clone while you work on Joy:
 
 ```sh
 $ ./watch.roc examples/hello.roc
@@ -159,7 +137,7 @@ The application should now be available at: [`http://localhost:8000`](http://loc
 
 That builds at `--opt=speed`, the default. To pick another level, pass it after the script: `./watch.roc --opt=dev examples/hello.roc`.
 
-Start modifying the example to get a feel for it. Refresh the browser to see your changes (the app is recompiled on change but there's no browser hot-reloading yet).
+The app is recompiled when you save. Refresh the browser to see the change.
 
 ### Running the tests
 
@@ -174,9 +152,3 @@ $ ./examples.roc             # each directory example's own suite (examples/*/te
 The harnesses in `tests/` mount the built apps on a fake DOM and cover the app and runtime logic. They find elements the way the browser suite does, by role and accessible name, label or test id (`byRole`, `byLabel`, `byTestId` in `tests/fakedom.mjs`), and they can put a work budget on a step: `meter` in `tests/harness.mjs` counts the patch ops the differ emitted and the DOM mutations made to apply them, so a harness asserts not only that the page looks right after a click but that the click cost one text write and no rebuild. The browser suite in `tests/e2e/` is built on [roc-spec](https://github.com/niclas-ahden/roc-spec) and [roc-playwright](https://github.com/niclas-ahden/roc-playwright) and covers what only a real browser can prove: real event dispatch and bubbling, `<dialog>` semantics, the History API, WebCrypto, fetch, real timers, real keyboard and mouse input, and recording from Chromium's fake microphone.
 
 The first two build the apps at `--opt=dev`, which is the quick way round while you work. `./tests.roc --opt=speed` and `./e2e.roc --opt=speed` run the same suites against the builds an app ships with, and CI runs every level. Each level lands in its own `build/<opt>/` tree.
-
-## Sponsors
-
-Joy is sponsored by the real estate agency [BOSTHLM Fastighetsmäklare](https://www.bosthlm.se) which thrives by using technology to bolster its agents and business. Thank you!
-
-Have a look at their search feature on [www.bosthlm.se/till-salu](https://www.bosthlm.se/till-salu) which is a front-end application written in Roc.
