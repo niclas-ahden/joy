@@ -18,7 +18,7 @@ Joy is fun to play with, but it's in early development, not production-ready. He
 
 Try it out and build some single-page applications to get started: [Joy guide](https://niclas-ahden.github.io/joy/). Later on, in Joy 0.36.0, we'll add a guide and examples for full-stack applications too!
 
-*Psst! If you're at the edge of your seat for full-stack apps, use [`roc-lang/basic-webserver`](https://www.github.com/roc-lang/basic-webserver) and [`joy-html`](https://www.github.com/niclas-ahden/joy-html) to serve HTML from the back-end. Mount your Joy app with `hydrate: true` to take over the server-rendered page.*
+*Psst! If you're at the edge of your seat for full-stack apps, use [`roc-lang/basic-webserver`](https://www.github.com/roc-lang/basic-webserver) and [`joy-html`](https://www.github.com/niclas-ahden/joy-html) to serve HTML from the back-end. Your Joy app takes over the server-rendered page when it starts.*
 
 Have fun and expect breaking changes!
 
