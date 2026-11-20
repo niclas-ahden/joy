@@ -3,10 +3,11 @@
 #
 #   roc .github/scripts/versions.roc <owner/repo> <output file>
 #
-# To write versions.json: every published release with the URLs a project
-# needs and the Roc nightly it recommends. It is attached to the latest
-# release, so ./joy reads it from releases/latest/download/versions.json, a
-# plain download, instead of from GitHub's rate-limited API.
+# To write versions.json: every published release, candidates included, with
+# the URLs a project needs and the Roc nightly it recommends. ./joy upgrade
+# only moves to a candidate that is named. The file is attached to the
+# latest release, so ./joy reads it from releases/latest/download/versions.json,
+# a plain download, instead of from GitHub's rate-limited API.
 #
 # The file is written from the releases every time, never edited, so a
 # deleted release drops out and a hand edit to the notes shows up on the
@@ -51,10 +52,10 @@ Release : {
 	assets : List({ name : Str, label : Str, url : Str }),
 }
 
-# The published releases, newest first. Drafts and prereleases are left out
-# here, in jq, along with the nulls Roc's JSON decoding has no string for.
+# The published releases, newest first. Drafts are left out here, in jq,
+# along with the nulls Roc's JSON decoding has no string for.
 published! = |repo| {
-	query = ".[] | select(.draft | not) | select(.prerelease | not) | {tag: .tag_name, date: (.published_at // \"\"), body: (.body // \"\"), assets: [.assets[] | {name, label: (.label // \"\"), url: .browser_download_url}]}"
+	query = ".[] | select(.draft | not) | {tag: .tag_name, date: (.published_at // \"\"), body: (.body // \"\"), assets: [.assets[] | {name, label: (.label // \"\"), url: .browser_download_url}]}"
 	output = capture!(Cmd.new(OsStr.from_str("gh")).args(["api", "--paginate", "repos/${repo}/releases?per_page=100", "--jq", query].map(OsStr.from_str)))?
 	output.split_on("\n").drop_if(|line| line.trim().is_empty()).map_try(
 		|line| {
