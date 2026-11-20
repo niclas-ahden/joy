@@ -83,15 +83,25 @@ HotDev :: [].{
 		var $left = patience
 		while $left > 0 {
 			match page.navigate!(url) {
-				Ok(_) =>
-					if answers!(page, "String(document.querySelector('${ready}') !== null)", "true") {
-						return Ok({})
+				Ok(_) => {
+					# An app mounts a moment after its page has loaded. Going to
+					# the page again starts that over, so look a few times first.
+					var $looks = 15
+					while $looks > 0 and $left > 0 {
+						if answers!(page, "String(document.querySelector('${ready}') !== null)", "true") {
+							return Ok({})
+						}
+						Sleep.millis!(200)?
+						$looks = $looks - 1
+						$left = $left - 1
 					}
+				}
 
-				Err(_) => {}
+				Err(_) => {
+					Sleep.millis!(200)?
+					$left = $left - 1
+				}
 			}
-			Sleep.millis!(200)?
-			$left = $left - 1
 		}
 		Err(NeverOpened(url))
 	}
