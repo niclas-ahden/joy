@@ -20,9 +20,10 @@ import Init
 import JsonText
 import Project
 import Release
+import Upgrade
 
 ## What the command line asks for.
-Command : [BuildCommand(Build.Options), DevCommand(Dev.Options), BundlesCommand({ json : Bool }), InitCommand(Init.Options)]
+Command : [BuildCommand(Build.Options), DevCommand(Dev.Options), BundlesCommand({ json : Bool }), InitCommand(Init.Options), UpgradeCommand(Upgrade.Options)]
 
 ## ./joy's commands and their options, which also write every --help.
 parser : Cli.CliParser(Command)
@@ -32,6 +33,7 @@ parser = Cli.assert_valid(
 			Dev.command(|options| DevCommand(options)),
 			Build.command(|options| BuildCommand(options)),
 			Init.command(|options| InitCommand(options)),
+			Upgrade.command(|options| UpgradeCommand(options)),
 			SubCmd.finish(
 				Cli.map(Opt.flag({ short: "", long: "json", help: "One JSON array, for scripts." }), |json| { json: json }),
 				{
@@ -57,7 +59,7 @@ main! = |raw_args| {
 	asked =
 		match own {
 			[] | ["help"] => ["--help"]
-			["help", command] if ["dev", "build", "bundles", "init"].contains(command) => [command, "--help"]
+			["help", command] if ["dev", "build", "bundles", "init", "upgrade"].contains(command) => [command, "--help"]
 			["help", .. as rest] => rest
 			_ => own
 		}
@@ -66,6 +68,7 @@ main! = |raw_args| {
 		BuildCommand(options) => Build.run!(options, roc)
 		BundlesCommand(options) => bundles!(options)
 		InitCommand(options) => Init.run!(options)
+		UpgradeCommand(options) => Upgrade.run!(options)
 	}
 }
 

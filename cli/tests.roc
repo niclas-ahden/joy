@@ -244,6 +244,12 @@ tests = [
 	("init never asks without a terminal, and needs a checkout", init_no_input!),
 	("init run by roc builds ./joy from the source", init_interpreted!),
 	("the README's example builds", readme_example!),
+	("upgrade lists the releases to name where nobody can be asked", upgrade_no_input!),
+	("upgrade moves the headers to a release and installs ./joy", upgrade_moves!),
+	("upgrade hands the work to the ./joy of the release it moves to", upgrade_hands_off!),
+	("upgrade refuses a checkout and an unknown release", upgrade_refuses!),
+	("upgrade asks at a terminal, and a gap opens in place", upgrade_at_terminal!),
+	("upgrade changes every file or none, and keeps their modes", upgrade_all_or_nothing!),
 	("the guide's custom effects build, each with its JavaScript", guide_custom_effects!),
 	("build ships the JavaScript of a package's custom effects, the ones an app calls", build_package_feature!),
 	("a custom effect without its JavaScript fails the build, and the dev build", missing_effect!),
@@ -2614,4 +2620,247 @@ readme_example! = |ctx| {
 	write!(ctx, "client/counter.roc", source.replace_first(release, platform_from(ctx, "client/counter.roc")))?
 	built = joy_ok!(ctx, ["build"], 0)?
 	contains(built, "Built 1 bundle")
+}
+
+# ./joy upgrade
+
+joy_release = |tag| "https://github.com/niclas-ahden/joy/releases/download/${tag}/P${tag.replace_each(".", "")}.tar.zst"
+
+html_release = |tag| "https://github.com/niclas-ahden/joy-html/releases/download/${tag}/H${tag.replace_each(".", "")}.tar.zst"
+
+carousel_release = "https://github.com/niclas-ahden/joy-carousel/releases/download/0.3.0/Car.tar.zst"
+
+## A project on Joy `tag`: a bundle, a custom effects package and a server,
+## and a versions.json that lists releases up to 0.45.0, each with ./joy's
+## source in this checkout as its CLI. Returns the environment that reads it.
+upgrade_project! : Ctx, Str => Try(List((Str, Str)), [Failed(Str)])
+upgrade_project! = |ctx, tag| {
+	write!(
+		ctx,
+		"client/app.roc",
+		Str.join_with(
+			[
+				"app [Model, Msg, init, update, view, subscriptions] {",
+				"\tpf: platform \"${joy_release(tag)}\",",
+				"\thtml: \"${html_release("0.18.0")}\",",
+				"\tcar: \"${carousel_release}\",",
+				"\teffects: \"effects/main.roc\",",
+				"}",
+				"",
+				"import html.Html",
+				"",
+				"# ${joy_release(tag)} stays, outside the header.",
+				"",
+			],
+			"\n",
+		),
+	)?
+	write!(ctx, "client/effects/main.roc", "package [Share] { pf: platform \"${joy_release(tag)}\" }\n")?
+	write!(ctx, "server/main.roc", "app [main!] {\n\tpf: platform \"${cli_platform}\",\n\thtml: \"${html_release("0.18.0")}\",\n}\n")?
+	tags = ["0.45.0", "0.44.1", "0.44.0", "0.40.0", "0.37.0", "0.36.1", "0.36.0", "0.36.0-rc2", "0.35.2", "0.35.1", "0.35.0"]
+	entries = tags.map(
+		|t| {
+			"{\"tag\":\"${t}\",\"date\":\"\",\"platform_url\":\"${joy_release(t)}\",\"cli_url\":\"${ctx.joy_root}/cli/main.roc\",\"html_url\":\"${html_release("0.19.0")}\",\"roc_nightly\":\"nightly-2026-11-01-abc1234\",\"added_later\":\"\"}"
+		},
+	)
+	write!(ctx, "versions.json", "{\"schema\":1,\"releases\":[${Str.join_with(entries, ",")}]}")?
+	Ok([("JOY_VERSIONS_URL", "${ctx.dir}/versions.json"), ("JOY_UPGRADE_TO", "")])
+}
+
+upgrade_no_input! : Ctx => Try({}, [Failed(Str)])
+upgrade_no_input! = |ctx| {
+	env = upgrade_project!(ctx, "0.35.0")?
+	before = read!(ctx, "client/app.roc")?
+	listed = joy_with!(ctx, ["upgrade"], 1, env)?
+	contains(
+		listed,
+		Str.join_with(
+			[
+				"This project is on Joy 0.35.0. Name the release to upgrade to:",
+				"  0.35.2  Fixes only  https://github.com/niclas-ahden/joy/releases/tag/0.35.2",
+				"  0.36.1  Next step   https://github.com/niclas-ahden/joy/releases/tag/0.36.0",
+				"  ... 3 more, 0.37 to 0.44",
+				"  0.45.0  Latest      https://github.com/niclas-ahden/joy/releases/tag/0.45.0",
+				"",
+				"    ./joy upgrade 0.45.0",
+			],
+			"\n",
+		),
+	)?
+	# A candidate is only ever named.
+	lacks(listed, "rc2")?
+	after = read!(ctx, "client/app.roc")?
+	check(before == after, "upgrade changed client/app.roc without being told a release")?
+	# --no-input never asks, even at a terminal.
+	_ = joy_with!(ctx, ["upgrade", "--no-input"], 1, env)?
+	write!(ctx, "client/app.roc", before.replace_each(joy_release("0.35.0"), joy_release("0.45.0")))?
+	latest = joy_with!(ctx, ["upgrade"], 0, env)?
+	contains(latest, "This project is on Joy 0.45.0, the latest release.")
+}
+
+upgrade_moves! : Ctx => Try({}, [Failed(Str)])
+upgrade_moves! = |ctx| {
+	env = upgrade_project!(ctx, "0.35.0")?
+	# The ./joy of the release it moves to does the work, which this one is
+	# told it is.
+	as_release = |tag| env.map(|(key, value)| if (key == "JOY_UPGRADE_TO") (key, tag) else (key, value))
+	out = joy_with!(ctx, ["upgrade", "0.44.1"], 0, as_release("0.44.1"))?
+	contains(
+		out,
+		Str.join_with(
+			[
+				"Upgraded to Joy 0.44.1.",
+				"  client/app.roc           platform 0.35.0 -> 0.44.1, joy-html 0.18.0 -> 0.19.0",
+				"  client/effects/main.roc  platform 0.35.0 -> 0.44.1",
+				"  server/main.roc          joy-html 0.18.0 -> 0.19.0",
+				"  ./joy                    installed",
+				"",
+				"Left as they are:",
+			],
+			"\n",
+		),
+	)?
+	contains(out, "  joy-carousel 0.3.0          client/app.roc\n")?
+	contains(out, "  joy-cli-platform 0.1.0-rc3  server/main.roc\n")?
+	contains(out, "Joy 0.44.1 is tested with roc nightly-2026-11-01-abc1234.")?
+	contains(out, "Run ./joy dev to see what needs changing. Read the notes from 0.36.0 to 0.44.0: https://github.com/niclas-ahden/joy/releases")?
+	app_file = read!(ctx, "client/app.roc")?
+	contains(app_file, "pf: platform \"${joy_release("0.44.1")}\"")?
+	contains(app_file, "html: \"${html_release("0.19.0")}\"")?
+	contains(app_file, "car: \"${carousel_release}\"")?
+	contains(app_file, "# ${joy_release("0.35.0")} stays, outside the header.")?
+	contains(read!(ctx, "client/effects/main.roc")?, joy_release("0.44.1"))?
+	server = read!(ctx, "server/main.roc")?
+	contains(server, html_release("0.19.0"))?
+	contains(server, cli_platform)?
+	check(Path.utf8("${ctx.dir}/joy").is_executable!() ?? False, "upgrade did not install ./joy")?
+	# An older release can be named too.
+	older = joy_with!(ctx, ["upgrade", "0.35.1"], 0, as_release("0.35.1"))?
+	contains(older, "Moved back to Joy 0.35.1, from the newer 0.44.1.")?
+	contains(read!(ctx, "client/app.roc")?, joy_release("0.35.1"))?
+	again = joy_with!(ctx, ["upgrade", "0.35.1"], 0, as_release("0.35.1"))?
+	contains(again, "This project is on Joy 0.35.1 already.")
+}
+
+upgrade_hands_off! : Ctx => Try({}, [Failed(Str)])
+upgrade_hands_off! = |ctx| {
+	env = upgrade_project!(ctx, "0.35.0")?
+	out = joy_with!(ctx, ["upgrade", "0.35.2"], 0, env)?
+	contains(out, "Building ./joy for Joy 0.35.2, which does the upgrade.\nUpgraded to Joy 0.35.2.")?
+	contains(out, "Notes: https://github.com/niclas-ahden/joy/releases/tag/0.35.2")?
+	lacks(out, "Run ./joy dev")?
+	contains(read!(ctx, "client/app.roc")?, joy_release("0.35.2"))?
+	check(!exists!(ctx, ".joy/upgrade"), "upgrade left the ./joy it built behind")?
+	check(Path.utf8("${ctx.dir}/joy").is_executable!() ?? False, "upgrade did not install ./joy")?
+	# The ./joy of a release that does not build changes nothing.
+	write!(ctx, "versions.json", read!(ctx, "versions.json")?.replace_each("${ctx.joy_root}/cli/main.roc", "${ctx.dir}/missing/main.roc"))?
+	failed = joy_with!(ctx, ["upgrade", "0.36.1"], 1, env)?
+	contains(failed, "Could not build ./joy for Joy 0.36.1, so nothing changed.")?
+	contains(failed, "Joy 0.36.1 is tested with roc nightly-2026-11-01-abc1234.")?
+	contains(read!(ctx, "client/app.roc")?, joy_release("0.35.2"))
+}
+
+upgrade_refuses! : Ctx => Try({}, [Failed(Str)])
+upgrade_refuses! = |ctx| {
+	env = upgrade_project!(ctx, "0.35.0")?
+	unknown = joy_with!(ctx, ["upgrade", "9.9.9"], 1, env)?
+	contains(unknown, "There is no Joy release called 9.9.9. The releases are at https://github.com/niclas-ahden/joy/releases")?
+	bundle!(ctx, "client/app.roc", "on a checkout")?
+	_ = Path.utf8("${ctx.dir}/client/effects/main.roc").delete!()
+	checkout = joy_with!(ctx, ["upgrade"], 1, env)?
+	contains(checkout, "client/app.roc builds against the Joy checkout at ")?
+	_ = Path.utf8("${ctx.dir}/client/app.roc").delete!()
+	_ = Path.utf8("${ctx.dir}/server/main.roc").delete!()
+	nothing = joy_with!(ctx, ["upgrade"], 1, env)?
+	contains(nothing, "No .roc file here names a Joy release.")
+}
+
+## The list at a terminal, through script(1), which runs ./joy on a pseudo
+## terminal and passes it the keys written here, one at a time.
+upgrade_at_terminal! : Ctx => Try({}, [Failed(Str)])
+upgrade_at_terminal! = |ctx| {
+	env = upgrade_project!(ctx, "0.35.0")?
+	before = read!(ctx, "client/app.roc")?
+	# Escape leaves everything as it was.
+	cancelled = at_terminal!(ctx, env, ["\u(1b)"])?
+	contains(cancelled, "? Upgrade to which release? (cancelled)")?
+	check(read!(ctx, "client/app.roc")? == before, "a cancelled upgrade changed client/app.roc")?
+	# Stay, 0.35.2, 0.36.1, then the gap, which opens on 0.37.0.
+	here = env.map(|(name, value)| if (name == "JOY_UPGRADE_TO") (name, "0.37.0") else (name, value))
+	picked = at_terminal!(ctx, here, ["j", "j", "j", "\r", "\r"])?
+	contains(picked, "  ... 3 more, 0.37 to 0.44")?
+	contains(picked, "? Upgrade to which release? 0.37.0")?
+	contains(picked, "Upgraded to Joy 0.37.0.")?
+	contains(read!(ctx, "client/app.roc")?, joy_release("0.37.0"))
+}
+
+## Run ./joy upgrade at a pseudo terminal, press `keys` and return what it
+## printed.
+at_terminal! : Ctx, List((Str, Str)), List(Str) => Try(Str, [Failed(Str)])
+at_terminal! = |ctx, envs, keys| {
+	line = "stty cols 120 rows 30; ${ctx.joy} upgrade"
+	# util-linux's script, on Linux, knows --version and takes the command
+	# with -c. The BSD one, on macOS, takes it after the file.
+	args = if (has_tool!("script")) ["-qfc", line, "/dev/null"] else ["-q", "/dev/null", "sh", "-c", line]
+	child =
+		Cmd.new(OsStr.from_str("script"))
+			.args(args.map(OsStr.from_str))
+			.envs(envs.map(|(name, value)| (OsStr.from_str(name), OsStr.from_str(value))))
+			.cwd(Path.utf8(ctx.dir))
+			.stdin(Pipe)
+			.stdout(Pipe)
+			.stderr(MergeWithStdout)
+			.spawn_leashed!()
+			? |err| Failed("script did not start: ${Str.inspect(err)}")
+	var $out = ""
+	var $left = keys
+	var $quiet = 0
+	started = Monotonic.now!()
+	# A key is pressed once the list is drawn, then each after the output
+	# settles, so each arrives as a read of its own, as typing makes it.
+	while True {
+		if Monotonic.since(Monotonic.now!(), started).to_millis() > 60_000 {
+			_ = child.kill!()
+			return Err(Failed("./joy upgrade at a terminal never finished:\n${$out}"))
+		}
+		match child.read!(Duration.millis(100)) {
+			Ok(Stdout(bytes)) | Ok(Stderr(bytes)) => {
+				$out = Str.concat($out, Str.from_utf8_lossy(bytes))
+				$quiet = 0
+			}
+			Err(EndOfInput) => break
+			Err(_) => {
+				$quiet = $quiet + 1
+			}
+		}
+		match $left {
+			[pressed, .. as rest] if $quiet >= 3 and $out.contains("? Upgrade to which release?") => {
+				child.write_bytes!(Str.to_utf8(pressed), Duration.seconds(5)) ? |err| Failed("could not press a key: ${Str.inspect(err)}")
+				$left = rest
+				$quiet = 0
+			}
+			_ => {}
+		}
+	}
+	_ = child.wait!()
+	Ok($out.replace_each("\u(1b)[2K", ""))
+}
+
+upgrade_all_or_nothing! : Ctx => Try({}, [Failed(Str)])
+upgrade_all_or_nothing! = |ctx| {
+	env = upgrade_project!(ctx, "0.35.0")?
+	here = env.map(|(name, value)| if (name == "JOY_UPGRADE_TO") (name, "0.36.1") else (name, value))
+	write!(ctx, "scripts/check.roc", "#!/usr/bin/env roc\napp [main!] {\n\tpf: platform \"${cli_platform}\",\n\thtml: \"${html_release("0.18.0")}\",\n}\n")?
+	chmod!(ctx, "755", "scripts/check.roc")?
+	before = read!(ctx, "client/app.roc")?
+	# A folder ./joy cannot write in stops the upgrade before any file moves.
+	chmod!(ctx, "555", "client/effects")?
+	refused = joy_with!(ctx, ["upgrade", "0.36.1"], 1, here)?
+	chmod!(ctx, "755", "client/effects")?
+	contains(refused, "Could not write client/effects/main.roc, so nothing changed.")?
+	check(read!(ctx, "client/app.roc")? == before, "a refused upgrade changed client/app.roc")?
+	check(!exists!(ctx, "client/app.roc.upgrade") and !exists!(ctx, "scripts/check.roc.upgrade"), "a refused upgrade left its copies behind")?
+	_ = joy_with!(ctx, ["upgrade", "0.36.1"], 0, here)?
+	contains(read!(ctx, "scripts/check.roc")?, html_release("0.19.0"))?
+	check(Path.utf8("${ctx.dir}/scripts/check.roc").is_executable!() ?? False, "upgrade lost the mode of scripts/check.roc")
 }

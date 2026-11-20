@@ -3,7 +3,6 @@ import pf.Env
 import pf.OsStr
 import pf.Path
 import pf.Stdout
-import pf.Tty
 import weaver.Cli
 import weaver.Opt
 import weaver.Param
@@ -37,6 +36,10 @@ Init :: [].{
 				mapper: wrap,
 			},
 		)
+
+	## Put this program in place as ./joy, in the folder ./joy runs in.
+	install_self! : () => Try({}, _)
+	install_self! = || install!(own_program!()?)
 
 	run! : Init.Options => Try({}, _)
 	run! = |options| {
@@ -178,8 +181,8 @@ template! = |options, url| {
 		match Args.given(options.template) {
 			Some(given) => given
 			None =>
-				if asks!(options.no_input) {
-					choices = Template.all.map(|template| { name: template.name, description: template.description })
+				if Prompt.asks!(options.no_input) {
+					choices = Template.all.map(|template| { name: template.name, description: template.description, link: "" })
 					Stdout.line!("Want to see the templates? ${url}\n")?
 					match Prompt.choose!("What kind of app?", choices) {
 						Ok(choice) => choice.name
@@ -206,13 +209,13 @@ start_beside! = |dir, taken, options| {
 		return Ok({})
 	}
 	found = described(folder_name(dir), taken)
-	if !asks!(options.no_input) {
+	if !Prompt.asks!(options.no_input) {
 		return Build.fail!("${found}\nStart in an empty folder, name a new one (init my-app), or start here anyway with --non-empty.")
 	}
 	Stdout.line!(found)?
 	choices = [
-		{ name: "No", description: "Leave the folder as it is" },
-		{ name: "Yes", description: "Start the project here, beside those files" },
+		{ name: "No", description: "Leave the folder as it is", link: "" },
+		{ name: "Yes", description: "Start the project here, beside those files", link: "" },
 	]
 	match Prompt.choose!("Start the project here anyway?", choices) {
 		Ok(choice) if choice.name == "Yes" => Ok({})
@@ -236,16 +239,6 @@ folder_name = |dir| if (dir == ".") "This folder" else dir
 
 expect described("busy", ["a", "b"]) == "busy has files in it already:\n  a\n  b"
 expect described("busy", ["a", "b", "c", "d", "e", "f"]) == "busy has files in it already."
-
-asks! : Bool => Bool
-asks! = |no_input| {
-	in_ci =
-		match Env.var_str!(OsStr.from_str("CI")) {
-			Ok(value) => value != ""
-			Err(_) => False
-		}
-	!no_input and !in_ci and Tty.is_tty!()
-}
 
 ## Keep ./joy, .joy/ and dist/ out of git, and `more`, what the template's
 ## own project leaves behind, adding what .gitignore lacks.

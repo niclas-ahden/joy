@@ -155,6 +155,14 @@ jobs:
           ROC_CACHE_DIR: ${{ runner.temp }}/roc-cli-tests
         run: ${{ steps.setup.outputs.prefix }} roc cli/tests.roc
 
+      # ./joy upgrade on macOS too. It never runs ./joy dev, so the trouble
+      # with saved files above does not reach it.
+      - name: Test ./joy upgrade
+        if: ${{ startsWith(matrix.os, 'macos') && matrix.opt == 'speed' }}
+        env:
+          ROC_CACHE_DIR: ${{ runner.temp }}/roc-cli-tests
+        run: ${{ steps.setup.outputs.prefix }} roc cli/tests.roc upgrade
+
       # What only a real browser can prove: event dispatch, <dialog>,
       # History, fetch, timers, real input. Every engine Playwright bundles:
       # form controls and event order are where they differ (see
