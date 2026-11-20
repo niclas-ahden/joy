@@ -1,6 +1,6 @@
 platform ""
 	requires {
-		[Model : model, Msg : msg] for init : Str -> (Model, List(Effect(Msg))),
+		[Model : model, Msg : msg] for init : Str -> (model, List(Effect(msg))),
 		update : Model, Msg -> (Model, List(Effect(Msg))),
 		view : Model -> Html(Msg),
 		subscriptions : Model -> List(Sub(Msg))
