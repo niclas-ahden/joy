@@ -2806,6 +2806,8 @@ at_terminal! = |ctx, envs, keys| {
 		Cmd.new(OsStr.from_str("script"))
 			.args(args.map(OsStr.from_str))
 			.envs(envs.map(|(name, value)| (OsStr.from_str(name), OsStr.from_str(value))))
+			# ./joy never asks with CI set, which CI runners do.
+			.env(OsStr.from_str("CI"), OsStr.from_str(""))
 			.cwd(Path.utf8(ctx.dir))
 			.stdin(Pipe)
 			.stdout(Pipe)
