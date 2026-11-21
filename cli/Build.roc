@@ -109,7 +109,6 @@ Build :: [].{
 							output: "${out}/server/${executable!("main")}",
 							args,
 							inputs: "",
-							cache: Compile.cache!(Servers)?,
 							own_warnings_fail: True,
 						},
 					]
@@ -126,7 +125,6 @@ Build :: [].{
 					output: "${out}/client/${bundle.id}/app.wasm",
 					args,
 					inputs: "",
-					cache: Compile.cache!(Bundles)?,
 					own_warnings_fail: True,
 				})
 			},

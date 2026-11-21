@@ -18,8 +18,6 @@ Compile :: [].{
 		args : List(Str),
 		inputs : Str,
 
-		## The roc cache the build uses, see [cache!].
-		cache : Str,
 		own_warnings_fail : Bool,
 	}
 
@@ -44,35 +42,12 @@ Compile :: [].{
 		child =
 			Cmd.new(OsStr.from_str("roc"))
 				.args(args.map(OsStr.from_str))
-				# WORKAROUND: the servers and the bundles keep apart roc caches, see
-				# cache!.
-				.env(OsStr.from_str("ROC_CACHE_DIR"), OsStr.from_str(job.cache))
 				.stdin(Null)
 				.stdout(Capture)
 				.stderr(MergeWithStdout)
 				.output_limit(MaxBytes(256 * 1024 * 1024))
 				.spawn_leashed!()?
 		Ok({ job, child })
-	}
-
-	## WORKAROUND: the roc cache of the servers' or the bundles' builds. A
-	## project can build its bundles with --specialize=no and its servers with
-	## roc's default, and a module compiled one way and then the other in one
-	## cache can crash the compiler:
-	## https://github.com/roc-lang/roc/issues/12853. So the servers and the
-	## bundles each get a cache of their own, below `ROC_CACHE_DIR` when it is
-	## set, else in .joy/roc-cache. Remove this once the issue is fixed.
-	cache! : [Servers, Bundles] => Try(Str, _)
-	cache! = |kind| {
-		base =
-			match Env.var_str!(OsStr.from_str("ROC_CACHE_DIR")) {
-				Ok(dir) if !dir.is_empty() => "${dir}/joy"
-				_ => "${Path.display(Env.cwd!()?)}/.joy/roc-cache"
-			}
-		match kind {
-			Servers => Ok("${base}/servers")
-			Bundles => Ok("${base}/bundles")
-		}
 	}
 
 	## How many builds run at once: all of them, or at most what --jobs says.

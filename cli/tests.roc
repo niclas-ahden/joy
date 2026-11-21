@@ -18,7 +18,7 @@
 ## host must be built, and joy-html must be reachable or in roc's cache.
 app [main!] {
 	http: "https://github.com/roc-lang/http/releases/download/2.0.0/6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst",
-	pf: platform "https://github.com/growthagent/joy-cli-platform/releases/download/0.1.0-rc3/76mLk9Kjva78hsKESyupPDauSmSZYmA7HMk9oUqYPNyZ.tar.zst",
+	pf: platform "https://github.com/growthagent/joy-cli-platform/releases/download/0.1.0-rc4/EQHYpAo8oDkf35M2DAA2nWx6Guyj5aqRf24yLk5JsSVt.tar.zst",
 }
 
 import pf.Cmd
@@ -197,7 +197,6 @@ tests = [
 	("build refuses bundles on different releases", build_mixed_releases!),
 	("build builds the server, and --no-server skips it", build_server!),
 	("build builds a project that is a server alone", build_server_alone!),
-	("the servers and the bundles build with roc caches of their own", build_caches!),
 	("build passes flags after -- to roc", build_roc_flags!),
 	("build reports bad options, and help shows them all", build_bad_options!),
 	("--version names the release, unreleased in a checkout", version!),
@@ -264,7 +263,7 @@ tests = [
 html_package = "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst"
 
 ## The platform of the fixture servers, the one ./joy is built on.
-cli_platform = "https://github.com/growthagent/joy-cli-platform/releases/download/0.1.0-rc3/76mLk9Kjva78hsKESyupPDauSmSZYmA7HMk9oUqYPNyZ.tar.zst"
+cli_platform = "https://github.com/growthagent/joy-cli-platform/releases/download/0.1.0-rc4/EQHYpAo8oDkf35M2DAA2nWx6Guyj5aqRf24yLk5JsSVt.tar.zst"
 
 ## A small Joy app that renders `label`, importing `imports`, with `extra`
 ## at the end of the file.
@@ -1038,22 +1037,6 @@ build_server_alone! = |ctx| {
 	contains(json, "\"css/site.css\": \"css/site.")?
 	marker = read!(ctx, "dist/.joy-output")?
 	contains(marker, "\"complete\": true")
-}
-
-## WORKAROUND: the servers and the bundles build with roc caches of their own,
-## see Compile.cache! and https://github.com/roc-lang/roc/issues/12853.
-build_caches! : Ctx => Try({}, [Failed(Str)])
-build_caches! = |ctx| {
-	bundle!(ctx, "client/app.roc", "app")?
-	write!(ctx, "server/main.roc", server_source("built"))?
-	_ = joy_with!(ctx, ["build", "--server-opt", "dev"], 0, [("ROC_CACHE_DIR", "${ctx.dir}/given")])?
-	check(exists!(ctx, "given/joy/servers"), "the server did not build in its cache below ROC_CACHE_DIR")?
-	check(exists!(ctx, "given/joy/bundles"), "the bundles did not build in their cache below ROC_CACHE_DIR")?
-	given = Path.utf8("${ctx.dir}/given").list!() ? |_| Failed("ROC_CACHE_DIR was not written")
-	check(given.map(Path.display) == ["${ctx.dir}/given/joy"], "a build wrote into ROC_CACHE_DIR itself: ${Str.inspect(given.map(Path.display))}")?
-	_ = joy_with!(ctx, ["build", "--server-opt", "dev"], 0, [("ROC_CACHE_DIR", "")])?
-	check(exists!(ctx, ".joy/roc-cache/servers"), "without ROC_CACHE_DIR the server did not build in .joy/roc-cache")?
-	check(exists!(ctx, ".joy/roc-cache/bundles"), "without ROC_CACHE_DIR the bundles did not build in .joy/roc-cache")
 }
 
 build_roc_flags! : Ctx => Try({}, [Failed(Str)])
@@ -2721,7 +2704,7 @@ upgrade_moves! = |ctx| {
 		),
 	)?
 	contains(out, "  joy-carousel 0.3.0          client/app.roc\n")?
-	contains(out, "  joy-cli-platform 0.1.0-rc3  server/main.roc\n")?
+	contains(out, "  joy-cli-platform 0.1.0-rc4  server/main.roc\n")?
 	contains(out, "Joy 0.44.1 is tested with roc nightly-2026-11-01-abc1234.")?
 	contains(out, "Run ./joy dev to see what needs changing. Read the notes from 0.36.0 to 0.44.0: https://github.com/niclas-ahden/joy/releases")?
 	app_file = read!(ctx, "client/app.roc")?

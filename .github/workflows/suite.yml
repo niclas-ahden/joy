@@ -146,24 +146,17 @@ jobs:
         run: ${{ steps.setup.outputs.prefix }} roc ./tests.roc --opt=${{ matrix.opt }}
 
       # What ./joy does in a real project. It has no Windows host yet, and it
-      # does not depend on --opt, so one leg per roc is enough. A fresh cache,
-      # for roc-lang/roc#12693 and #12701. Not on macOS yet: ./joy dev does not
-      # always notice a saved file there, and dev_assets! then waits forever.
+      # does not depend on --opt, so one leg per roc is enough. Not on macOS
+      # yet: ./joy dev does not always notice a saved file there, and
+      # dev_assets! then waits forever.
       - name: Test ./joy
         if: ${{ startsWith(matrix.os, 'ubuntu') && matrix.opt == 'speed' }}
-        env:
-          ROC_CACHE_DIR: ${{ runner.temp }}/roc-cli-tests
         run: ${{ steps.setup.outputs.prefix }} roc cli/tests.roc
 
       # ./joy upgrade on macOS too. It never runs ./joy dev, so the trouble
-      # with saved files above does not reach it. WORKAROUND: `roc cli/tests.roc`
-      # does not link on the macOS runners yet, as roc's machine code shim
-      # lacks system symbols like `_fmod`. Drop continue-on-error once it links.
+      # with saved files above does not reach it.
       - name: Test ./joy upgrade
         if: ${{ startsWith(matrix.os, 'macos') && matrix.opt == 'speed' }}
-        continue-on-error: true
-        env:
-          ROC_CACHE_DIR: ${{ runner.temp }}/roc-cli-tests
         run: ${{ steps.setup.outputs.prefix }} roc cli/tests.roc upgrade
 
       # What only a real browser can prove: event dispatch, <dialog>,
