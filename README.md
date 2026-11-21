@@ -4,6 +4,8 @@ A framework for building full-stack web apps in Roc!
 
 Joy is a jolt of happiness for those who want a fast, productive, fun, and statically-typed environment for full-stack development.
 
+Try it out in your browser: [Joy guide](https://niclas-ahden.github.io/joy/) :)
+
 ## Goals
 
 Joy should provide:
@@ -16,9 +18,9 @@ Joy should provide:
 
 Joy is fun to play with, but it's in early development, not production-ready. Here be dragons!
 
-Try it out and build some single-page applications to get started: [Joy guide](https://niclas-ahden.github.io/joy/). Later on, in Joy 0.36.0, we'll add a guide and examples for full-stack applications too!
+Try it out through the [Joy guide](https://niclas-ahden.github.io/joy/), it has interactive demos to get you going!
 
-*Psst! If you're at the edge of your seat for full-stack apps, use [`roc-lang/basic-webserver`](https://www.github.com/roc-lang/basic-webserver) and [`joy-html`](https://www.github.com/niclas-ahden/joy-html) to serve HTML from the back-end. Your Joy app takes over the server-rendered page when it starts.*
+You can already build full-stack apps in Joy, but we don't have guides and examples for you yet. That'll come in Joy 0.36.0. If you're at the edge of your seat for full-stack apps, ping me on [the Roc Zulip](https://roc.zulipchat.com/) and I'll help you out :)
 
 Have fun and expect breaking changes!
 
@@ -142,13 +144,18 @@ The app is recompiled when you save. Refresh the browser to see the change.
 ### Running the tests
 
 ```sh
-$ ./tests.roc                # Roc unit tests + the fake-DOM harnesses in tests/
-$ ./e2e.roc                  # tests/e2e/ in a real headless Chromium
+$ ./tests.roc                # Roc unit tests and the fake-DOM harnesses in tests/
+$ ./e2e.roc                  # the browser suite in tests/e2e/, in headless Chromium
 $ ./e2e.roc --browser=all    # the same in Chromium, Firefox and WebKit
 $ roc cli/tests.roc          # the tests of the ./joy command line
-$ ./examples.roc             # each directory example's own suite (examples/*/tests.roc)
+$ ./examples.roc             # the suite of each example that has one (examples/*/tests.roc)
 ```
 
-The harnesses in `tests/` mount the built apps on a fake DOM and cover the app and runtime logic. They find elements the way the browser suite does, by role and accessible name, label or test id (`byRole`, `byLabel`, `byTestId` in `tests/fakedom.mjs`), and they can put a work budget on a step: `meter` in `tests/harness.mjs` counts the patch ops the differ emitted and the DOM mutations made to apply them, so a harness asserts not only that the page looks right after a click but that the click cost one text write and no rebuild. The browser suite in `tests/e2e/` is built on [roc-spec](https://github.com/niclas-ahden/roc-spec) and [roc-playwright](https://github.com/niclas-ahden/roc-playwright) and covers what only a real browser can prove: real event dispatch and bubbling, `<dialog>` semantics, the History API, WebCrypto, fetch, real timers, real keyboard and mouse input, and recording from Chromium's fake microphone.
+`./tests.roc` and `./e2e.roc` build at `--opt=dev`, the quickest while you work. Add `--opt=speed` to test the builds an app ships with. CI runs every level, and each one builds into its own `build/<opt>/`.
 
-The first two build the apps at `--opt=dev`, which is the quick way round while you work. `./tests.roc --opt=speed` and `./e2e.roc --opt=speed` run the same suites against the builds an app ships with, and CI runs every level. Each level lands in its own `build/<opt>/` tree.
+**The fake-DOM harnesses** in `tests/` mount the built apps on a fake DOM and cover the app and runtime logic.
+
+* They find elements the way the browser suite does: by role and accessible name, label or test id (`byRole`, `byLabel` and `byTestId` in `tests/fakedom.mjs`).
+* They can put a work budget on a step. `meter` in `tests/harness.mjs` counts patch ops and DOM mutations, so a test can check that a click cost one text write and no rebuild.
+
+**The browser suite** in `tests/e2e/` runs on [roc-spec](https://github.com/niclas-ahden/roc-spec) and [roc-playwright](https://github.com/niclas-ahden/roc-playwright). It covers the parts which actually need a real browser, such as event dispatch and bubbling, `<dialog>`, the History API, WebCrypto, fetch, real timers, keyboard and mouse input, and recording from a fake microphone.
