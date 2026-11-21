@@ -50,7 +50,7 @@ Build :: [].{
 			}.Cli,
 			{
 				name: "build",
-				description: "Build what ships into dist/: the bundles and assets/ under hashed names, public/, the server and assets.json. Anything after -- goes to roc.",
+				description: "Build everything you deploy into dist/: the bundles, the server, public/, assets/ with hashed names, and assets.json. Arguments after -- go to roc.",
 				mapper: wrap,
 			},
 		)

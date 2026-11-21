@@ -35,10 +35,10 @@ parser = Cli.assert_valid(
 			Init.command(|options| InitCommand(options)),
 			Upgrade.command(|options| UpgradeCommand(options)),
 			SubCmd.finish(
-				Cli.map(Opt.flag({ short: "", long: "json", help: "One JSON array, for scripts." }), |json| { json: json }),
+				Cli.map(Opt.flag({ short: "", long: "json", help: "Print the list as JSON, for scripts." }), |json| { json: json }),
 				{
 					name: "bundles",
-					description: "List the bundles under client/: id, tag, file and output.",
+					description: "List the bundles in client/ with their id, tag, file and output.",
 					mapper: |options| BundlesCommand(options),
 				},
 			),
@@ -47,7 +47,7 @@ parser = Cli.assert_valid(
 			name: "joy",
 			version: Release.version,
 			authors: [],
-			description: "The command line of a Joy project. Run ./joy help <command>, or ./joy <command> --help, for a command's options.",
+			description: "Develop, build and upgrade a Joy project. Run ./joy <command> --help for a command's options.",
 			text_style: Plain,
 		},
 	),

@@ -74,31 +74,48 @@ Dev :: [].{
 	command = |wrap|
 		SubCmd.finish(
 			{
-				jobs: Opt.maybe_str({ short: "", long: "jobs", help: "Limit how many builds run at once. Without it they all start at once." }),
-				serve_files: Opt.flag({ short: "", long: "serve-files", help: "Serve the files under the client URL and pass everything else to the project's server, as a proxy or a CDN in front of it does in production. Without it the server serves its own files. The server listens on $PORT, which ./joy picks when unset. ($JOY_SERVE_FILES=1)" }),
-				port: Opt.maybe_str({ short: "", long: "port", help: "Where ./joy serves the pages, with --serve-files or when the project has no server, 8000 or the next free one. ($JOY_PORT)" }),
-				events_port: Opt.maybe_str({ short: "", long: "events-port", help: "Where ./joy sends its events, the port it had last time or one the system picks. ($JOY_EVENTS_PORT)" }),
-				host: Opt.maybe_str({ short: "", long: "host", help: "The address to listen on, localhost by default. ($JOY_HOST)" }),
-				server: Opt.str_list({ short: "", long: "server", help: "Start this server instead of server/main.roc, repeatable." }),
-				no_server: Opt.flag({ short: "", long: "no-server", help: "Start no server, only the dev server." }),
-				proxy: Opt.str_list({ short: "", long: "proxy", help: "PATH=URL: forward requests under PATH to a backend, repeatable. ($JOY_PROXY, space separated)" }),
-				mount: Opt.str_list({ short: "", long: "mount", help: "PATH=DIR: serve the files of the folder DIR under PATH, as the file server that holds them does in production, and create it if it is missing. Repeatable. ($JOY_MOUNT, space separated)" }),
-				mount_download: Opt.str_list({ short: "", long: "mount-download", help: "PATH=DIR: like --mount, with each file answered as a download. Repeatable. ($JOY_MOUNT_DOWNLOAD, space separated)" }),
-				client_url: Opt.maybe_str({ short: "", long: "client-url", help: "Where the app serves client/, / by default. ($JOY_CLIENT_URL)" }),
-				public_dir: Opt.str({ short: "", long: "public-dir", help: "The folder of files served as they are.", default: Value("public") }),
-				poll: Opt.flag({ short: "", long: "poll", help: "Compare files on a timer, for filesystems that send no events." }),
-				watch: Opt.str_list({ short: "", long: "watch", help: "Run this command in a shell alongside the builds until Ctrl-C, to compile what goes in assets/. Repeatable." }),
-				no_hot: Opt.flag({ short: "", long: "no-hot", help: "Build what ships, and reload the page after each rebuild, for a bug that might live in the difference." }),
-				opt: Opt.maybe_str({ short: "", long: "opt", help: "The bundles' roc --opt, size by default. ($JOY_OPT)" }),
-				specialize: Opt.maybe_str({ short: "", long: "specialize", help: "The bundles' roc --specialize, yes or no. Unset, roc's default. ($JOY_SPECIALIZE)" }),
-				server_specialize: Opt.maybe_str({ short: "", long: "server-specialize", help: "The servers' roc --specialize, yes or no. Unset, roc's default. ($JOY_SERVER_SPECIALIZE)" }),
+				port: Opt.maybe(named("port", "port", "Port to serve the pages on, with --serve-files or when there is no server. (default: 8000 or the next free port, $JOY_PORT)")),
+				host: Opt.maybe(named("host", "host", "Address to listen on. (default: localhost, $JOY_HOST)")),
+				server: Opt.list(named("server", "file", "Start this server instead of server/main.roc. Repeatable.")),
+				no_server: Opt.flag({ short: "", long: "no-server", help: "Don't start a server. ./joy serves the pages." }),
+				serve_files: Opt.flag({ short: "", long: "serve-files", help: "Serve the files in client/ from ./joy and forward every other request to your server, like a CDN in production. Your server listens on $PORT, picked by ./joy if unset. ($JOY_SERVE_FILES=1)" }),
+				proxy: Opt.list(named("proxy", "rule", "Forward requests to another server. RULE is PATH=URL, like /api=http://localhost:3000. Repeatable. ($JOY_PROXY, space-separated)")),
+				mount: Opt.list(named("mount", "rule", "Serve a folder, for files a file server holds in production. RULE is PATH=DIR, like /uploads=uploads. Creates DIR if it is missing. Repeatable. ($JOY_MOUNT, space-separated)")),
+				mount_download: Opt.list(named("mount-download", "rule", "Same as --mount, but serve each file as a download. Repeatable. ($JOY_MOUNT_DOWNLOAD, space-separated)")),
+				client_url: Opt.maybe(named("client-url", "url", "URL to serve client/ under. (default: /, $JOY_CLIENT_URL)")),
+				public_dir: Opt.single({ short: "", long: "public-dir", help: "Folder of files to serve unchanged. (default: public)", type: "dir", parser: text_value, default: Value("public") }),
+				watch: Opt.list(named("watch", "cmd", "Run this shell command alongside the builds, like a CSS compiler that writes to assets/. Repeatable.")),
+				poll: Opt.flag({ short: "", long: "poll", help: "Check for changes on a timer. Use it when saving a file doesn't start a rebuild." }),
+				no_hot: Opt.flag({ short: "", long: "no-hot", help: "Turn off hot reloading. Build the bundles as ./joy build does and reload the whole page after each rebuild. Use it to rule out hot reloading as the cause of a bug." }),
+				events_port: Opt.maybe(named("events-port", "port", "Port the page connects to for hot reloading. (default: the last one used, or a free one, $JOY_EVENTS_PORT)")),
+				jobs: Opt.maybe(named("jobs", "n", "Run at most N builds at once. (default: all at once)")),
+				opt: Opt.maybe(named("opt", "level", "roc --opt for the bundles: size, speed or dev. (default: size, $JOY_OPT)")),
+				specialize: Opt.maybe_str({ short: "", long: "specialize", help: "roc --specialize for the bundles: yes or no. (default: roc's, $JOY_SPECIALIZE)" }),
+				server_specialize: Opt.maybe_str({ short: "", long: "server-specialize", help: "roc --specialize for the servers: yes or no. (default: roc's, $JOY_SERVER_SPECIALIZE)" }),
 			}.Cli,
 			{
 				name: "dev",
-				description: "Build every bundle, rebuild what a change reaches, and serve or start what the project needs, until Ctrl-C. Anything after -- goes to roc.",
+				description: "Build the bundles and the server, rebuild them when you save, and serve the app with hot reloading until Ctrl-C. Arguments after -- go to roc.",
 				mapper: wrap,
 			},
 		)
+
+	## An option that takes a string, shown in --help as `--<long> <VALUE>`
+	## instead of weaver's `STR`.
+	named = |long, value, help| {
+		short: "",
+		long,
+		help,
+		type: value,
+		parser: text_value,
+	}
+
+	## An option's value as it was typed.
+	text_value = |arg|
+		match arg.to_str() {
+			Ok(text) => Ok(text)
+			Err(_) => Err(InvalidUtf8)
+		}
 
 	## Run with `options`, and `roc` given to every roc build as it is.
 	run! : Dev.Options, List(Str) => Try({}, _)
