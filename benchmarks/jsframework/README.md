@@ -22,7 +22,7 @@ entries are built the same way, and a missing `wasm-opt` fails the run rather th
 quietly measuring a bigger binary than the last one.
 
 We build at `--opt=size` rather than `--opt=speed` because it was smaller with no
-measurable loss in speed. On 2026-10-18 with Roc `nightly-2026-10-18-1df370f`, the keyed wasm
+measurable loss in speed. On 2026-10-18 with the Roc nightly built from `1df370f`, the keyed wasm
 was 3% smaller raw and 2-3% smaller compressed than `--opt=speed` plus `wasm-opt -O3`.
 The CPU benchmarks moved by less than their run-to-run noise. The time here goes to DOM
 work, so the Roc code's opt level barely shows. `-Oz` on top of the size build only takes

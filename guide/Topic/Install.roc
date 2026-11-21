@@ -18,7 +18,9 @@ Install := [].{
 		p(
 			[],
 			[
-				text("Joy needs Roc ${Doc.roc_version} or newer. Install Roc the way "),
+				text("Joy needs a recent nightly of Roc (tested to work with "),
+				a([href("https://github.com/roc-lang/nightlies/releases/tag/${Doc.roc_nightly}")], [code([], [text(Doc.roc_nightly)])]),
+				text("). Install Roc the way "),
 				a([href("https://www.roc-lang.org/install")], [text("roc-lang.org")]),
 				text(" shows, then check which version you have:"),
 			],

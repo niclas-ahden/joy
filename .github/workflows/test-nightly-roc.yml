@@ -99,6 +99,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      actions: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -107,6 +108,7 @@ jobs:
       - name: Name this nightly everywhere in the repo
         env:
           NIGHTLY: ${{ needs.resolve.outputs.nightly }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -148,6 +150,10 @@ jobs:
           # rather than failing the push.
           git pull --rebase origin main
           git push
+
+          # A push made with GITHUB_TOKEN starts no workflow, but a dispatch
+          # does. The guide names this nightly, so put it on Pages.
+          gh workflow run deploy-docs.yml --ref main
 
       - name: Name this nightly in the release notes
         env:
