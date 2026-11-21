@@ -18,6 +18,24 @@ Doc := [].{
 	api_docs : Str
 	api_docs = "./LATESTVERSION/"
 
+	## A name from the API in code, linked to its docs. "Sub.map" and
+	## "Time.after(ms, to_msg)" link to the value, "Media" and "pf.Media" to
+	## the module. Html names link to joy-html's docs.
+	api : Str -> Html([])
+	api = |shown| {
+		name = (shown.split_first("(").map_ok(|{ before, .. }| before) ?? shown).drop_prefix("pf.")
+		home : Str
+		home =
+			match name.split_first(".") {
+				Ok({ before, .. }) => before
+				Err(_) => name
+			}
+		anchor : Str
+		anchor = if (home == name) "" else "#${name}"
+		docs = if (home == "Html") "https://niclas-ahden.github.io/joy-html/main/" else Doc.api_docs
+		Html.a([Attribute.href("${docs}${home}/${anchor}")], [Html.code([], [text(shown)])])
+	}
+
 	## A code block. `file` labels it, and an empty one falls back to the
 	## language's name. Roc in one must appear in code the suite compiles (see
 	## tests/check_guide.mjs).

@@ -259,7 +259,7 @@ Views := [].{
 			[],
 			[
 				text("When a part of the page has its own message type, "),
-				code([], [text("Html.map")]),
+				Doc.api("Html.map"),
 				text(" wraps every message it sends into a message of the page:"),
 			],
 		),

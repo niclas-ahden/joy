@@ -163,7 +163,7 @@ Effects := [].{
 					title: [text("This time the list holds an effect")],
 					body: [
 						text("Returning "),
-						code([], [text("Console.log")]),
+						Doc.api("Console.log"),
 						text(" in the list means we're asking Joy to write to the console for us."),
 					],
 					more: [
@@ -186,11 +186,11 @@ Effects := [].{
 			[],
 			[
 				text("First off we ask Joy to make an HTTP request by returning an "),
-				code([], [text("Http.get")]),
+				Doc.api("Http.get"),
 				text(" effect in "),
 				code([], [text("update")]),
 				text(". The "),
-				code([], [text("Http.get")]),
+				Doc.api("Http.get"),
 				text(" effect takes, as an argument, the message to send when the response comes back."),
 			],
 		),
@@ -355,7 +355,7 @@ Effects := [].{
 						text("Beside the next model, "),
 						code([], [text("update")]),
 						text(" returns a list with the desired effect: "),
-						code([], [text("Http.get")]),
+						Doc.api("Http.get"),
 						text(" with an address and a function. Nothing is sent yet. We are simply asking Joy to send the GET request."),
 					],
 					more: [
@@ -394,7 +394,7 @@ Effects := [].{
 					title: [text("The answer comes back as a "), code([], [text("Msg")])],
 					body: [
 						text("When the request is done, Joy calls the function you gave "),
-						code([], [text("Http.get")]),
+						Doc.api("Http.get"),
 						text(" with the result. Yours wraps it in "),
 						code([], [text("ServerReturnedQuote")]),
 						text(", and that is the next message."),
@@ -536,15 +536,15 @@ Effects := [].{
 								tr(
 									[],
 									[
-										td([], [code([], [text("pf.Http")])]),
+										td([], [Doc.api("pf.Http")]),
 										td(
 											[],
 											[
-												code([], [text("Http.get(url, to_msg)")]),
+												Doc.api("Http.get(url, to_msg)"),
 												text(", "),
-												code([], [text("Http.post")]),
+												Doc.api("Http.post"),
 												text(", "),
-												code([], [text("Http.request")]),
+												Doc.api("Http.request"),
 												text(", file uploads"),
 											],
 										),
@@ -553,15 +553,15 @@ Effects := [].{
 								tr(
 									[],
 									[
-										td([], [code([], [text("pf.Time")])]),
+										td([], [Doc.api("pf.Time")]),
 										td(
 											[],
 											[
-												code([], [text("Time.after(ms, to_msg)")]),
+												Doc.api("Time.after(ms, to_msg)"),
 												text(", "),
-												code([], [text("Time.debounce(key, ms, to_msg)")]),
+												Doc.api("Time.debounce(key, ms, to_msg)"),
 												text(", "),
-												code([], [text("Time.cancel(key)")]),
+												Doc.api("Time.cancel(key)"),
 											],
 										),
 									],
@@ -569,19 +569,19 @@ Effects := [].{
 								tr(
 									[],
 									[
-										td([], [code([], [text("pf.DOM")])]),
+										td([], [Doc.api("pf.DOM")]),
 										td(
 											[],
 											[
-												code([], [text("DOM.show_modal(\"#confirm\")")]),
+												Doc.api("DOM.show_modal(\"#confirm\")"),
 												text(", "),
-												code([], [text("DOM.close_modal")]),
+												Doc.api("DOM.close_modal"),
 												text(", "),
-												code([], [text("DOM.focus")]),
+												Doc.api("DOM.focus"),
 												text(", "),
-												code([], [text("DOM.set_title")]),
+												Doc.api("DOM.set_title"),
 												text(", "),
-												code([], [text("DOM.scroll_to")]),
+												Doc.api("DOM.scroll_to"),
 											],
 										),
 									],
@@ -589,15 +589,15 @@ Effects := [].{
 								tr(
 									[],
 									[
-										td([], [code([], [text("pf.Navigation")])]),
+										td([], [Doc.api("pf.Navigation")]),
 										td(
 											[],
 											[
-												code([], [text("Navigation.push_url(url)")]),
+												Doc.api("Navigation.push_url(url)"),
 												text(", "),
-												code([], [text("Navigation.replace_url")]),
+												Doc.api("Navigation.replace_url"),
 												text(", "),
-												code([], [text("Navigation.navigate")]),
+												Doc.api("Navigation.navigate"),
 											],
 										),
 									],
@@ -605,35 +605,35 @@ Effects := [].{
 								tr(
 									[],
 									[
-										td([], [code([], [text("pf.Clipboard")])]),
-										td([], [code([], [text("Clipboard.write_text(text, to_msg)")]), text(", "), code([], [text("Clipboard.write_text_of(selector, to_msg)")])]),
+										td([], [Doc.api("pf.Clipboard")]),
+										td([], [Doc.api("Clipboard.write_text(text, to_msg)"), text(", "), Doc.api("Clipboard.write_text_of(selector, to_msg)")]),
 									],
 								),
 								tr(
 									[],
 									[
-										td([], [code([], [text("pf.Console")])]),
-										td([], [code([], [text("Console.log(text)")])]),
+										td([], [Doc.api("pf.Console")]),
+										td([], [Doc.api("Console.log(text)")]),
 									],
 								),
 								tr(
 									[],
 									[
-										td([], [code([], [text("pf.Port")])]),
+										td([], [Doc.api("pf.Port")]),
 										td([], [text("Sending values to your own JavaScript and hearing back from it")]),
 									],
 								),
 								tr(
 									[],
 									[
-										td([], [code([], [text("pf.WebCrypto")])]),
+										td([], [Doc.api("pf.WebCrypto")]),
 										td([], [text("Hashing data and files in the browser")]),
 									],
 								),
 								tr(
 									[],
 									[
-										td([], [code([], [text("pf.Media")])]),
+										td([], [Doc.api("pf.Media")]),
 										td([], [text("Recording from the microphone or camera, playing audio and video")]),
 									],
 								),

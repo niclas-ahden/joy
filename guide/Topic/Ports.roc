@@ -27,11 +27,11 @@ Ports := [].{
 			[],
 			[
 				text("Sending is an effect, and listening is a subscription. "),
-				c("Port.send(\"cheer\", \"Hello!\")"),
+				Doc.api("Port.send(\"cheer\", \"Hello!\")"),
 				text(" sends a text on the port called "),
 				c("cheer"),
 				text(". "),
-				c("Port.listen(\"tick\", |text| JavaScriptTicked)"),
+				Doc.api("Port.listen(\"tick\", |text| JavaScriptTicked)"),
 				text(" turns every text that arrives on "),
 				c("tick"),
 				text(" into a message."),
