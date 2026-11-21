@@ -244,7 +244,7 @@ FirstApp := [].{
 			],
 		),
 		h2([], [text("Your turn:")]),
-		p([], [text("Edit the code below, and add a Reset button that sets the count to 0. You can do it!")]),
+		p([], [text("Edit the code below, and add a Reset button that sets the count to 0.")]),
 		p(
 			[],
 			[

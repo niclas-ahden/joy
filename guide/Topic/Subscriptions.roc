@@ -37,7 +37,7 @@ Subscriptions := [].{
 		p(
 			[],
 			[
-				text("Edit the code below to get excited twice as fast. You can do it!"),
+				text("Edit the code below to get excited twice as fast."),
 			],
 		),
 		Doc.editor_folded(
