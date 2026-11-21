@@ -11,15 +11,14 @@ Subscriptions := [].{
 		p(
 			[class("lead")],
 			[
-				text("An effect happens once. A subscription keeps sending messages for as long as the app asks for it."),
+				text("An effect is a one-off, like an HTTP request: you ask once and get one answer. A subscription is for things that keep happening, like a clock ticking or keys being pressed, and sends a message each time."),
 			],
 		),
 		p(
 			[],
 			[
-				text("After every update Joy calls "),
 				code([], [text("subscriptions")]),
-				text(" with the new model. Whatever list it returns is what the app listens to from then on. A subscription you stop returning is stopped."),
+				text(" returns the things you want to listen to. Joy calls it with the new model after every update, so the list can change as the model does. Stop returning a subscription and it stops."),
 			],
 		),
 		p(
@@ -38,7 +37,7 @@ Subscriptions := [].{
 		p(
 			[],
 			[
-				text("Edit the code below and get excited twice as fast. You can do it!"),
+				text("Edit the code below to get excited twice as fast. You can do it!"),
 			],
 		),
 		Doc.editor_folded(

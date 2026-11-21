@@ -36,7 +36,7 @@ index = {
 	nav(
 		[class("index"), id("index"), aria("label", "Topics")],
 		[
-			div([class("brand")], [brand_name, p([class("brand-sub")], [text("Building and structuring web apps in Roc")])]),
+			div([class("brand")], [brand_name, p([class("brand-sub")], [text("Building web apps in Roc")])]),
 			p(
 				[class("docs-links")],
 				[
