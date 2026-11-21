@@ -126,10 +126,9 @@ function ansiToHtml(text) {
 // runs for as long as the report goes on quoting the code. A problem in
 // another file has no place in the editor.
 //
-// Many lines underlined say little about where to look. A hint of roc's may
-// name what to change, and roc colours the names its first sentence is about,
-// like a tag that is not in the union. Where such a name is in the stretch,
-// it is what is underlined, the hint's before the sentence's.
+// Many lines underlined say little about where to look. roc colours the names
+// its first sentence is about, like a tag that is not in the union. Where such
+// a name is in the stretch, it is what is underlined.
 function problems(report, source) {
   const colour = /\x1b\[[0-9;]*m/g;
   const code = source.split('\n');
@@ -147,39 +146,28 @@ function problems(report, source) {
       found.push({ line, from: ch, to: ch + (carets ? carets[1].length : 1), title });
       continue;
     }
-    // WORKAROUND: roc-lang/roc#13070. A match with a pattern its value cannot
-    // be is reported at the line of `match` and the column of the pattern,
-    // which is no place in particular. So the quoted line is also looked for
-    // as a whole. When the position is right, compare from the column on
-    // only, and `first` is `ch`.
     const indent = (at) => code[at].length - code[at].trimStart().length;
-    const quoted = said.findIndex((l) => l.trim() !== '' && (l.trim() === code[line].slice(ch).trim() || l.trim() === code[line].trim()));
+    const quoted = said.findIndex((l) => l.trim() !== '' && l.trim() === code[line].slice(ch).trim());
     if (quoted < 0) {
       found.push({ line, from: ch, to: ch + 1, title });
       continue;
     }
-    const first = said[quoted].trim() === code[line].slice(ch).trim() ? ch : indent(line);
     let last = line;
     for (let k = 1; said[quoted + k] !== undefined && code[line + k] !== undefined && said[quoted + k].trim() === code[line + k].trim(); k++) {
       if (code[line + k].trim() !== '') last = line + k;
     }
     const sentence = raw.split('\n').slice(1).join('\n').trim().split(/\n\s*\n/)[0];
     const coloured = [...sentence.matchAll(/\x1b\[[0-9;]*m([A-Za-z_]\w*!?)\x1b\[/g)].map((m) => m[1]);
-    // WORKAROUND: roc-lang/roc#13070. With that position the report points at
-    // the whole match, and only its hint names the pattern to change. When
-    // the report points at the pattern, drop `hinted` and `hint`.
-    const hinted = [...part.matchAll(/[Mm]aybe ([A-Za-z_]\w*!?) should be /g)].map((m) => m[1]);
     const whole = [];
     for (let at = line; at <= last; at++) {
-      if (code[at].trim() !== '') whole.push({ line: at, from: at === line ? first : indent(at), to: code[at].length, title });
+      if (code[at].trim() !== '') whole.push({ line: at, from: at === line ? ch : indent(at), to: code[at].length, title });
     }
     const where = (names) => whole.flatMap((stretch) => names.flatMap((name) =>
       [...code[stretch.line].matchAll(new RegExp(`(?<![\\w.])${name.replace('!', '\\!')}(?![\\w!])`, 'g'))]
         .filter((m) => m.index >= stretch.from)
         .map((m) => ({ line: stretch.line, from: m.index, to: m.index + name.length, title }))));
-    const hint = where(hinted);
-    const named = hint.length ? [] : where(coloured);
-    found.push(...(hint.length ? hint : named.length ? named : whole));
+    const named = where(coloured);
+    found.push(...(named.length ? named : whole));
   }
   return found;
 }
