@@ -1,5 +1,5 @@
-import html.Html exposing [code, element, h1, h2, li, ol, p, strong, svg, text, ul]
-import html.Attribute exposing [aria, attribute, class, id, role]
+import html.Html exposing [a, code, element, h1, h2, li, ol, p, strong, svg, text, ul]
+import html.Attribute exposing [aria, attribute, class, href, id, role]
 import /Doc
 
 ## The topic "Enough to be dangerous", a recap of the loop every app runs.
@@ -63,7 +63,7 @@ Loop := [].{
 				),
 			],
 		),
-		h2([], [text("What follows from it")]),
+		h2([], [text("You get")]),
 		ul(
 			[],
 			[
@@ -90,10 +90,21 @@ Loop := [].{
 				li(
 					[],
 					[
-						strong([], [text("Your messages are the complete history.")]),
+						strong([], [text("Messages are your \"history\".")]),
 						text(" Every change to the model came from a message, so a list of messages explains how the app got where it is."),
 					],
 				),
+			],
+		),
+		h2([], [text("Two more concepts")]),
+		p(
+			[],
+			[
+				text("Beyond the basics we've got "),
+				a([href("#subscriptions")], [text("Subscriptions")]),
+				text(" and "),
+				a([href("#flags")], [text("Flags")]),
+				text(". Let's tackle them now!"),
 			],
 		),
 	]
