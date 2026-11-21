@@ -82,11 +82,9 @@ Doc := [].{
 	command : Str -> Html([])
 	command = |line| Doc.code(Sh, "", line)
 
-	## The Roc nightly the latest Joy release is tested with. The Test latest
-	## Joy release on latest nightly Roc workflow moves it forward, so it
-	## spells out the whole tag.
-	roc_nightly : Str
-	roc_nightly = "nightly-2026-11-18-a520eed"
+	## The oldest Roc release Joy works with.
+	roc_minimum : Str
+	roc_minimum = "0.1.0-rc1"
 
 	## A whole app with the page it is on, for an app whose page matters:
 	## its flags, its stylesheet or its own JavaScript. `file` and `roc` are

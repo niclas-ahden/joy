@@ -18,11 +18,11 @@ Install := [].{
 		p(
 			[],
 			[
-				text("Joy needs a recent nightly of Roc (tested to work with "),
-				a([href("https://github.com/roc-lang/nightlies/releases/tag/${Doc.roc_nightly}")], [code([], [text(Doc.roc_nightly)])]),
-				text("). Install Roc the way "),
-				a([href("https://www.roc-lang.org/install")], [text("roc-lang.org")]),
-				text(" shows, then check which version you have:"),
+				text("Joy needs Roc ${Doc.roc_minimum} or later. Grab it for your system from "),
+				a([href("https://github.com/roc-lang/roc/releases")], [text("Roc's releases")]),
+				text(", unpack it and put "),
+				code([], [text("roc")]),
+				text(" on your PATH. Then check which version you have:"),
 			],
 		),
 		Doc.code(
