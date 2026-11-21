@@ -48,13 +48,6 @@ Install := [].{
 				text(". That's the one you use from now on. See your new project's README for an explanation of what files are in it."),
 			],
 		),
-		p(
-			[],
-			[
-				code([], [text("./joy")]),
-				text(" is built for your machine. The README shows how to install it again after a fresh clone."),
-			],
-		),
 		h2([], [text("Run it")]),
 		Doc.code(
 			Sh,
