@@ -278,13 +278,13 @@ jobs:
               echo ""
               echo "## Starting a project"
               echo ""
-              echo "In an empty folder, with the Roc above:"
+              echo "With the Roc above:"
               echo ""
               echo '```sh'
               echo "roc run $cli_url init"
               echo '```'
               echo ""
-              echo "It asks what kind of app you want, writes it into the folder, and installs \`./joy\`. In a fresh clone of a project, the same command installs \`./joy\` and leaves the app as it is."
+              echo "It asks what to call your project and what kind of app you want, writes it into a new directory, and installs \`./joy\`. In a fresh clone of a project, the same command installs \`./joy\` and leaves the app as it is."
             } >> notes.md
             edited=1
           fi

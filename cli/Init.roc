@@ -26,9 +26,9 @@ Init :: [].{
 			{
 				template: Opt.maybe_str({ short: "", long: "template", help: "The template to start from, without asking: ${names}." }),
 				no_input: Opt.flag({ short: "", long: "no-input", help: "Never ask. Fail instead, and say which flag answers." }),
-				non_empty: Opt.flag({ short: "", long: "non-empty", help: "Start in a folder that has files in it, without asking. Init never writes over them." }),
+				non_empty: Opt.flag({ short: "", long: "non-empty", help: "Start in a directory that has files in it, without asking. Init never writes over them." }),
 				joy_checkout: Opt.maybe_str({ short: "", long: "joy-checkout", help: "The Joy checkout the bundles build against. ($JOY_CHECKOUT)" }),
-				dir: Param.maybe_str({ name: "dir", help: "Where to start the project, the current folder by default." }),
+				dir: Param.maybe_str({ name: "dir", help: "The directory to start the project in. Init asks for it, or uses the current directory where it never asks." }),
 			}.Cli,
 			{
 				name: "init",
@@ -50,23 +50,25 @@ Init :: [].{
 		dir =
 			match Args.given(options.dir) {
 				Some(given) => given.drop_suffix("/")
-				None => "."
+				None => {
+					# A fresh clone of a project only needs its ./joy.
+					asked = Prompt.asks!(options.no_input) and !has_app!()?
+					if asked {
+						directory!()?
+					} else {
+						"."
+					}
+				}
 			}
-		# A folder that does not exist yet is made only once a template is
+		# A directory that does not exist yet is made only once a template is
 		# chosen, so a cancelled init leaves nothing behind.
 		existed = Path.utf8(dir).is_dir!() ?? False
 		if existed {
 			move_into!(dir)?
-			{ bundles, .. } = Project.find!()?
-			has_server =
-				match Project.server!() {
-					Some(_) => True
-					None => False
-				}
-			if !bundles.is_empty() or has_server {
+			if has_app!()? {
 				ignore!([])?
 				install!(own)?
-				return Stdout.line!("This folder has a Joy app already, so init only installed ./joy.")
+				return Stdout.line!("This directory has a Joy app already, so init only installed ./joy.")
 			}
 			# A Roc download is often unpacked where the project starts.
 			taken = (Path.utf8(".").list!() ?? []).map(|entry| Path.display(entry).drop_prefix("./")).drop_if(|name| name.starts_with(".") or name.starts_with("roc_nightly"))
@@ -92,12 +94,12 @@ Init :: [].{
 				}
 			}
 			if !$clashes.is_empty() {
-				return Build.fail!("${folder_name(dir)} has its own ${Str.join_with($clashes, ", ")}, which the ${template.name} template would write over. Move them aside, or start in a new folder: init my-app")
+				return Build.fail!("${folder_name(dir)} has its own ${Str.join_with($clashes, ", ")}, which the ${template.name} template would write over. Move them aside, or start in a new directory: init my-app")
 			}
 		}
 		if !existed {
 			if Path.utf8(dir).create_all!().is_err() {
-				return Build.fail!("Could not make the folder ${dir}.")
+				return Build.fail!("Could not make the directory ${dir}.")
 			}
 			move_into!(dir)?
 		}
@@ -116,7 +118,7 @@ Init :: [].{
 				}
 			filled = content.replace_each(Template.platform_line, platform_line).replace_each(Template.install_command, install_command)
 			if Path.utf8(folder).create_all!().is_err() {
-				return Build.fail!("Could not make the folder ${folder}.")
+				return Build.fail!("Could not make the directory ${folder}.")
 			}
 			if Path.utf8(file).write_utf8!(filled).is_err() {
 				return Build.fail!("Could not write ${file}.")
@@ -125,7 +127,8 @@ Init :: [].{
 		ignore!(template.ignored)?
 		install!(own)?
 
-		Stdout.line!("Started a project from the ${template.name} template, with ./joy to work on it.")?
+		started = if (dir == ".") "Started a project" else "Started a project in ${dir}"
+		Stdout.line!("${started} from the ${template.name} template, with ./joy to work on it.")?
 		match source {
 			Checkout(checkout) => Stdout.line!("Its bundles build against the Joy checkout at ${checkout}.\n")?
 			OnRelease(release) => Stdout.line!("Its bundles are on Joy ${release.tag}.\n")?
@@ -139,6 +142,88 @@ Init :: [].{
 
 names : Str
 names = Str.join_with(Template.all.map(|template| template.name), ", ")
+
+## Whether the current directory has a Joy app in it: bundles or a server.
+has_app! : () => Try(Bool, _)
+has_app! = || {
+	{ bundles, .. } = Project.find!()?
+	has_server =
+		match Project.server!() {
+			Some(_) => True
+			None => False
+		}
+	Ok(!bundles.is_empty() or has_server)
+}
+
+## Ask what to call the new project, and whether to create the directory
+## that makes, until the person agrees. A directory that exists is not
+## asked about here: [start_beside!] asks about one with files in it.
+directory! : () => Try(Str, _)
+directory! = || {
+	here = Path.display(Env.cwd!()?)
+	home = Env.var_str!(OsStr.from_str("HOME")) ?? ""
+	choices = [
+		{ name: "Yes", description: "", link: "" },
+		{ name: "No, pick another name", description: "", link: "" },
+	]
+	var $chosen = ""
+	while $chosen.is_empty() {
+		typed = Prompt.line!("What should we call your new project?") ? |_| Exit(130)
+		name = with_home(typed.trim(), home).drop_suffix("/")
+		if !name.is_empty() {
+			if Path.utf8(name).is_dir!() ?? False {
+				$chosen = name
+			} else {
+				match Prompt.choose!("Create ${resolved(here, name)} now?", choices) {
+					Ok(choice) if choice.name == "Yes" => {
+						$chosen = name
+					}
+					Ok(_) => {}
+					Err(_) => return Err(Exit(130))
+				}
+			}
+		}
+	}
+	Ok($chosen)
+}
+
+## A typed path with `~` at its start read as a shell reads it.
+with_home : Str, Str -> Str
+with_home = |typed, home|
+	if typed == "~" {
+		home
+	} else if typed.starts_with("~/") and !home.is_empty() {
+		"${home}/${typed.drop_prefix("~/")}"
+	} else {
+		typed
+	}
+
+## The absolute path of `path` from the directory `here`, without `.` and
+## `..` in it.
+resolved : Str, Str -> Str
+resolved = |here, path| {
+	whole = if (path.starts_with("/")) path else "${here}/${path}"
+	parts = whole.split_on("/").fold(
+		[],
+		|kept, part|
+			if part == "" or part == "." {
+				kept
+			} else if part == ".." {
+				kept.drop_last(1)
+			} else {
+				kept.append(part)
+			},
+	)
+	"/${Str.join_with(parts, "/")}"
+}
+
+expect resolved("/home/me/dev", "todo") == "/home/me/dev/todo"
+expect resolved("/home/me/dev", "../todo") == "/home/me/todo"
+expect resolved("/home/me/dev", "./a/./b/") == "/home/me/dev/a/b"
+expect resolved("/home/me/dev", "/srv/app") == "/srv/app"
+expect with_home("~/src/todo", "/home/me") == "/home/me/src/todo"
+expect with_home("~", "/home/me") == "/home/me"
+expect with_home("todo", "/home/me") == "todo"
 
 ## The Joy checkout to build against, `given` or $JOY_CHECKOUT, as a real
 ## path, when one is named.
@@ -156,7 +241,7 @@ checkout! = |given| {
 	real =
 		match Path.utf8(named).canonicalize!() {
 			Ok(path) => Path.display(path)
-			Err(_) => return Build.fail!("There is no folder at ${named}.")
+			Err(_) => return Build.fail!("There is no directory at ${named}.")
 		}
 	if !(Path.utf8("${real}/platform/main.roc").is_file!() ?? False) or !(Path.utf8("${real}/www/runtime.js").is_file!() ?? False) {
 		return Build.fail!("${named} is not a Joy checkout: it needs platform/main.roc and www/runtime.js.")
@@ -210,14 +295,15 @@ start_beside! = |dir, taken, options| {
 	}
 	found = described(folder_name(dir), taken)
 	if !Prompt.asks!(options.no_input) {
-		return Build.fail!("${found}\nStart in an empty folder, name a new one (init my-app), or start here anyway with --non-empty.")
+		return Build.fail!("${found}\nStart in an empty directory, name a new one (init my-app), or start here anyway with --non-empty.")
 	}
 	Stdout.line!(found)?
+	place = if (dir == ".") "here" else "in ${dir}"
 	choices = [
-		{ name: "No", description: "Leave the folder as it is", link: "" },
-		{ name: "Yes", description: "Start the project here, beside those files", link: "" },
+		{ name: "No", description: "Leave the directory as it is", link: "" },
+		{ name: "Yes", description: "Start the project ${place}, beside those files", link: "" },
 	]
-	match Prompt.choose!("Start the project here anyway?", choices) {
+	match Prompt.choose!("Start the project ${place} anyway?", choices) {
 		Ok(choice) if choice.name == "Yes" => Ok({})
 		Ok(_) => Err(Exit(1))
 		Err(_) => Err(Exit(130))
@@ -235,7 +321,7 @@ described = |folder, taken|
 	}
 
 folder_name : Str -> Str
-folder_name = |dir| if (dir == ".") "This folder" else dir
+folder_name = |dir| if (dir == ".") "This directory" else dir
 
 expect described("busy", ["a", "b"]) == "busy has files in it already:\n  a\n  b"
 expect described("busy", ["a", "b", "c", "d", "e", "f"]) == "busy has files in it already."

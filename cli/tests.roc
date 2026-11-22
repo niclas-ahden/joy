@@ -2114,7 +2114,7 @@ dev_server_without_files! = |ctx| {
 init_template! : Ctx => Try({}, [Failed(Str)])
 init_template! = |ctx| {
 	out = joy_ok!(ctx, ["init", "my-app", "--template", "spa-pages", "--joy-checkout", ctx.joy_root], 0)?
-	contains(out, "Started a project from the spa-pages template")?
+	contains(out, "Started a project in my-app from the spa-pages template")?
 	contains(out, "    cd my-app\n    ./joy dev")?
 	for file in ["client/app.roc", "client/Route.roc", "client/Page/Home.roc", "public/index.html", "assets/css/style.css", "README.md"] {
 		check(exists!(ctx, "my-app/${file}"), "init did not write ${file}")?
@@ -2148,7 +2148,7 @@ init_other_templates! : Ctx => Try({}, [Failed(Str)])
 init_other_templates! = |ctx| {
 	for name in ["spa-minimal", "spa-pages-expanded"] {
 		out = joy_ok!(ctx, ["init", name, "--template", name, "--joy-checkout", ctx.joy_root], 0)?
-		contains(out, "Started a project from the ${name} template")?
+		contains(out, "Started a project in ${name} from the ${name} template")?
 		bundle_file = read!(ctx, "${name}/client/app.roc")?
 		lacks(bundle_file, "\"../../../../platform/main.roc\"")?
 		lacks(read!(ctx, "${name}/README.md")?, "JOY_INSTALL_COMMAND")?
@@ -2163,7 +2163,7 @@ init_folder_rules! : Ctx => Try({}, [Failed(Str)])
 init_folder_rules! = |ctx| {
 	write!(ctx, "busy/notes.txt", "mine")?
 	refused = joy_ok!(ctx, ["init", "busy", "--template", "spa-pages", "--joy-checkout", ctx.joy_root], 1)?
-	contains(refused, "busy has files in it already:\n  notes.txt\nStart in an empty folder, name a new one (init my-app), or start here anyway with --non-empty.")?
+	contains(refused, "busy has files in it already:\n  notes.txt\nStart in an empty directory, name a new one (init my-app), or start here anyway with --non-empty.")?
 	check(!exists!(ctx, "busy/client"), "init wrote into a folder with files")?
 	# More than five files are not listed.
 	for name in ["a", "b", "c", "d", "e", "f"] {
@@ -2204,7 +2204,7 @@ init_existing_app! = |ctx| {
 	bundle!(ctx, "client/app.roc", "mine")?
 	# Installing ./joy beside an app needs no checkout.
 	out = joy_with!(ctx, ["init", "--template", "spa-pages"], 0, [("JOY_CHECKOUT", "")])?
-	contains(out, "This folder has a Joy app already, so init only installed ./joy.")?
+	contains(out, "This directory has a Joy app already, so init only installed ./joy.")?
 	mine = read!(ctx, "client/app.roc")?
 	contains(mine, "\"mine\"")?
 	check(exists!(ctx, "joy"), "init did not install ./joy")?
@@ -2222,7 +2222,7 @@ init_no_input! = |ctx| {
 	not_joy = joy_ok!(ctx, ["init", "my-app", "--template", "spa-pages", "--joy-checkout", ctx.dir], 1)?
 	contains(not_joy, "is not a Joy checkout")?
 	from_env = joy_with!(ctx, ["init", "my-app", "--template", "spa-pages"], 0, [("JOY_CHECKOUT", ctx.joy_root)])?
-	contains(from_env, "Started a project from the spa-pages template")
+	contains(from_env, "Started a project in my-app from the spa-pages template")
 }
 
 ## `roc run <cli> init` is the first command of a project. roc interprets the
@@ -2239,7 +2239,7 @@ init_interpreted! = |ctx| {
 			.run!()
 			? |err| Failed("roc run cli/main.roc init did not run: ${Str.inspect(err)}")
 	out = Str.from_utf8_lossy(ran.stdout_bytes)
-	contains(out, "Started a project from the spa-pages template")?
+	contains(out, "Started a project in my-app from the spa-pages template")?
 	check((Path.utf8("${ctx.dir}/my-app/joy").is_executable!() ?? False), "init did not install an executable ./joy:\n${out}")?
 	check(!exists!(ctx, "my-app/.joy.new"), "init left .joy.new behind")?
 	# The program init built runs on its own, from the project.

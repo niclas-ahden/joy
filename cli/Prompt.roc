@@ -29,6 +29,15 @@ Prompt :: [].{
 		!no_input and !in_ci and Tty.is_tty!()
 	}
 
+	## A line the person types after a `>` and ends with Enter.
+	line! : Str => Try(Str, [Cancelled])
+	line! = |question| {
+		Stdout.line!("? ${question}") ? |_| Cancelled
+		Stdout.write!("> ") ? |_| Cancelled
+		answer = Stdin.line!() ? |_| Cancelled
+		Ok(answer)
+	}
+
 	## Pick one of `choices` with the arrow keys, or j and k, and Enter.
 	## Escape and Ctrl-C cancel.
 	choose! : Str, List(Prompt.Choice) => Try(Prompt.Choice, _)
