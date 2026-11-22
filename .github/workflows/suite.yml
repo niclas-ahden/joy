@@ -134,7 +134,10 @@ jobs:
             sleep 0.2
           done
           curl -sfI "http://127.0.0.1:8788/$file" > /dev/null || { cat .bundle-server.log; exit 1; }
-          .ci/.github/scripts/point-at-bundle.sh "http://127.0.0.1:8788/$file"
+          # ./joy dev takes a platform URL for Joy's when it has /joy/ in it,
+          # as a release URL does. serve.mjs serves by file name, so any
+          # path works.
+          .ci/.github/scripts/point-at-bundle.sh "http://127.0.0.1:8788/joy/$file"
 
       - id: setup
         uses: ./.ci/.github/actions/setup
