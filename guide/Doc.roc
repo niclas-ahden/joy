@@ -82,9 +82,10 @@ Doc := [].{
 	command : Str -> Html([])
 	command = |line| Doc.code(Sh, "", line)
 
-	## The oldest Roc release Joy works with.
-	roc_minimum : Str
-	roc_minimum = "0.1.0-rc1"
+	## The newest numbered Roc release the latest Joy release passed on. The
+	## Test latest Joy release workflow moves it forward.
+	roc_release : Str
+	roc_release = "0.1.0-rc1"
 
 	## A whole app with the page it is on, for an app whose page matters:
 	## its flags, its stylesheet or its own JavaScript. `file` and `roc` are
