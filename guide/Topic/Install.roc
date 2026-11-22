@@ -1,4 +1,4 @@
-import html.Html exposing [a, code, h1, h2, p, text]
+import html.Html exposing [a, code, h1, h2, li, p, text, ul]
 import html.Attribute exposing [class, href]
 import /Doc
 
@@ -18,36 +18,49 @@ Install := [].{
 		p(
 			[],
 			[
-				text("Install Roc ${Doc.roc_release} or later. You'll get that from the official "),
+				text("Use the "),
 				a([href("https://www.roc-lang.org/install")], [text("roc-lang.org installation guide")]),
+				text(" and add Roc to your "),
+				code([], [text("PATH")]),
 				text("."),
 			],
 		),
-		p([], [text("Check that you've got the correct version:")]),
+		p([], [text("Check that you've got Roc ${Doc.roc_release} or later:")]),
 		Doc.code(
 			Sh,
 			"",
 			\\roc version
 		),
 		h2([], [text("Start a project")]),
-		Doc.command("roc run ${Doc.cli_url} init my-app"),
+		p([], [text("Run the starter which guides you through starting a project:")]),
+		Doc.command("roc run ${Doc.cli_url} init"),
 		p(
 			[],
 			[
-				text("This runs Joy's command line straight from the release, which takes a few seconds the first time. You get to pick a template to start from."),
+				text("You then have a directory with your new project and a command called "),
+				code([], [text("./joy")]),
+				text(" inside. From now on you can use "),
+				code([], [text("./joy")]),
+				text(" to run, build, and upgrade your project to new Joy releases!"),
 			],
 		),
 		p(
 			[],
 			[
-				text("You now have a folder called "),
-				code([], [text("my-app")]),
-				text(" with an app in it, and a command called "),
-				code([], [text("./joy")]),
-				text(". That's the one you use from now on. See your new project's README for an explanation of what files are in it."),
+				text("Have a look at the "),
+				code([], [text("README.md")]),
+				text(" in your new project to learn more about it."),
 			],
 		),
 		h2([], [text("Run it")]),
+		p(
+			[],
+			[
+				text("Step into your project and use "),
+				code([], [text("./joy dev")]),
+				text(" to run and serve it:"),
+			],
+		),
 		Doc.code(
 			Sh,
 			"",
@@ -65,9 +78,9 @@ Install := [].{
 		p(
 			[],
 			[
-				text("Now change some text in its "),
+				text("Now try the hot-reloading by changing some text in a "),
 				code([], [text("view")]),
-				text(" and save. The page takes the change as you save, no refresh needed :) Make a mistake and the compiler's report shows up over the page until you fix it."),
+				text(" and see the change on the page right away :) Likewise if you make a mistake you'll see the compilation error in your browser, and it goes away when you fix it."),
 			],
 		),
 		h2([], [text("Ship it")]),
@@ -76,15 +89,25 @@ Install := [].{
 			"",
 			\\./joy build
 		),
-		p(
+		p([], [text("That writes everything you deploy into "), code([], [text("dist/")]), text(":")]),
+		ul(
 			[],
 			[
-				text("That writes everything you deploy into "),
-				code([], [text("dist/")]),
-				text(". There's more about both commands in "),
-				code([], [text("./joy --help")]),
-				text("."),
+				li([], [text("Your app, compiled to WebAssembly, and the JavaScript files Joy needs to run it.")]),
+				li([], [text("Your files in "), code([], [text("public/")]), text(", as they are.")]),
+				li(
+					[],
+					[
+						text("Your files in "),
+						code([], [text("assets/")]),
+						text(", with a hash in each name so browsers can cache them for good and still get the new version after a deploy. The build updates the links in your "),
+						code([], [text("index.html")]),
+						text(" and stylesheets to match."),
+					],
+				),
+				li([], [text("Your server, if your project has one. More about this in Joy 0.36.0 ;)")]),
 			],
 		),
+		p([], [text("There's more about both commands in "), code([], [text("./joy --help")]), text(".")]),
 	]
 }
