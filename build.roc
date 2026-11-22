@@ -258,12 +258,30 @@ prepare_hot_platform! = || {
 # How many apps build at once. A build is mostly one thread of roc and LLVM.
 at_a_time = 12
 
+# The platform an app names, the way roc's `--replace-dep` wants it: a URL
+# as written, which is what the apps name once CI points them at a bundle,
+# and this checkout's platform otherwise.
+declared_platform : Str, Str -> Str
+declared_platform = |source, here|
+	match source.split_first("platform \"") {
+		Ok({ after, .. }) =>
+			match after.split_first("\"") {
+				Ok({ before, .. }) if before.starts_with("http") => before
+				_ => "${here}/platform/main.roc"
+			}
+
+		Err(_) => "${here}/platform/main.roc"
+	}
+
+expect declared_platform("app [main] { pf: platform \"../../platform/main.roc\" }", "/j") == "/j/platform/main.roc"
+expect declared_platform("app [main] { pf: platform \"http://127.0.0.1:8788/x.tar.zst\" }", "/j") == "http://127.0.0.1:8788/x.tar.zst"
+
 # Start roc on one app, for finish_build! to wait for.
 start_build! = |path, opt, hot| {
 	src = Path.display(path)
 	out = wasm_path(path, opt, hot)
 	here = Path.display(Env.cwd!()?)
-	swap_platform = if (hot) ["--replace-dep", "${here}/platform/main.roc", "${here}/${hot_platform}/main.roc"] else []
+	swap_platform = if (hot) ["--replace-dep", declared_platform(path.read_utf8!()?, here), "${here}/${hot_platform}/main.roc"] else []
 
 	## Memory size
 	# Roc sizes the memory itself when no `--wasm-memory` is given: roughly
