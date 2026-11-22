@@ -228,7 +228,8 @@ hand_off! = |target| {
 				Ok(output) => Str.from_utf8_lossy(output.stdout_bytes.concat(output.stderr_bytes))
 				Err(err) => Str.inspect(err)
 			}
-		needs = if (target.roc_nightly.is_empty()) "" else "\nJoy ${target.tag} is tested with roc ${target.roc_nightly}."
+		needed = roc_needed(target)
+		needs = if (needed.is_empty()) "" else "\n${needed}"
 		_ = Path.utf8(dir).delete_all!()
 		return Build.fail!("Could not build ./joy for Joy ${target.tag}, so nothing changed. roc said:\n${said}${needs}")
 	}
@@ -304,8 +305,9 @@ apply! = |found, current, target, releases, repo| {
 		}
 	}
 	Stdout.line!("")?
-	if !target.roc_nightly.is_empty() {
-		Stdout.line!("Joy ${target.tag} is tested with roc ${target.roc_nightly}.")?
+	needed = roc_needed(target)
+	if !needed.is_empty() {
+		Stdout.line!(needed)?
 	}
 	match Releases.crossed(current, target.tag, releases) {
 		[] => Stdout.line!("Notes: ${Releases.notes_url(repo, target.tag)}")
@@ -313,6 +315,18 @@ apply! = |found, current, target, releases, repo| {
 		[first, .., last] => Stdout.line!("Run ./joy dev to see what needs changing. Read the notes from ${first} to ${last}: https://github.com/${repo}/releases")
 	}
 }
+
+## What a release says about the Roc it needs, empty when its notes say
+## nothing. Releases from before Roc made releases name a nightly.
+roc_needed : Releases.Entry -> Str
+roc_needed = |target|
+	if !target.roc_minimum.is_empty() {
+		"Joy ${target.tag} needs Roc ${target.roc_minimum} or later."
+	} else if !target.roc_nightly.is_empty() {
+		"Joy ${target.tag} is tested with roc ${target.roc_nightly}."
+	} else {
+		""
+	}
 
 ## What moved in `file`: Joy's platform and joy-html, from the releases it
 ## named to the ones of `target`.
@@ -492,7 +506,7 @@ old_html = "https://github.com/niclas-ahden/joy-html/releases/download/0.18.0/Ol
 
 carousel = "https://github.com/niclas-ahden/joy-carousel/releases/download/0.3.0/Car.tar.zst"
 
-target_entry = { tag: "0.36.1", date: "", platform_url: "https://github.com/niclas-ahden/joy/releases/download/0.36.1/New.tar.zst", cli_url: "c", html_url: "https://github.com/niclas-ahden/joy-html/releases/download/0.19.0/NewHtml.tar.zst", roc_nightly: "" }
+target_entry = { tag: "0.36.1", date: "", platform_url: "https://github.com/niclas-ahden/joy/releases/download/0.36.1/New.tar.zst", cli_url: "c", html_url: "https://github.com/niclas-ahden/joy-html/releases/download/0.19.0/NewHtml.tar.zst", roc_nightly: "", roc_minimum: "" }
 
 app_file = |pf, html| "#!/usr/bin/env roc\n# My app\napp [main] {\n\tpf: platform \"${pf}\",\n\thtml: \"${html}\",\n\tcar: \"${carousel}\",\n}\n\nimport html.Html\n\nlink = \"${pf}\"\n"
 
@@ -522,3 +536,7 @@ expect {
 	Prompt.listing(list(offered, "niclas-ahden/joy"))
 		== "  0.30.4  Fixes only  https://github.com/niclas-ahden/joy/releases/tag/0.30.4\n  0.31.2  Next step   https://github.com/niclas-ahden/joy/releases/tag/0.31.0\n  ... 2 more, 0.32 to 0.44\n  0.45.0  Latest      https://github.com/niclas-ahden/joy/releases/tag/0.45.0"
 }
+
+expect roc_needed({ ..target_entry, roc_minimum: "0.1.0-rc1" }) == "Joy 0.36.1 needs Roc 0.1.0-rc1 or later."
+expect roc_needed({ ..target_entry, roc_nightly: "nightly-2026-11-01-abc1234" }) == "Joy 0.36.1 is tested with roc nightly-2026-11-01-abc1234."
+expect roc_needed(target_entry) == ""

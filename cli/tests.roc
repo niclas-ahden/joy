@@ -2643,7 +2643,9 @@ upgrade_project! = |ctx, tag| {
 	tags = ["0.45.0", "0.44.1", "0.44.0", "0.40.0", "0.37.0", "0.36.1", "0.36.0", "0.36.0-rc2", "0.35.2", "0.35.1", "0.35.0"]
 	entries = tags.map(
 		|t| {
-			"{\"tag\":\"${t}\",\"date\":\"\",\"platform_url\":\"${joy_release(t)}\",\"cli_url\":\"${ctx.joy_root}/cli/main.roc\",\"html_url\":\"${html_release("0.19.0")}\",\"roc_nightly\":\"nightly-2026-11-01-abc1234\",\"added_later\":\"\"}"
+			# Releases from before Roc made releases name a nightly instead.
+			(nightly, minimum) = if (t.starts_with("0.35.")) ("nightly-2026-11-01-abc1234", "") else ("", "0.1.0-rc1")
+			"{\"tag\":\"${t}\",\"date\":\"\",\"platform_url\":\"${joy_release(t)}\",\"cli_url\":\"${ctx.joy_root}/cli/main.roc\",\"html_url\":\"${html_release("0.19.0")}\",\"roc_nightly\":\"${nightly}\",\"roc_minimum\":\"${minimum}\",\"added_later\":\"\"}"
 		},
 	)
 	write!(ctx, "versions.json", "{\"schema\":1,\"releases\":[${Str.join_with(entries, ",")}]}")?
@@ -2705,7 +2707,7 @@ upgrade_moves! = |ctx| {
 	)?
 	contains(out, "  joy-carousel 0.3.0          client/app.roc\n")?
 	contains(out, "  joy-cli-platform 0.1.0-rc4  server/main.roc\n")?
-	contains(out, "Joy 0.44.1 is tested with roc nightly-2026-11-01-abc1234.")?
+	contains(out, "Joy 0.44.1 needs Roc 0.1.0-rc1 or later.")?
 	contains(out, "Run ./joy dev to see what needs changing. Read the notes from 0.36.0 to 0.44.0: https://github.com/niclas-ahden/joy/releases")?
 	app_file = read!(ctx, "client/app.roc")?
 	contains(app_file, "pf: platform \"${joy_release("0.44.1")}\"")?
@@ -2739,7 +2741,7 @@ upgrade_hands_off! = |ctx| {
 	write!(ctx, "versions.json", read!(ctx, "versions.json")?.replace_each("${ctx.joy_root}/cli/main.roc", "${ctx.dir}/missing/main.roc"))?
 	failed = joy_with!(ctx, ["upgrade", "0.36.1"], 1, env)?
 	contains(failed, "Could not build ./joy for Joy 0.36.1, so nothing changed.")?
-	contains(failed, "Joy 0.36.1 is tested with roc nightly-2026-11-01-abc1234.")?
+	contains(failed, "Joy 0.36.1 needs Roc 0.1.0-rc1 or later.")?
 	contains(read!(ctx, "client/app.roc")?, joy_release("0.35.2"))
 }
 

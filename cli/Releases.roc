@@ -14,7 +14,7 @@ Releases :: [].{
 
 	## One release as versions.json lists it. A field the release has no
 	## value for is empty.
-	Entry : { tag : Str, date : Str, platform_url : Str, cli_url : Str, html_url : Str, roc_nightly : Str }
+	Entry : { tag : Str, date : Str, platform_url : Str, cli_url : Str, html_url : Str, roc_nightly : Str, roc_minimum : Str }
 
 	## A release ./joy upgrade can move a project to, what kind of step it
 	## is, and the release whose notes describe the step: for a new line of
@@ -309,6 +309,7 @@ entry = |tag| {
 	cli_url: "https://github.com/niclas-ahden/joy/releases/download/${tag}/C.tar.zst",
 	html_url: "",
 	roc_nightly: "",
+	roc_minimum: "",
 }
 
 many = ["0.45.0", "0.44.1", "0.44.0", "0.40.0", "0.36.1", "0.36.0", "0.35.2", "0.35.1", "0.35.0", "0.35.0-rc9"].map(entry)
