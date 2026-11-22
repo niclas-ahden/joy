@@ -111,13 +111,13 @@ $ nix develop # Oh, lord, have mercy! This is great!
 
 If you don't want to use Nix then please install:
 
-* `roc` built from source at the commit `flake.nix` pins in `roc-src.url`. The latest release is tested with [`roc nightly-2026-11-18-a520eed`](https://github.com/roc-lang/nightlies/releases/tag/nightly-2026-11-18-a520eed), and main can need a newer Roc than that.
+* `roc` built from source at the commit `flake.nix` pins in `roc-src.url`.
 * `rustc` (v1.94 + `wasm32-unknown-unknown`)
 * `node` (v22)
 * `watchexec`
 * `playwright` with its browsers, for the browser E2E suite (`npm install -g playwright && playwright install chromium firefox webkit`)
 
-That route is also the Windows one (Nix does not run there). The scripts in the repo root are Roc programs: on Linux and macOS their shebang runs them (`./tests.roc --opt=speed`), on Windows hand them to roc (`roc ./tests.roc --opt=speed`), which works everywhere.
+The scripts in the repo root are Roc programs: on Linux and macOS their shebang runs them (`./tests.roc --opt=speed`), on Windows hand them to roc (`roc ./tests.roc --opt=speed`), which works everywhere.
 
 ### Starting a project from your clone
 
