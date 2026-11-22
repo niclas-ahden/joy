@@ -38,7 +38,7 @@ main! = |_args| {
 
 	# So does a URL that still names the page, as a place on the page does.
 	_ = page.evaluate!("(location.hash = 'top', 'there')")?
-	_ = page.evaluate!("(history.back(), 'back')")?
+	page.go_back!()?
 	HotDev.same!(page.evaluate!("location.pathname + location.hash")?, "/")?
 	HotDev.same!(page.evaluate!(count)?, "2")?
 
