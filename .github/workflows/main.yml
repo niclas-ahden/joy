@@ -55,11 +55,18 @@ jobs:
         run: nix build .#roc --no-link --print-out-paths
 
       # Push the whole devShell closure too, or `nix develop` still compiles
-      # playwright, rust and friends on a cold cache.
+      # playwright, rust and friends on a cold cache. A repository without
+      # the write token (a fork, or the staging repository) only pulls.
       - name: Build and cache the devShell
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
         run: |
           nix develop --profile .cachix-profile --command true
-          cachix push niclas-ahden .cachix-profile
+          if [ -n "$CACHIX_AUTH_TOKEN" ]; then
+            cachix push niclas-ahden .cachix-profile
+          else
+            echo "No CACHIX_AUTH_TOKEN, so nothing is pushed."
+          fi
 
   # The same legs a pull request had to pass, re-run on the merge result.
   required:
