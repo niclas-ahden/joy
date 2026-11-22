@@ -1,8 +1,10 @@
 import pf.Cmd
 import pf.Env
+import pf.Monotonic
 import pf.OsStr
 import pf.Path
 import pf.Sleep
+import pf.Stderr
 import Browser
 
 ## Shared plumbing for the browser tests of hot reloading, which run ./joy dev on
@@ -49,8 +51,9 @@ HotDev :: [].{
 	## open a browser.
 	run! = |dir, args, port| {
 		dev = shell("cd ${dir} && exec ../joy-cli dev --port ${port} ${args} > ${dev_log(dir)} 2>&1").spawn_leashed!()?
+		watchdog = watchdog!()?
 		{ browser, page } = Browser.launch!()?
-		Ok({ dir, dev, browser, page, url: "http://localhost:${port}" })
+		Ok({ dir, dev, watchdog, browser, page, url: "http://localhost:${port}" })
 	}
 
 	## Run ./joy dev on the project at `dir` and open a browser, for a project whose
@@ -58,12 +61,15 @@ HotDev :: [].{
 	## rest of its environment, as `NAME=value` words.
 	serve! = |dir, port, env| {
 		dev = shell("cd ${dir} && PORT=${port} ${env} exec ../joy-cli dev > ${dev_log(dir)} 2>&1").spawn_leashed!()?
+		watchdog = watchdog!()?
 		{ browser, page } = Browser.launch!()?
-		Ok({ dir, dev, browser, page, url: "http://127.0.0.1:${port}" })
+		Ok({ dir, dev, watchdog, browser, page, url: "http://127.0.0.1:${port}" })
 	}
 
 	## Close the browser and ./joy dev.
 	stop! = |started| {
+		note!("stop")?
+		started.watchdog.close!() ?? {}
 		started.browser.close!()?
 		started.dev.close!() ?? {}
 		Ok({})
@@ -71,6 +77,7 @@ HotDev :: [].{
 
 	## Replace `from` in a file, which ./joy dev then notices.
 	edit! = |file, from, to| {
+		note!("edit ${file}: ${from} -> ${to}")?
 		text = Path.utf8(file).read_utf8!()?
 		if !text.contains(from) {
 			return Err(NothingToEdit({ file, from }))
@@ -80,6 +87,8 @@ HotDev :: [].{
 
 	## Go to `url` once `ready` is on the page there. The first builds take a while.
 	open! = |page, url, ready| {
+		note!("open ${url} until ${ready} is there")?
+		start = Monotonic.now!()
 		var $left = patience
 		while $left > 0 {
 			match page.navigate!(url) {
@@ -89,7 +98,7 @@ HotDev :: [].{
 					var $looks = 15
 					while $looks > 0 and $left > 0 {
 						if answers!(page, "String(document.querySelector('${ready}') !== null)", "true") {
-							return Ok({})
+							return done!(start)
 						}
 						Sleep.millis!(200)?
 						$looks = $looks - 1
@@ -108,10 +117,12 @@ HotDev :: [].{
 
 	## Wait for an element to hold `text`, on a page with its apps mounted.
 	shows! = |page, selector, text| {
+		note!("wait for ${selector} to say ${text}")?
+		start = Monotonic.now!()
 		var $left = patience
 		while $left > 0 {
 			if answers!(page, "String(document.querySelector('${selector}')?.textContent)", text) {
-				return Ok({})
+				return done!(start)
 			}
 			Sleep.millis!(200)?
 			$left = $left - 1
@@ -121,10 +132,12 @@ HotDev :: [].{
 
 	## Wait for roc's report over the page to say `text`.
 	reports! = |page, text| {
+		note!("wait for the report to say ${text}")?
+		start = Monotonic.now!()
 		var $left = patience
 		while $left > 0 {
 			if answers!(page, "String(document.querySelector('joy-build-report')?.shadowRoot.querySelector('pre').textContent.includes('${text}'))", "true") {
-				return Ok({})
+				return done!(start)
 			}
 			Sleep.millis!(200)?
 			$left = $left - 1
@@ -134,10 +147,12 @@ HotDev :: [].{
 
 	## Wait until the report is gone.
 	no_report! = |page| {
+		note!("wait for the report to go")?
+		start = Monotonic.now!()
 		var $left = patience
 		while $left > 0 {
 			if answers!(page, "String(document.querySelector('joy-build-report') === null)", "true") {
-				return Ok({})
+				return done!(start)
 			}
 			Sleep.millis!(200)?
 			$left = $left - 1
@@ -147,10 +162,12 @@ HotDev :: [].{
 
 	## Wait for the page to take a stylesheet's new color.
 	styled! = |page, color| {
+		note!("wait for the color ${color}")?
+		start = Monotonic.now!()
 		var $left = patience
 		while $left > 0 {
 			if answers!(page, "getComputedStyle(document.body).color", color) {
-				return Ok({})
+				return done!(start)
 			}
 			Sleep.millis!(200)?
 			$left = $left - 1
@@ -169,10 +186,12 @@ HotDev :: [].{
 
 	## Wait for a page load, which clears the mark.
 	reloaded! = |page| {
+		note!("wait for the page to reload")?
+		start = Monotonic.now!()
 		var $left = patience
 		while $left > 0 {
 			if answers!(page, "String(window.samePage)", "undefined") {
-				return Ok({})
+				return done!(start)
 			}
 			Sleep.millis!(200)?
 			$left = $left - 1
@@ -216,3 +235,24 @@ answers! = |page, expression, want| {
 		Err(_) => False
 	}
 }
+
+## Print a step of the test, which e2e.roc shows beside the test's result. A test
+## that hangs then shows the step it hung in.
+note! = |text| Stderr.line!("  ${text}")
+
+## Note how long a wait took.
+done! = |start| {
+	note!("  took ${start.elapsed!().to_str()}")?
+	Ok({})
+}
+
+## A process that prints the busiest processes on Linux after 105 seconds, shortly
+## before e2e.roc gives up on a test at 120. A page stuck in a loop shows as a
+## browser process at full CPU, one that waits for something as an idle one.
+watchdog! = || shell(
+	\\[ "$(uname)" = Linux ] || exec sleep 1000
+	\\sleep 105 > /dev/null 2>&1
+	\\echo "  still running after 105 s, the busiest processes:" >&2
+	\\top -b -c -w 220 -n 2 -d 1 | awk '/^top -/ { n++ } n == 2' | head -20 >&2
+	\\exec sleep 1000
+).spawn_leashed!()
