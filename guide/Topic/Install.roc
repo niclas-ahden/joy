@@ -18,11 +18,12 @@ Install := [].{
 		p(
 			[],
 			[
-				text("Joy needs Roc ${Doc.roc_release} or later. Install Roc the way "),
-				a([href("https://www.roc-lang.org/install")], [text("roc-lang.org")]),
-				text(" shows, then check which version you have:"),
+				text("Install Roc ${Doc.roc_release} or later. You'll get that from the official "),
+				a([href("https://www.roc-lang.org/install")], [text("roc-lang.org installation guide")]),
+				text("."),
 			],
 		),
+		p([], [text("Check that you've got the correct version:")]),
 		Doc.code(
 			Sh,
 			"",
