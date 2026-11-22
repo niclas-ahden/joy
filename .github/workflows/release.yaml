@@ -12,13 +12,10 @@ name: Release
 #    docs and notes attached. A human presses Publish. Drafting before
 #    the bundle is tested is deliberate: the draft is what the rest of the run
 #    tests, so it has to exist first, and nothing is public until Publish.
-# 3. The advisory board: every nightly worth asking about (the newest, and the
-#    one the previous release recommends, dropped when they are the same), on
-#    every system, in every browser, at every opt level, from this checkout
-#    (`nightly*`, `recommended*`) and from the drafted bundle the way a
+# 3. The advisory board: the Roc release the guide recommends and the newest
+#    Roc nightly, on every system, in every browser, at every opt level,
+#    from this checkout (`downloaded*`) and from the drafted bundle the way a
 #    consumer installs it (`bundle*`). Speed decides, dev and size inform.
-# 4. `recommend` names the newest nightly in the notes if it passed at speed
-#    both from scratch (`nightly`) and on the bundle (`bundle`).
 #
 # Only `required` blocks the draft. Read the board, then decide: publish, or
 # throw the run away by deleting its draft.
@@ -69,17 +66,13 @@ jobs:
       opts: '["dev", "size"]'
       e2e: all
 
-  # The nightlies worth asking about. `recommended` is the one the previous
-  # release's notes name (the README's when there is no release yet), and
-  # it resolves empty when it is the newest one already, so no leg tests the
-  # same compiler twice.
-  resolve-nightly:
-    name: Resolve the latest and the recommended Roc nightly
+  resolve-roc:
+    name: Resolve the recommended Roc release and the latest nightly
     needs: guard
     runs-on: ubuntu-24.04
     outputs:
+      release: ${{ steps.latest.outputs.release }}
       tag: ${{ steps.latest.outputs.tag }}
-      recommended: ${{ steps.latest.outputs.recommended }}
     steps:
       - uses: actions/checkout@v4
       - id: latest
@@ -89,60 +82,35 @@ jobs:
           set -euo pipefail
           tag=$(gh release view --repo roc-lang/nightlies --json tagName -q .tagName)
           [ -n "$tag" ] || { echo "error: could not resolve the latest roc nightly" >&2; exit 1; }
-          # shellcheck disable=SC2016  # the backticks are markdown, not a subshell
-          recommended=$(gh release view --repo "$GITHUB_REPOSITORY" --json body -q .body 2>/dev/null \
-            | sed -n 's|.*Compatible with: \[`roc \(nightly-[^`]*\)`\].*|\1|p' | head -1 || true)
-          [ -n "$recommended" ] || recommended=$(sed -n '/latest release is tested with/s|.*/roc-lang/nightlies/releases/tag/\(nightly-[^)]*\)).*|\1|p' README.md | head -1)
-          [ "$recommended" != "$tag" ] || recommended=
-          {
-            echo "tag=$tag"
-            echo "recommended=$recommended"
-          } >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "latest nightly is $tag"
-          [ -z "$recommended" ] || echo "the previous release recommends $recommended"
 
-  # From-scratch builds on the nightlies, which is what a contributor
-  # following the README does. They cannot stop the draft. The newest one at
-  # speed decides what `recommend` may claim in the notes.
-  nightly:
-    needs: [guard, resolve-nightly]
+          version=$(sed -n 's/^[[:space:]]*roc_release = "\(.*\)"$/\1/p' guide/Doc.roc | head -1)
+          [ -n "$version" ] || { echo "error: guide/Doc.roc has no roc_release" >&2; exit 1; }
+          # roc-lang/roc tags 0.1.0-rc1 as 0.1.0_RC1.
+          release=$(gh release list --repo roc-lang/roc --exclude-drafts --limit 50 --json tagName -q '.[].tagName' \
+                      | while read -r t; do [ "$(echo "$t" | tr 'A-Z_' 'a-z-')" != "$version" ] || echo "$t"; done | head -1)
+          [ -n "$release" ] || { echo "error: roc-lang/roc has no published release $version" >&2; exit 1; }
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "the guide recommends Roc $version, tagged $release"
+
+  # From-scratch builds on a downloaded Roc. They cannot stop the draft.
+  downloaded:
+    needs: [guard, resolve-roc]
     uses: ./.github/workflows/suite.yml
     with:
-      roc: '["${{ needs.resolve-nightly.outputs.tag }}"]'
-      label: Latest nightly
+      roc: '["${{ needs.resolve-roc.outputs.release }}", "${{ needs.resolve-roc.outputs.tag }}"]'
+      label: Downloaded Roc
       opts: '["speed"]'
       e2e: all
 
-  # Separate call so a known roc dev-mode bug cannot block `recommend`.
-  nightly-advisory:
-    needs: [guard, resolve-nightly]
+  # Separate call, so a known roc dev-mode bug cannot redden the speed leg.
+  downloaded-advisory:
+    needs: [guard, resolve-roc]
     uses: ./.github/workflows/suite.yml
     with:
-      roc: '["${{ needs.resolve-nightly.outputs.tag }}"]'
-      label: Latest nightly advisory
-      opts: '["dev", "size"]'
-      e2e: all
-
-  # The compiler the previous release told people to install, so the claim
-  # the notes start from is backed by this checkout too. Skipped when it is
-  # the newest nightly, which the legs above already cover.
-  recommended:
-    needs: [guard, resolve-nightly]
-    if: needs.resolve-nightly.outputs.recommended != ''
-    uses: ./.github/workflows/suite.yml
-    with:
-      roc: '["${{ needs.resolve-nightly.outputs.recommended }}"]'
-      label: Recommended nightly
-      opts: '["speed"]'
-      e2e: all
-
-  recommended-advisory:
-    needs: [guard, resolve-nightly]
-    if: needs.resolve-nightly.outputs.recommended != ''
-    uses: ./.github/workflows/suite.yml
-    with:
-      roc: '["${{ needs.resolve-nightly.outputs.recommended }}"]'
-      label: Recommended nightly advisory
+      roc: '["${{ needs.resolve-roc.outputs.release }}", "${{ needs.resolve-roc.outputs.tag }}"]'
+      label: Downloaded Roc advisory
       opts: '["dev", "size"]'
       e2e: all
 
@@ -284,13 +252,10 @@ jobs:
             echo "error: no joy-html URL in platform/main.roc" >&2
             exit 1
           }
-          # Start from the nightly the README says the latest release is
-          # tested with, which is the last one known to pass. The `recommend`
-          # job moves it forward if the newest nightly passed too. If it did
-          # not, this is the right claim to keep.
-          nightly=$(sed -n '/latest release is tested with/s|.*/roc-lang/nightlies/releases/tag/\(nightly-[^)]*\)).*|\1|p' README.md | head -1)
-          [ -n "$nightly" ] || {
-            echo "error: README.md has no line saying which roc nightly the latest release is tested with" >&2
+          # The Roc release the guide recommends.
+          minimum=$(sed -n 's/^[[:space:]]*roc_release = "\(.*\)"$/\1/p' guide/Doc.roc | head -1)
+          [ -n "$minimum" ] || {
+            echo "error: guide/Doc.roc has no roc_release" >&2
             exit 1
           }
 
@@ -303,11 +268,7 @@ jobs:
               echo ""
               echo "## Roc compiler version"
               echo ""
-              echo "Compatible with: [\`roc $nightly\`](https://github.com/roc-lang/nightlies/releases/tag/$nightly)."
-              echo ""
-              echo "Roc is currently a moving target and which version you're using matters a lot. We test the latest Joy release against the latest Roc nightly and update the compatibility here every day."
-              echo ""
-              echo "Oftentimes you'll still be able to use Joy with other Roc versions than what's listed here, but if you run into any issues, please try the Roc version above."
+              echo "Needs Roc $minimum or later. Install it the way [roc-lang.org](https://www.roc-lang.org/install) shows."
             } >> notes.md
             edited=1
           fi
@@ -353,72 +314,31 @@ jobs:
             echo ""
             echo "Before editing the notes or pressing Publish, wait for the rest of this run:"
             echo "the *Drafted bundle* legs build every app against this bundle the way a"
-            echo "consumer's compiler will, and *Name the newest passing nightly* may still"
-            echo "rewrite the notes."
+            echo "consumer's compiler will."
           } >> "$GITHUB_STEP_SUMMARY"
           echo "draft ready: $draft_url"
 
   # The consumer's path. roc downloads, hash-checks and unbundles the drafted
   # bundle, then every app builds and runs against it. The pinned compiler is
   # the one that produced the bundle, so it catches packaging bugs. The
-  # nightly is the one consumers install. Every system, every browser. Speed
-  # decides (`recommend` and whether to publish). dev and size only inform.
+  # release and the nightly are downloaded, as consumers have them. Every system, every
+  # browser. Speed decides whether to publish. dev and size only inform.
   bundle:
-    needs: [draft, resolve-nightly]
+    needs: [draft, resolve-roc]
     uses: ./.github/workflows/suite.yml
     with:
-      roc: '["pinned", "${{ needs.resolve-nightly.outputs.tag }}"]'
+      roc: '["pinned", "${{ needs.resolve-roc.outputs.release }}", "${{ needs.resolve-roc.outputs.tag }}"]'
       label: Drafted bundle
       opts: '["speed"]'
       e2e: all
       bundle-artifact: ${{ needs.draft.outputs.artifact }}
 
   bundle-advisory:
-    needs: [draft, resolve-nightly]
+    needs: [draft, resolve-roc]
     uses: ./.github/workflows/suite.yml
     with:
-      roc: '["pinned", "${{ needs.resolve-nightly.outputs.tag }}"]'
+      roc: '["pinned", "${{ needs.resolve-roc.outputs.release }}", "${{ needs.resolve-roc.outputs.tag }}"]'
       label: Drafted bundle advisory
       opts: '["dev", "size"]'
       e2e: all
       bundle-artifact: ${{ needs.draft.outputs.artifact }}
-  # The same bundle on the compiler the previous release recommends: the
-  # claim the notes start from, tested against the artifact that carries it.
-  bundle-recommended:
-    needs: [draft, resolve-nightly]
-    if: needs.resolve-nightly.outputs.recommended != ''
-    uses: ./.github/workflows/suite.yml
-    with:
-      roc: '["${{ needs.resolve-nightly.outputs.recommended }}"]'
-      label: Drafted bundle, recommended nightly
-      opts: '["speed"]'
-      e2e: all
-      bundle-artifact: ${{ needs.draft.outputs.artifact }}
-  bundle-recommended-advisory:
-    needs: [draft, resolve-nightly]
-    if: needs.resolve-nightly.outputs.recommended != ''
-    uses: ./.github/workflows/suite.yml
-    with:
-      roc: '["${{ needs.resolve-nightly.outputs.recommended }}"]'
-      label: Drafted bundle, recommended nightly advisory
-      opts: '["dev", "size"]'
-      e2e: all
-      bundle-artifact: ${{ needs.draft.outputs.artifact }}
-
-  # The notes start on the README's nightly, the last known good. Move them
-  # to the newest nightly only if it passed from scratch and on the bundle.
-  # Plain `needs` skips this job otherwise. dev and size are deliberately
-  # not in the list.
-  recommend:
-    name: Name the newest passing nightly in the notes
-    needs: [resolve-nightly, nightly, bundle, draft]
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          .github/scripts/name-nightly.sh \
-            "$GITHUB_REF_NAME" "${{ needs.resolve-nightly.outputs.tag }}"

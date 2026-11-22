@@ -15,8 +15,9 @@ on:
       roc:
         description: >
           JSON array of compilers, crossed with `opts` and `os`. Each entry is
-          `pinned` for the compiler in flake.nix, or a nightly tag such as
-          `nightly-2026-08-20-9e3980a`. See .github/actions/setup.
+          `pinned` for the compiler in flake.nix, a nightly tag such as
+          `nightly-2026-08-20-9e3980a` or a roc-lang/roc release tag such as
+          `0.1.0_RC1`. See .github/actions/setup.
         type: string
         required: true
       label:
@@ -33,7 +34,7 @@ on:
       os:
         description: >
           JSON array of runner labels, crossed with `roc` and `opts`. Windows
-          takes the downloaded-nightly route only (Nix does not run there), so
+          takes the downloaded route only (Nix does not run there), so
           a `pinned` compiler gets no Windows leg however this is set.
         type: string
         default: '["ubuntu-24.04", "macos-15", "windows-2025"]'
@@ -176,7 +177,7 @@ jobs:
       # serves its ./joy build from per-worker caddy servers and smoke tests
       # ./joy dev, the full-stack ones run the server ./joy build wrote
       # against a scratch database. Caddy comes from the devShell on pinned
-      # legs and from the setup action on nightly ones.
+      # legs and from the setup action on downloaded ones.
       - name: Drive each example's and template's own suite
         if: inputs.e2e == 'all' || (inputs.e2e == 'linux' && startsWith(matrix.os, 'ubuntu'))
         run: ${{ steps.setup.outputs.prefix }} roc ./examples.roc --browser=all

@@ -86,38 +86,44 @@ jobs:
       opts: '["dev", "size"]'
       e2e: all
 
-  # The nightly the README recommends, as on a pull request (see tests.yml):
-  # the no-Nix route, which is also the Windows one. Speed blocks, the other
-  # opt levels inform.
-  readme-nightly:
-    name: Resolve the nightly named in the README
+  # The Roc release the guide recommends, downloaded, as on a pull request
+  # (see tests.yml): the no-Nix route, which is also the Windows one. Speed
+  # blocks, the other opt levels inform.
+  roc-release:
+    name: Resolve the Roc release the guide recommends
     runs-on: ubuntu-24.04
     outputs:
-      tag: ${{ steps.readme.outputs.tag }}
+      tag: ${{ steps.release.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
-      - id: readme
+      - id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag=$(sed -n 's|.*/roc-lang/nightlies/releases/tag/\(nightly-[^)]*\)).*|\1|p' README.md | head -1)
-          [ -n "$tag" ] || { echo "error: no roc nightly link in README.md" >&2; exit 1; }
+          version=$(sed -n 's/^[[:space:]]*roc_release = "\(.*\)"$/\1/p' guide/Doc.roc | head -1)
+          [ -n "$version" ] || { echo "error: guide/Doc.roc has no roc_release" >&2; exit 1; }
+          # roc-lang/roc tags 0.1.0-rc1 as 0.1.0_RC1.
+          tag=$(gh release list --repo roc-lang/roc --exclude-drafts --limit 50 --json tagName -q '.[].tagName' \
+                  | while read -r t; do [ "$(echo "$t" | tr 'A-Z_' 'a-z-')" != "$version" ] || echo "$t"; done | head -1)
+          [ -n "$tag" ] || { echo "error: roc-lang/roc has no published release $version" >&2; exit 1; }
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "README names $tag"
+          echo "the guide recommends Roc $version, tagged $tag"
 
-  nightly:
-    needs: readme-nightly
+  roc-release-speed:
+    needs: roc-release
     uses: ./.github/workflows/suite.yml
     with:
-      roc: '["${{ needs.readme-nightly.outputs.tag }}"]'
-      label: README nightly
+      roc: '["${{ needs.roc-release.outputs.tag }}"]'
+      label: Roc release
       opts: '["speed"]'
       e2e: all
 
-  nightly-opts:
-    needs: readme-nightly
+  roc-release-opts:
+    needs: roc-release
     uses: ./.github/workflows/suite.yml
     with:
-      roc: '["${{ needs.readme-nightly.outputs.tag }}"]'
-      label: README nightly
+      roc: '["${{ needs.roc-release.outputs.tag }}"]'
+      label: Roc release
       opts: '["dev", "size"]'
       e2e: all

@@ -1,25 +1,25 @@
 name: Set up the Joy toolchain
 description: >
   Put roc, node and rustc on PATH by one of Joy's two routes: the flake's
-  from-source compiler (`nix develop`) or a downloaded nightly (the README's
-  no-Nix route, and the only one on Windows, where Nix does not run). Outputs
+  from-source compiler (`nix develop`) or a downloaded Roc release or nightly
+  (the no-Nix route, and the only one on Windows, where Nix does not run). Outputs
   the command prefix a leg must use, so the same matrix covers both routes.
 
 inputs:
   roc:
     description: >
-      `pinned` for the compiler in flake.nix, or a nightly tag such as
+      `pinned` for the compiler in flake.nix, a nightly tag such as
       `nightly-2026-08-20-9e3980a` to download that release from
-      roc-lang/nightlies instead.
+      roc-lang/nightlies, or a release tag of roc-lang/roc such as `0.1.0_RC1`.
     required: true
   github-token:
-    description: Token for the API call that resolves a nightly's asset URL.
+    description: Token for the API call that resolves a download.s asset URL.
     required: false
     default: ''
   playwright:
     description: >
       Also provide the `playwright` CLI and its Chromium, Firefox and WebKit.
-      The devShell has all of them, so this only acts on the nightly route.
+      The devShell has all of them, so this only acts on the downloaded route.
     required: false
     default: 'false'
 
@@ -27,7 +27,7 @@ outputs:
   prefix:
     description: >
       Command prefix that puts the toolchain on PATH: `nix develop -c` for the
-      pinned compiler, empty for a downloaded nightly.
+      pinned compiler, empty for a downloaded one.
     value: ${{ steps.prefix.outputs.prefix }}
   version:
     description: The `roc --version` of whatever ended up on PATH.
@@ -68,7 +68,7 @@ runs:
       shell: bash
       run: nix develop --command true
 
-    # --------------------------------------------------------------- nightly
+    # ------------------------------------------------------------ downloaded
     - name: Install node
       if: inputs.roc != 'pinned'
       uses: actions/setup-node@v4
@@ -84,7 +84,7 @@ runs:
 
     # One asset per system. An unknown system fails here with a clear
     # message instead of later with "roc: not found".
-    - name: Install the Roc nightly
+    - name: Install the downloaded Roc
       if: inputs.roc != 'pinned'
       shell: bash
       env:
@@ -100,13 +100,17 @@ runs:
           macOS-X64)   asset=macos_x86_64 ;;
           Windows-X64) asset=windows_x86_64 ;;
           *)
-            echo "error: no roc nightly asset for $RUNNER_OS-$RUNNER_ARCH" >&2
+            echo "error: no roc asset for $RUNNER_OS-$RUNNER_ARCH" >&2
             exit 1
             ;;
         esac
 
-        url=$(gh release view "$ROC_TAG" --repo roc-lang/nightlies --json assets \
-                -q ".assets[] | select(.name | test(\"$asset\")) | .url")
+        case "$ROC_TAG" in
+          nightly-*) repo=roc-lang/nightlies ;;
+          *)         repo=roc-lang/roc ;;
+        esac
+        url=$(gh release view "$ROC_TAG" --repo "$repo" --json assets \
+                -q ".assets[] | select((.name | test(\"$asset\")) and (.name | test(\"\\\\.(tar\\\\.gz|zip)$\"))) | .url" | head -1)
         [ -n "$url" ] || {
           echo "error: no $asset asset on $ROC_TAG" >&2
           exit 1
@@ -118,7 +122,7 @@ runs:
         dest="${RUNNER_TEMP//\\//}/roc"
         mkdir -p "$dest"
         if [ "$RUNNER_OS" = Windows ]; then
-          # The Windows nightly is a zip, and a runner's bash can resolve
+          # The Windows download is a zip, and a runner's bash can resolve
           # `tar` to MSYS's, which cannot read one.
           curl -sSL -o roc_nightly.zip "$url"
           powershell -NoProfile -NonInteractive -Command \

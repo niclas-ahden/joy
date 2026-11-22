@@ -6,9 +6,7 @@ name: Refresh versions.json
 # .github/scripts/versions.roc), so this runs whenever they change:
 #
 # - a release published, deleted or edited here, by hand
-# - every morning from test-nightly-roc.yml, which may have moved the
-#   recommended nightly. Its notes edit is made with GITHUB_TOKEN, and events
-#   from GITHUB_TOKEN start no workflow, so `edited` never fires for it.
+# - every morning from test-nightly-roc.yml
 #
 # A deleted release drops out on the next run, and if it was the latest one,
 # the release that is latest now gets a fresh file. Release events run the

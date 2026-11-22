@@ -4,7 +4,7 @@
 #   roc .github/scripts/versions.roc <owner/repo> <output file>
 #
 # To write versions.json: every published release, candidates included, with
-# the URLs a project needs and the Roc nightly it recommends. ./joy upgrade
+# the URLs a project needs and the oldest Roc it works with. ./joy upgrade
 # only moves to a candidate that is named. The file is attached to the
 # latest release, so ./joy reads it from releases/latest/download/versions.json,
 # a plain download, instead of from GitHub's rate-limited API.
@@ -15,10 +15,10 @@
 #
 # The format, newest release first:
 #
-#   { "schema": 1, "releases": [{ "tag", "date", "platform_url", "cli_url", "html_url", "roc_nightly" }] }
+#   { "schema": 1, "releases": [{ "tag", "date", "platform_url", "cli_url", "html_url", "roc_nightly", "roc_minimum" }] }
 #
 # Every field is a string, "" when the release has none (no CLI bundle
-# before ./joy existed, no nightly line in the oldest notes). ./joy reads
+# before ./joy existed, a nightly before Roc made releases). ./joy reads
 # this from releases it was built long before, so fields are only ever
 # added. A change it could not read gets a new file name instead.
 app [main!] {
@@ -75,6 +75,7 @@ entry = |{ tag, date, body, assets }| {
 		cli_url: bundle_url(bundles, "cli"),
 		html_url: joy_html_url(body),
 		roc_nightly: roc_nightly(body),
+		roc_minimum: roc_minimum(body),
 	}
 }
 
@@ -90,12 +91,21 @@ bundle_url = |bundles, label|
 # The joy-html URL from the notes' "Using this release" block.
 joy_html_url = |body| quoted_after(body, "html: \"")
 
-# The nightly the "Compatible with:" line names, the line
-# .github/scripts/name-nightly.sh moves forward.
+# The nightly the "Compatible with:" line of a release from before Roc made
+# releases names.
 roc_nightly = |body| {
 	line = body.split_on("\n").find_first(|l| l.starts_with("Compatible with: [`roc ")) ?? ""
 	match line.split_first("[`roc ") {
 		Ok({ after, .. }) => after.split_first("`").map_ok(|parts| parts.before) ?? ""
+		Err(_) => ""
+	}
+}
+
+# The Roc release the "Needs Roc <version> or later." line names.
+roc_minimum = |body| {
+	line = body.split_on("\n").find_first(|l| l.starts_with("Needs Roc ")) ?? ""
+	match line.split_first("Needs Roc ") {
+		Ok({ after, .. }) => after.split_first(" or later").map_ok(|parts| parts.before) ?? ""
 		Err(_) => ""
 	}
 }
