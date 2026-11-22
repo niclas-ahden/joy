@@ -48,7 +48,7 @@ HotDev :: [].{
 	## Run ./joy dev with `args` on the project at `dir`, a folder of build/<opt>/, and
 	## open a browser.
 	run! = |dir, args, port| {
-		dev = shell("cd ${dir} && exec ../joy-cli dev --port ${port} ${args}").stdout(Null).stderr(Null).spawn_leashed!()?
+		dev = shell("cd ${dir} && exec ../joy-cli dev --port ${port} ${args} > ${dev_log(dir)} 2>&1").spawn_leashed!()?
 		{ browser, page } = Browser.launch!()?
 		Ok({ dir, dev, browser, page, url: "http://localhost:${port}" })
 	}
@@ -57,7 +57,7 @@ HotDev :: [].{
 	## own server serves its pages: the server listens on `port`, and `env` is the
 	## rest of its environment, as `NAME=value` words.
 	serve! = |dir, port, env| {
-		dev = shell("cd ${dir} && PORT=${port} ${env} exec ../joy-cli dev").stdout(Null).stderr(Null).spawn_leashed!()?
+		dev = shell("cd ${dir} && PORT=${port} ${env} exec ../joy-cli dev > ${dev_log(dir)} 2>&1").spawn_leashed!()?
 		{ browser, page } = Browser.launch!()?
 		Ok({ dir, dev, browser, page, url: "http://127.0.0.1:${port}" })
 	}
@@ -192,6 +192,16 @@ patience = 300
 
 ## Run a command line, which sets the working directory for ./joy dev.
 shell = |line| Cmd.new(OsStr.from_str("bash")).args(["-c", line].map(OsStr.from_str))
+
+## Where ./joy dev's output goes, from inside the project at `dir`: beside the
+## project, so the watch does not see it, and named after the engine, which
+## bash fills in, so CI can print it after a test fails.
+dev_log : Str -> Str
+dev_log = |dir|
+	match dir.split_last("/") {
+		Ok({ after, .. }) => "../${after}.$JOY_BROWSER.dev.log"
+		Err(_) => "../${dir}.$JOY_BROWSER.dev.log"
+	}
 
 ## Whether the page, with its apps mounted, gives `want` for an expression. A page
 ## that is reloading gives nothing.
