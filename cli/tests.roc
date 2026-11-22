@@ -205,6 +205,7 @@ tests = [
 	("dev rebuilds every bundle a shared module reaches, and only those", dev_shared_module!),
 	("dev tells a page that opened early when the first builds land", dev_early_page!),
 	("dev survives a save while builds wait for their turn", dev_quick_saves!),
+	("dev stops on Ctrl-C while the first builds run", dev_stopped_early!),
 	("dev refuses to run twice in one project", dev_twice!),
 	("dev keeps roc's report on the page when an older build lands after it", dev_broken_after_valid!),
 	("dev builds a new bundle and forgets a removed one", dev_new_and_removed_bundles!),
@@ -1335,6 +1336,16 @@ dev_quick_saves! = |ctx| {
 		_ = Sleep.millis!(1_500)
 	}
 	out = stop_dev!($dev)?
+	lacks(out, "Program exited")?
+	contains(out, "Stopped")
+}
+
+## Ctrl-C before the first builds are done stops ./joy dev as it does later.
+dev_stopped_early! : Ctx => Try({}, [Failed(Str)])
+dev_stopped_early! = |ctx| {
+	bundle!(ctx, "client/app.roc", "app")?
+	dev = start_dev!(ctx, ["--port", "0"], [])?
+	out = stop_dev!(wait_for!(dev, "Building", 1)?)?
 	lacks(out, "Program exited")?
 	contains(out, "Stopped")
 }

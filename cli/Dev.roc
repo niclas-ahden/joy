@@ -120,8 +120,18 @@ Dev :: [].{
 	## Run with `options`, and `roc` given to every roc build as it is.
 	run! : Dev.Options, List(Str) => Try({}, _)
 	run! = |options, roc| {
-		jobs = Build.parse_jobs!(Args.given(options.jobs))?
 		Signal.catch!([Interrupt])?
+		match Dev.start!(options, roc) {
+			# Ctrl-C before the first builds are ready.
+			Err(Interrupted) => stopped!()
+			outcome => outcome
+		}
+	}
+
+	## [run!] once Ctrl-C is caught.
+	start! : Dev.Options, List(Str) => Try({}, _)
+	start! = |options, roc| {
+		jobs = Build.parse_jobs!(Args.given(options.jobs))?
 		root = Path.display(Env.cwd!()?)
 
 		{ bundles, .. } = Project.find!()?
@@ -392,33 +402,46 @@ loop! = |initial| {
 	var $state = initial
 	var $stopped = False
 	while !$stopped {
-		busy = !$state.compile.running.is_empty() or !$state.compile.queue.is_empty()
-		timeout = if (busy) Duration.millis(50) else Duration.millis(250)
-		match $state.watch.next!({ timeout: timeout }) {
-			Ok(changes) => {
-				$state = react!($state, changes)?
+		# Ctrl-C interrupts whichever effect runs when it comes, the watch or
+		# one of a build's.
+		match turn!($state) {
+			Ok(next) => {
+				$state = next
 			}
 			Err(Interrupted) => {
 				$stopped = True
 			}
 			Err(err) => return Err(err)
 		}
-		if !$stopped {
-			$state = step_builds!($state)?
-			after_exit = "./joy starts it again after the next build."
-			children = $state.children.map_try!(|child| forward_output!(child, after_exit))?
-			if children.any(|child| child.ended) and !$state.children.any(|child| child.ended) {
-				write_status!("The server exited. ${after_exit}")?
-			}
-			$state = { ..$state, children }
-			$state = { ..$state, watchers: $state.watchers.map_try!(|child| forward_output!(child, "./joy does not start it again."))? }
-			$state = check_server!($state)?
-		}
 	}
+	stopped!()
+}
+
+stopped! : () => Try({}, _)
+stopped! = || {
 	# Acknowledge Ctrl-C, or every effect after it is interrupted too.
 	_ = Signal.poll!()
 	Stdout.line!("Stopped")?
 	Ok({})
+}
+
+## One turn of [loop!]: wait for changes, then move the builds and the
+## servers along.
+turn! : DevState => Try(DevState, _)
+turn! = |state| {
+	busy = !state.compile.running.is_empty() or !state.compile.queue.is_empty()
+	timeout = if (busy) Duration.millis(50) else Duration.millis(250)
+	changes = state.watch.next!({ timeout: timeout })?
+	var $state = react!(state, changes)?
+	$state = step_builds!($state)?
+	after_exit = "./joy starts it again after the next build."
+	children = $state.children.map_try!(|child| forward_output!(child, after_exit))?
+	if children.any(|child| child.ended) and !$state.children.any(|child| child.ended) {
+		write_status!("The server exited. ${after_exit}")?
+	}
+	$state = { ..$state, children }
+	$state = { ..$state, watchers: $state.watchers.map_try!(|child| forward_output!(child, "./joy does not start it again."))? }
+	check_server!($state)
 }
 
 ## Queue the builds the changes reach, and tell pages about changed files in
