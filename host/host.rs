@@ -3036,12 +3036,14 @@ unsafe fn run_update(msg_box: usize) -> u32 {
 /// Render the model an update left and re-sync the subscriptions, or leave
 /// the render for `release_render` while it is held.
 unsafe fn settle() {
-    if HOLD == HOLD_NONE {
-        render_current();
-        sync_subs();
-    } else {
-        HELD = true;
-        if HOLD == HOLD_RENDER {
+    match HOLD {
+        Hold::None => {
+            render_current();
+            sync_subs();
+        }
+        Hold::All => HELD = true,
+        Hold::Render => {
+            HELD = true;
             sync_subs();
         }
     }
@@ -3054,21 +3056,32 @@ unsafe fn settle() {
 // its element the handler of whatever the new view shows there. So the
 // runtime holds the render, runs every update, and renders once. The view
 // tree, and every handler in it, stays as it was until `release_render`.
-const HOLD_NONE: u32 = 0;
-/// The view and the subscriptions wait: the handlers of one DOM event.
-const HOLD_ALL: u32 = 1;
-/// The view waits and the subscriptions follow each update: a replay, whose
-/// next message may come in through a subscription the last one started.
-const HOLD_RENDER: u32 = 2;
+#[derive(Clone, Copy)]
+enum Hold {
+    /// Render after each update.
+    None,
+    /// The view and the subscriptions wait: the handlers of one DOM event.
+    All,
+    /// The view waits and the subscriptions follow each update: a replay,
+    /// whose next message may come in through a subscription the last one
+    /// started.
+    Render,
+}
 
-static mut HOLD: u32 = HOLD_NONE;
+static mut HOLD: Hold = Hold::None;
 static mut HELD: bool = false;
 
 /// Hold the render back from every update until `release_render`: 1 holds
 /// the subscriptions too, 2 lets them follow each update.
 #[no_mangle]
 pub extern "C" fn hold_render(what: u32) {
-    unsafe { HOLD = what };
+    unsafe {
+        HOLD = match what {
+            1 => Hold::All,
+            2 => Hold::Render,
+            _ => Hold::None,
+        }
+    };
 }
 
 /// Render what the updates since `hold_render` came to, once, and re-sync
@@ -3077,7 +3090,7 @@ pub extern "C" fn hold_render(what: u32) {
 #[no_mangle]
 pub extern "C" fn release_render() -> u32 {
     unsafe {
-        HOLD = HOLD_NONE;
+        HOLD = Hold::None;
         if !HELD {
             return 0;
         }
