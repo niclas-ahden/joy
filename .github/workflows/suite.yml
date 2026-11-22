@@ -173,6 +173,18 @@ jobs:
         if: inputs.e2e == 'all' || (inputs.e2e == 'linux' && startsWith(matrix.os, 'ubuntu'))
         run: ${{ steps.setup.outputs.prefix }} roc ./e2e.roc --opt=${{ matrix.opt }} --browser=all
 
+      # What ./joy dev printed in each hot reload test (tests/e2e/HotDev.roc),
+      # so a test that failed or hung shows where ./joy dev was.
+      - name: Show ./joy dev's output of the hot reload tests
+        if: failure()
+        run: |
+          for log in build/${{ matrix.opt }}/*.dev.log; do
+            [ -f "$log" ] || continue
+            echo "::group::$log"
+            cat "$log"
+            echo "::endgroup::"
+          done
+
       # Every directory example and every template of ./joy init is a Joy
       # project, and one with a tests.roc has a suite of its own. examples.roc
       # finds them all, gives each a ./joy built from this checkout, and runs
