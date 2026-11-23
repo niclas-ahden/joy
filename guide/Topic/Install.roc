@@ -41,6 +41,7 @@ Install := [].{
 		h2([], [text("Start a project")]),
 		p([], [text("Run the starter which guides you through starting a project:")]),
 		Doc.command("roc run ${Doc.cli_url} init"),
+		p([], [text("The first time you run it, Roc downloads and compiles the starter before it prints anything. That can take up to half a minute.")]),
 		p(
 			[],
 			[
