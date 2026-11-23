@@ -22,14 +22,21 @@ Install := [].{
 				a([href("https://www.roc-lang.org/install")], [text("roc-lang.org installation guide")]),
 				text(" and add Roc to your "),
 				code([], [text("PATH")]),
-				text("."),
+				text(". Check that it's working:"),
 			],
 		),
-		p([], [text("Check that you've got Roc ${Doc.roc_release} or later:")]),
 		Doc.code(
 			Sh,
 			"",
 			\\roc version
+		),
+		p(
+			[],
+			[
+				text("Joy works with most recent Roc releases and nightlies. With the nightlies you may see a few warnings, and that's OK. Please "),
+				a([href("https://github.com/growthagent/joy/issues")], [text("report an issue")]),
+				text(" if you run into any problems!"),
+			],
 		),
 		h2([], [text("Start a project")]),
 		p([], [text("Run the starter which guides you through starting a project:")]),
