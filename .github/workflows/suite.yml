@@ -38,6 +38,14 @@ on:
           a `pinned` compiler gets no Windows leg however this is set.
         type: string
         default: '["ubuntu-24.04", "macos-15", "windows-2025"]'
+      mac-runner:
+        description: >
+          The runner label that a `macos-15` leg runs on. `roc-mac` is the
+          self-hosted Mac. Callers pass the MAC_RUNNER repository variable,
+          which is unset (GitHub's macos-15) unless that Mac is online. Pull
+          requests never pass it, so they never run on the Mac.
+        type: string
+        default: macos-15
       extras:
         description: >
           Also run the small-buffers leg, which is not an opt x os cell.
@@ -81,7 +89,7 @@ jobs:
   # has no executable bit or shebang support for.
   harness:
     name: ${{ inputs.label }} (${{ matrix.roc }}, ${{ matrix.opt }}, ${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os == 'macos-15' && inputs.mac-runner || matrix.os }}
     defaults:
       run:
         shell: bash
@@ -119,25 +127,30 @@ jobs:
           name: ${{ inputs.bundle-artifact }}
           path: .bundle
 
-      # Background process, survives until the job ends. e2e.roc gets its port
-      # from the operating system, out of the ephemeral range, so it never takes
-      # 8788. node rather than python: every leg has node, and a Windows
-      # runner's python is not reliably `python3`.
+      # Background process, survives until the job ends. It takes a free port,
+      # as jobs on one self-hosted Mac run side by side. node rather than
+      # python: every leg has node, and a Windows runner's python is not
+      # reliably `python3`.
       - name: Serve the drafted bundle and point every app at it
         if: inputs.bundle-artifact != ''
         run: |
           set -euo pipefail
           file=$(cd .bundle && ls *.tar.zst)
-          nohup node .ci/.github/scripts/serve.mjs .bundle 8788 > .bundle-server.log 2>&1 &
+          nohup node .ci/.github/scripts/serve.mjs .bundle 0 > .bundle-server.log 2>&1 &
+          port=
           for _ in $(seq 50); do
-            curl -sfI "http://127.0.0.1:8788/$file" > /dev/null && break
+            port=$(sed -n 's/^port //p' .bundle-server.log)
+            [ -n "$port" ] && curl -sfI "http://127.0.0.1:$port/$file" > /dev/null && break
             sleep 0.2
           done
-          curl -sfI "http://127.0.0.1:8788/$file" > /dev/null || { cat .bundle-server.log; exit 1; }
+          if [ -z "$port" ] || ! curl -sfI "http://127.0.0.1:$port/$file" > /dev/null; then
+            cat .bundle-server.log
+            exit 1
+          fi
           # ./joy dev takes a platform URL for Joy's when it has /joy/ in it,
           # as a release URL does. serve.mjs serves by file name, so any
           # path works.
-          .ci/.github/scripts/point-at-bundle.sh "http://127.0.0.1:8788/joy/$file"
+          .ci/.github/scripts/point-at-bundle.sh "http://127.0.0.1:$port/joy/$file"
 
       - id: setup
         uses: ./.ci/.github/actions/setup

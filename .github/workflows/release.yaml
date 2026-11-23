@@ -50,6 +50,7 @@ jobs:
     needs: guard
     uses: ./.github/workflows/suite.yml
     with:
+      mac-runner: ${{ vars.MAC_RUNNER || 'macos-15' }}
       roc: '["pinned"]'
       label: Release gate
       opts: '["speed"]'
@@ -61,6 +62,7 @@ jobs:
     needs: guard
     uses: ./.github/workflows/suite.yml
     with:
+      mac-runner: ${{ vars.MAC_RUNNER || 'macos-15' }}
       roc: '["pinned"]'
       label: Advisory
       opts: '["dev", "size"]'
@@ -99,6 +101,7 @@ jobs:
     needs: [guard, resolve-roc]
     uses: ./.github/workflows/suite.yml
     with:
+      mac-runner: ${{ vars.MAC_RUNNER || 'macos-15' }}
       roc: '["${{ needs.resolve-roc.outputs.release }}", "${{ needs.resolve-roc.outputs.tag }}"]'
       label: Downloaded Roc
       opts: '["speed"]'
@@ -109,6 +112,7 @@ jobs:
     needs: [guard, resolve-roc]
     uses: ./.github/workflows/suite.yml
     with:
+      mac-runner: ${{ vars.MAC_RUNNER || 'macos-15' }}
       roc: '["${{ needs.resolve-roc.outputs.release }}", "${{ needs.resolve-roc.outputs.tag }}"]'
       label: Downloaded Roc advisory
       opts: '["dev", "size"]'
@@ -327,6 +331,7 @@ jobs:
     needs: [draft, resolve-roc]
     uses: ./.github/workflows/suite.yml
     with:
+      mac-runner: ${{ vars.MAC_RUNNER || 'macos-15' }}
       roc: '["pinned", "${{ needs.resolve-roc.outputs.release }}", "${{ needs.resolve-roc.outputs.tag }}"]'
       label: Drafted bundle
       opts: '["speed"]'
@@ -337,6 +342,7 @@ jobs:
     needs: [draft, resolve-roc]
     uses: ./.github/workflows/suite.yml
     with:
+      mac-runner: ${{ vars.MAC_RUNNER || 'macos-15' }}
       roc: '["pinned", "${{ needs.resolve-roc.outputs.release }}", "${{ needs.resolve-roc.outputs.tag }}"]'
       label: Drafted bundle advisory
       opts: '["dev", "size"]'

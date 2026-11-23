@@ -37,8 +37,15 @@ runs:
   using: composite
   steps:
     # ---------------------------------------------------------------- pinned
+    # A self-hosted runner (roc-mac) has Nix already, and keeps its store
+    # between jobs, so it needs neither the install nor the Actions cache.
+    - name: Use this machine's Nix
+      if: inputs.roc == 'pinned' && runner.environment == 'self-hosted'
+      shell: bash
+      run: '"$GITHUB_ACTION_PATH/../../scripts/machine-nix.sh"'
+
     - name: Install Nix
-      if: inputs.roc == 'pinned'
+      if: inputs.roc == 'pinned' && runner.environment != 'self-hosted'
       uses: cachix/install-nix-action@02a151ada4993995686f9ed4f1be7cfbb229e56f # v31
       with:
         nix_path: nixpkgs=channel:nixos-unstable
@@ -51,7 +58,7 @@ runs:
           extra-trusted-public-keys = niclas-ahden.cachix.org-1:FdGli1vBk0cTuVJV27Tau/JvlbW+Ly3pRwFByyqdke0=
 
     - name: Enable the Actions-backed Nix cache
-      if: inputs.roc == 'pinned'
+      if: inputs.roc == 'pinned' && runner.environment != 'self-hosted'
       uses: DeterminateSystems/magic-nix-cache-action@v13
 
     # --max-jobs 0 forbids local builds, so a cache miss is a warning naming
