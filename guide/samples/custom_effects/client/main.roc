@@ -1,6 +1,6 @@
 app [Model, Msg, init, subscriptions, update, view] {
 	effects: "effects/main.roc",
-	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.18.0/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
 	pf: platform "../../../../platform/main.roc",
 }
 

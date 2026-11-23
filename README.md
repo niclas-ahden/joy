@@ -31,7 +31,7 @@ A client-side counter:
 ```roc
 app [Model, Msg, init, update, view, subscriptions] {
     pf: platform "https://github.com/growthagent/joy/releases/download/0.35.0-rc6/C5LQnNqF9EBuhTKKHTyUTPAUH5wv9Wd82otSSSaVcJb3.tar.zst",
-    html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+    html: "https://github.com/niclas-ahden/joy-html/releases/download/0.18.0/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
 }
 
 import html.Html exposing [div, button, text]

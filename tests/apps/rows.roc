@@ -4,7 +4,7 @@
 # written for. `flip` is a click that changes what the row above it says.
 # The flags can ask for more rows, as a number, for a view of some size.
 app [Model, Msg, init, subscriptions, update, view] {
-	html: "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
+	html: "https://github.com/niclas-ahden/joy-html/releases/download/0.18.0/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst",
 	pf: platform "../../platform/main.roc",
 }
 

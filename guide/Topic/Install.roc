@@ -34,7 +34,7 @@ Install := [].{
 			[],
 			[
 				text("Joy works with most recent Roc releases and nightlies. With the nightlies you may see a few warnings, and that's OK. Please "),
-				a([href("https://github.com/growthagent/joy/issues")], [text("report an issue")]),
+				a([href("https://github.com/niclas-ahden/joy/issues")], [text("report an issue")]),
 				text(" if you run into any problems!"),
 			],
 		),
