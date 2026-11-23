@@ -12,6 +12,12 @@ const { mount } = await appRuntime('upload');
 const bytes = readFileSync(wasmPath('upload'));
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+// Digests resolve on the crypto threadpool, so poll for the rendered result
+// instead of counting macrotask ticks (a loaded machine needs more of them).
+const settled = async (pred) => {
+  for (let i = 0; i < 500 && !pred(); i++) await tick();
+  return pred();
+};
 
 const requests = [];
 globalThis.fetch = (url, opts) => {
@@ -36,9 +42,8 @@ input.listeners.change({ target: input });
 expect('file metadata delivered', htmlBare(root).includes('picked: notes.txt (9 bytes, text/plain)'), true);
 expect('hashing state painted synchronously', htmlBare(root).includes('sha256: hashing...'), true);
 
-await tick(); await tick(); await tick(); // arrayBuffer + digest + dispatch
 const expected = hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('hello joy')));
-expect('sha256 over the browser-held bytes', htmlBare(root).includes(`sha256: ${expected}`), true);
+expect('sha256 over the browser-held bytes', await settled(() => htmlBare(root).includes(`sha256: ${expected}`)), true);
 
 // Upload: the File object itself is the request body (streamed, not copied
 // through wasm), headers ride along, and the response status comes back.
@@ -55,9 +60,8 @@ expect('upload status delivered', htmlBare(root).includes('upload status 201'), 
 const file2 = new FakeFile('other.bin', new Uint8Array([1, 2, 3]), 'application/octet-stream');
 input.fakeFile = file2;
 input.listeners.change({ target: input });
-await tick(); await tick(); await tick();
 const expected2 = hex(await crypto.subtle.digest('SHA-256', new Uint8Array([1, 2, 3])));
-expect('second file hashed independently', htmlBare(root).includes(`sha256: ${expected2}`), true);
+expect('second file hashed independently', await settled(() => htmlBare(root).includes(`sha256: ${expected2}`)), true);
 find(root, 'Upload').listeners.click();
 expect('second upload sends the second file', requests[1].body === file2, true);
 
