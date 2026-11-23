@@ -1,0 +1,156 @@
+name: Preview a draft's guide
+
+# Deploy the site with a draft release's guide under /guide/<tag>/, so the guide
+# can be read before the release is published. Publishing sends notifications
+# to everyone watching the repository, a draft doesn't.
+#
+#   gh workflow run preview-docs.yml -R niclas-ahden/joy -f tag=0.35.0
+#
+# The rest of the site is what it was before the guide became the landing
+# page: each published release's API docs under /<tag>/, the main branch's
+# under /main/, and a landing page that redirects to the newest published
+# release's docs. /guide/<tag>/ has the draft's guide and its editors, and
+# /<tag>/ its API docs, where they stay once it's published. The samples and
+# the install command name the draft's bundles, which return 404 until the
+# release is published.
+#
+# Publishing the release runs deploy-docs.yml, which replaces all of this.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The draft release to preview, for example 0.35.0
+        required: true
+        type: string
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-24.04
+    permissions:
+      # Write, because a draft release and its files are only visible to a
+      # token that can push. Nothing here writes to the repository.
+      contents: write
+      pages: write
+      id-token: write
+    steps:
+      # The guide as it is in the draft.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - id: setup
+        uses: ./.github/actions/setup
+        with:
+          roc: pinned
+          github-token: ${{ github.token }}
+
+      - name: Check that the tag is a draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          draft=$(gh release view "$TAG" --repo "${{ github.repository }}" --json isDraft -q .isDraft)
+          [ "$draft" = true ] || {
+            echo "error: $TAG is not a draft release, so deploy-docs.yml is what serves it" >&2
+            exit 1
+          }
+
+      - name: Fetch docs for each published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p site
+          latest=""
+          for tag in $(gh release list --repo "${{ github.repository }}" --json tagName,isDraft -q '.[] | select(.isDraft | not) | .tagName'); do
+            if gh release download "$tag" --repo "${{ github.repository }}" \
+                 --pattern docs.tar.gz --output /tmp/docs.tar.gz --clobber 2>/dev/null; then
+              mkdir -p "site/$tag"
+              tar -xzf /tmp/docs.tar.gz -C "site/$tag"
+              rm /tmp/docs.tar.gz
+              [ -n "$latest" ] || latest="$tag"
+              echo "added docs for $tag"
+            fi
+          done
+          echo "${latest:-main}" > /tmp/latest-docs
+
+      - name: Build docs for the main branch
+        run: ${{ steps.setup.outputs.prefix }} ./docs.roc --output=site/main
+
+      - name: Redirect the landing page to the newest published docs
+        run: |
+          latest=$(cat /tmp/latest-docs)
+          cat > site/index.html <<EOF
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8" />
+              <meta http-equiv="refresh" content="0; url=./$latest/" />
+              <title>Joy documentation</title>
+            </head>
+            <body>
+              <p>Redirecting to the <a href="./$latest/">latest Joy documentation</a>&hellip;</p>
+            </body>
+          </html>
+          EOF
+
+      - name: Build the guide
+        run: ${{ steps.setup.outputs.prefix }} bash -c 'cd guide && roc ./build.roc'
+
+      # The same filling in as deploy-docs.yml does, from the draft's files.
+      - name: Add the draft's guide and editors under /guide/<tag>/, its API docs under /<tag>/
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          guide="site/guide/$TAG"
+          mkdir -p "$guide/editor" "site/$TAG"
+          gh release download "$TAG" --repo "$repo" --pattern docs.tar.gz --output /tmp/docs.tar.gz --clobber
+          tar -xzf /tmp/docs.tar.gz -C "site/$TAG"
+          gh release download "$TAG" --repo "$repo" --pattern docs-editor.tar.gz --output /tmp/docs-editor.tar.gz --clobber
+          tar -xzf /tmp/docs-editor.tar.gz -C "$guide/editor"
+          cp guide/www/style.css guide/www/editor.js "$guide/"
+
+          # A draft's download URLs are only known by name, so build them
+          # the way they will be once it's published.
+          assets=$(gh release view "$TAG" --repo "$repo" --json assets \
+            -q '.assets[] | select(.name | endswith(".tar.zst")) | "\(.label) \(.name)"')
+          platform=$(printf '%s\n' "$assets" | sed -n 's|^platform ||p' | head -1)
+          cli=$(printf '%s\n' "$assets" | sed -n 's|^cli ||p' | head -1)
+          [ -n "$platform" ] && [ -n "$cli" ] || {
+            echo "error: $TAG has no platform or cli bundle" >&2
+            exit 1
+          }
+          base="https://github.com/$repo/releases/download/$TAG"
+          # The guide links to its API docs as ./<tag>/, beside it at the root.
+          # Two levels down, they are ../../<tag>/.
+          sed -e "s|\./LATESTVERSION/|../../$TAG/|g" \
+              -e "s|LATESTVERSION|$TAG|g" \
+              -e "s|https://github.com/niclas-ahden/joy/releases/download/VERSION/HASH.tar.zst|$base/$platform|g" \
+              -e "s|https://github.com/niclas-ahden/joy/releases/download/VERSION/CLI.tar.zst|$base/$cli|g" \
+              guide/www/index.html > "$guide/index.html"
+          echo "the guide names $base/$platform and $base/$cli"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
