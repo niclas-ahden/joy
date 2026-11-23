@@ -18,7 +18,7 @@
 ## host must be built, and joy-html must be reachable or in roc's cache.
 app [main!] {
 	http: "https://github.com/roc-lang/http/releases/download/2.0.0/6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst",
-	pf: platform "https://github.com/growthagent/joy-cli-platform/releases/download/0.1.0-rc4/EQHYpAo8oDkf35M2DAA2nWx6Guyj5aqRf24yLk5JsSVt.tar.zst",
+	pf: platform "https://github.com/growthagent/joy-cli-platform/releases/download/0.1.0-rc5/EakfgTL6eAM3YKeEJBPmas6obyBSESSaRRXXDxP5ibnS.tar.zst",
 }
 
 import pf.Cmd
@@ -264,7 +264,7 @@ tests = [
 html_package = "https://github.com/growthagent/joy-html/releases/download/0.18.0-rc2/6XAQypURmG12GNMHHZmjcXVGtctYy52mmPZoaUMWejRK.tar.zst"
 
 ## The platform of the fixture servers, the one ./joy is built on.
-cli_platform = "https://github.com/growthagent/joy-cli-platform/releases/download/0.1.0-rc4/EQHYpAo8oDkf35M2DAA2nWx6Guyj5aqRf24yLk5JsSVt.tar.zst"
+cli_platform = "https://github.com/growthagent/joy-cli-platform/releases/download/0.1.0-rc5/EakfgTL6eAM3YKeEJBPmas6obyBSESSaRRXXDxP5ibnS.tar.zst"
 
 ## A small Joy app that renders `label`, importing `imports`, with `extra`
 ## at the end of the file.
@@ -2717,7 +2717,7 @@ upgrade_moves! = |ctx| {
 		),
 	)?
 	contains(out, "  joy-carousel 0.3.0          client/app.roc\n")?
-	contains(out, "  joy-cli-platform 0.1.0-rc4  server/main.roc\n")?
+	contains(out, "  joy-cli-platform 0.1.0-rc5  server/main.roc\n")?
 	contains(out, "Joy 0.44.1 needs Roc 0.1.0-rc1 or later.")?
 	contains(out, "Run ./joy dev to see what needs changing. Read the notes from 0.36.0 to 0.44.0: https://github.com/niclas-ahden/joy/releases")?
 	app_file = read!(ctx, "client/app.roc")?
