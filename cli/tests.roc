@@ -2139,7 +2139,7 @@ init_template! = |ctx| {
 	readme = read!(ctx, "my-app/README.md")?
 	contains(readme, "    roc run ../")?
 	contains(readme, "/cli/main.roc init\n")?
-	lacks(readme, "JOY_INSTALL_COMMAND")?
+	lacks(readme, "<INSERT JOY INSTALL COMMAND HERE>")?
 	installed = Path.utf8("${ctx.dir}/my-app/joy")
 	check(installed.is_executable!() ?? False, "init did not install an executable ./joy")?
 	# The project's own ./joy builds it.
@@ -2162,7 +2162,7 @@ init_other_templates! = |ctx| {
 		contains(out, "Started a project in ${name} from the ${name} template")?
 		bundle_file = read!(ctx, "${name}/client/app.roc")?
 		lacks(bundle_file, "\"../../../../platform/main.roc\"")?
-		lacks(read!(ctx, "${name}/README.md")?, "JOY_INSTALL_COMMAND")?
+		lacks(read!(ctx, "${name}/README.md")?, "<INSERT JOY INSTALL COMMAND HERE>")?
 		project = { ..ctx, dir: "${ctx.dir}/${name}", joy: "${ctx.dir}/${name}/joy" }
 		built = joy_ok!(project, ["build"], 0)?
 		contains(built, "Built 1 bundle")?

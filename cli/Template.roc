@@ -90,5 +90,5 @@ Template :: [].{
 	## Where a template's README shows the command that installs ./joy in a
 	## fresh clone. Init writes the command there.
 	install_command : Str
-	install_command = "JOY_INSTALL_COMMAND"
+	install_command = "<INSERT JOY INSTALL COMMAND HERE>"
 }
