@@ -11,7 +11,7 @@
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     # Roc compiler revision, keep the `?dir=src` at the end.
-    roc-src.url = "github:roc-lang/roc/15177e91f62cafddf5336c455e00e9f05427ac16?dir=src";
+    roc-src.url = "github:roc-lang/roc/ee835686f9eae076bee7422c26e7cf8deb20aa0e?dir=src";
     # roc-nix keeps its own nixpkgs, so the compiler is the one its cache holds
     # for this Roc commit. Everything else in the shell comes from the nixpkgs
     # above.
